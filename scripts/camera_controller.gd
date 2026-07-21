@@ -1,16 +1,23 @@
 class_name CameraController
 extends Camera2D
 
-## Kamera: Zoomen (Mausrad, Richtung Mauszeiger), Schwenken (mittlere Maustaste
-## oder WASD/Pfeiltasten), Screenshake für "Juice" bei Katastrophen.
+## Kamera: Zoomen Richtung Mauszeiger, Schwenken (mittlere Maustaste oder
+## WASD/Pfeiltasten), an die Karte begrenzt, Screenshake für "Juice".
 
 const ZOOM_MIN := 0.5
 const ZOOM_MAX := 8.0
 const ZOOM_STEP := 1.2
-const PAN_SPEED := 600.0
+const PAN_SPEED := 650.0
 
 var _dragging := false
 var _shake := 0.0
+
+
+func set_map_limits(size_px: Vector2) -> void:
+	limit_left = -96
+	limit_top = -96
+	limit_right = int(size_px.x) + 96
+	limit_bottom = int(size_px.y) + 96
 
 
 func _unhandled_input(event: InputEvent) -> void:
