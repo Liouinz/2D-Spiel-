@@ -5,11 +5,25 @@ Du läufst als Wanderer durch eine überschaubare Insel: Dorf, Wiese, Wald, Fels
 
 ![Das Dorf](docs/bilder/dorf.png)
 
-## Starten
+## So wird das Spiel gestartet
 
-1. [Godot 4.3+](https://godotengine.org/download) herunterladen (keine Installation nötig)
-2. Godot öffnen → **Importieren** → diesen Ordner (`project.godot`) auswählen
+1. [Godot 4.3+](https://godotengine.org/download) herunterladen — eine einzelne
+   ausführbare Datei, keine Installation nötig
+2. Godot öffnen → **Importieren** → diesen Ordner wählen (die Datei `project.godot`)
 3. **F5** drücken
+
+Es startet die Szene `scenes/main.tscn`. Danach erscheint das Hauptmenü,
+**SPIELEN** lädt die Welt (rund 1,5 Sekunden), und die Figur steht am Dorfplatz.
+
+Ohne Editor, direkt von der Kommandozeile:
+
+```bash
+godot --path .          # Spiel starten
+```
+
+Alle Grafiken und Klänge entstehen beim Start im Spiel selbst — es müssen
+keine Assets heruntergeladen oder importiert werden. Die Lizenzlage ist in
+[`CREDITS.md`](CREDITS.md) dokumentiert.
 
 ## Steuerung
 
@@ -36,6 +50,11 @@ Laternen, Holzstapel, Blumenkästen, Fässer, Kisten, Zäune und Vorgärten.
 Jungbaum, große und kleine Fichte) plus Büsche, Farne, Baumstümpfe und Totholz. Die Verteilung
 folgt Dichtefeldern statt gleichmäßigem Würfeln: es gibt Gruppen, dichte Bestände, Lichtungen und
 ausgedünnte Waldränder.
+
+**Auflösung** — 32 × 32 Pixel je Kachel bei Kamerazoom 1,5. Gegenüber der
+ersten Fassung (16 px bei Zoom 3) ist das Sichtfeld unverändert, jede Kachel
+hat aber die vierfache Pixelfläche. Alle Grafiken wurden dafür neu gezeichnet,
+nicht hochskaliert.
 
 **Boden** — Ein echtes Kachelraster aus neun `TileMapLayer`. Gras füllt die Karte, darüber liegen
 Wiese, Waldboden, Fels, Sand, Wasser, Tiefwasser, Weg und Pflaster. Die Schichten blenden sich per
@@ -96,7 +115,7 @@ src/gfx/actor_art.gd       Spielerfigur (Idle + Laufzyklus, 3 Richtungen)
 
 src/world/layout.gd        Von Hand gesetzte Weltstruktur (Dorf, Wege, Zäune, Hecken)
 src/world/map_data.gd      Kartendaten: Bodentypen, Inselform, Wegenetz, Begehbarkeit
-src/world/ground_tileset.gd TileSet mit benannten Terrains, bemalt die Kachelschichten
+src/world/ground_tileset.gd TileSet mit Terrains und Dekorationskacheln, bemalt die Schichten
 src/world/world_builder.gd Boden backen, Requisiten verteilen, Kollision bauen
 src/world/water_fx.gd      Glitzern und Uferschaum (nur im Sichtbereich)
 src/world/world.gd         Setzt die Spielwelt zusammen
@@ -129,8 +148,10 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 35 Prüfungen; Weltaufbau ~790 ms,
-616 Objekte, 572 Kollisionsformen, 38 Zeichenaufrufe). Mit einer echten Anzeige
+Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 36 Prüfungen; Weltaufbau ~1,5 s,
+616 Objekte, 572 Kollisionsformen, 45 Zeichenaufrufe). Eine der Prüfungen durchsucht das
+Projekt nach fremden Asset-Dateien und schlägt fehl, sobald eine auftaucht — siehe
+[`CREDITS.md`](CREDITS.md). Mit einer echten Anzeige
 lassen sich zusätzlich Screenshots und ein Kontaktbogen aller erzeugten Grafiken ablegen:
 
 ```bash
@@ -138,6 +159,16 @@ godot --path . -- --selftest --shots=/tmp/shots
 ```
 
 ![Alle Requisiten](docs/bilder/requisiten.png)
+
+## Vorher / Nachher
+
+Links das 16-px-Raster der ersten Fassung, rechts das heutige 32-px-Raster.
+
+| vorher | nachher |
+|---|---|
+| ![Dorf vorher](docs/bilder/vorher_dorf.png) | ![Dorf nachher](docs/bilder/dorf.png) |
+| ![Wald vorher](docs/bilder/vorher_wald.png) | ![Wald nachher](docs/bilder/wald.png) |
+| ![Strand vorher](docs/bilder/vorher_strand.png) | ![Strand nachher](docs/bilder/strand.png) |
 
 ## Nächste Schritte
 

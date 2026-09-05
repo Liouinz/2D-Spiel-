@@ -139,3 +139,51 @@ dem Software-Rasterizer der Testumgebung zwischen −10 ms und +20 ms schwankt �
 Füllrate, nicht das Spiel. Geprüft werden jetzt Ladezeit, Physikzeit, Wasserlast und die Zahl der
 Zeichenaufrufe (38, die Kachelschichten werden also gebündelt). Bricht das Batching, fällt es dort
 sofort auf. Der Prozesszeit-Wert wird nur noch berichtet.
+
+---
+
+## Nachtrag: Verdopplung der Auflösung
+
+Der Auftrag verlangte mindestens die doppelte Auflösung. Die Kachelgröße ging
+von 16 auf 32 Pixel, der Kamerazoom von 3,0 auf 1,5 — das Sichtfeld bleibt
+damit exakt gleich (rund 27 × 15 Kacheln), aber jede Kachel hat die vierfache
+Pixelfläche.
+
+**Neu gezeichnet, nicht hochskaliert.** Bloßes Verdoppeln hätte nur klotzigere
+Pixel ergeben. Die parametrischen Grafiken (Bäume, Felsen, Büsche) rechnen
+ohnehin in Fließkomma und werden auf der größeren Leinwand von selbst feiner.
+Alles mit festen Pixelkoordinaten — Gebäude, Dorfinventar, Spielfigur,
+Bodenkacheln, Dekoration — wurde von Hand neu aufgebaut, mit Details, die bei
+16 Pixeln schlicht keinen Platz hatten: Sprossenfenster mit Fensterbank und
+Laden, Türbeschläge, Jahresringe im Holzstapel, ein Gesicht mit Augen und
+Wangen bei der Spielfigur.
+
+**Bodenkacheln bekommen Textur auf zwei Ebenen.** Weiche Farbflecken geben der
+Fläche die grobe Struktur, feines Korn darüber die Materialwirkung. Nur Korn
+sieht aus wie Rauschen, nur Flecken wie Filz.
+
+**Die Dekoration wanderte in eine eigene Rasterschicht.** Vorher lagen Blumen,
+Grasbüschel und Schatten in einer gebackenen Auflagetextur über der Welt. Bei
+32er-Kacheln wäre die 3072 × 2304 Pixel groß gewesen — 28 MB und 0,8 Sekunden
+Backzeit. Jetzt gibt es fertig bestückte Dekorationskacheln in einer eigenen
+`TileMapLayer` (zwölf Varianten je Sorte, die Objekte darin an zufälligen
+Stellen), und die Bodenschatten sind skalierte Sprites.
+
+**Was dabei kaputtging.** Das Kachelraster wurde sichtbar: auf Sand und Wasser
+zeichnete sich ein Schachbrett ab. Die großflächigen Helligkeitsstufen hatten
+8,5 % Abstand und zusätzlich einen Zufallswert je Kachel — bei 16 Pixeln fiel
+das nicht auf, bei 32 Pixeln ist jede Kachel eine große einfarbige Fläche.
+Jetzt 3,5 % Abstand ohne Per-Kachel-Zufall, dafür sechs statt vier Varianten je
+Stufe. Außerdem schlugen die Bewegungsprüfungen des Selbsttests fehl, weil sie
+absolute Pixelwerte verglichen; sie hängen jetzt an `Config.TILE`.
+
+**Leistung.** Der Weltaufbau stieg zunächst von 0,8 auf 2,4 Sekunden. Die
+Dekorationsschicht sparte 0,8 s, und `Pixel.outline` und `shade_ramp` lesen den
+Alphakanal jetzt als Rohpuffer statt über `get_pixel` je Pixel — zusammen
+1,5 Sekunden. Bei vierfacher Pixelzahl je Grafik ist das vertretbar.
+
+## Lizenzlage
+
+Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest
+durchsucht `res://` nach Bild-, Ton- und Schriftdateien und schlägt fehl,
+sobald eine auftaucht. Details in `CREDITS.md`.

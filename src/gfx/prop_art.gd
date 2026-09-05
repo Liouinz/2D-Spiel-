@@ -30,7 +30,7 @@ static func build(seed_value: int) -> Dictionary:
 	d["oak_small"] = _entry(_series(rng, 3, func(r: RandomNumberGenerator) -> Dictionary:
 		return _deciduous(r, 52, 64, green, 5, 1.44)))
 	d["birch"] = _entry(_series(rng, 3, func(r: RandomNumberGenerator) -> Dictionary:
-		return _deciduous(r, 64, 84, green, 6, 1.72, true)))
+		return _deciduous(r, 68, 80, green, 7, 1.8, true)))
 	d["old_tree"] = _entry(_series(rng, 2, func(r: RandomNumberGenerator) -> Dictionary:
 		return _deciduous(r, 92, 104, deep_green, 7, 2.5)))
 	d["sapling"] = _entry(_series(rng, 3, func(r: RandomNumberGenerator) -> Dictionary:
@@ -38,9 +38,9 @@ static func build(seed_value: int) -> Dictionary:
 
 	# --- Nadelbäume --------------------------------------------------------
 	d["pine"] = _entry(_series(rng, 3, func(r: RandomNumberGenerator) -> Dictionary:
-		return _conifer(r, 60, 108, 6)))
+		return _conifer(r, 66, 96, 6)))
 	d["pine_small"] = _entry(_series(rng, 3, func(r: RandomNumberGenerator) -> Dictionary:
-		return _conifer(r, 44, 72, 5)))
+		return _conifer(r, 50, 64, 5)))
 
 	# --- Unterholz und Steine ---------------------------------------------
 	d["bush"] = _entry(_series(rng, 4, func(r: RandomNumberGenerator) -> Dictionary:
@@ -95,10 +95,10 @@ static func _variant(img: Image, foot: Vector2, shadow: Vector2) -> Dictionary:
 ## einzeln gezeichnet — ein unscharfer Fleck verträgt das problemlos.
 static func shadow_texture() -> ImageTexture:
 	var img := Pixel.make(64, 32)
-	Pixel.ellipse(img, 32, 16, 31.0, 15.0, Color(0, 0, 0, 0.08))
-	Pixel.ellipse(img, 32, 16, 26.0, 12.5, Color(0, 0, 0, 0.13))
-	Pixel.ellipse(img, 32, 16, 20.0, 9.5, Color(0, 0, 0, 0.15))
-	Pixel.ellipse(img, 30, 15, 12.0, 5.5, Color(0, 0, 0, 0.10))
+	Pixel.ellipse(img, 32, 16, 31.0, 15.0, Color(0, 0, 0, 0.11))
+	Pixel.ellipse(img, 32, 16, 26.0, 12.5, Color(0, 0, 0, 0.17))
+	Pixel.ellipse(img, 32, 16, 20.0, 9.5, Color(0, 0, 0, 0.20))
+	Pixel.ellipse(img, 30, 15, 12.0, 5.5, Color(0, 0, 0, 0.14))
 	return Pixel.tex(img)
 
 ## Wählt eine Variante zufällig aus.
@@ -157,7 +157,7 @@ static func _deciduous(rng: RandomNumberGenerator, w: int, h: int, ramp: Array,
 	# Die Birke bekommt eine tiefer sitzende, größere Krone — sonst wirkt der
 	# helle Stamm wie ein Pfahl mit einem Blattball obendrauf.
 	var crown_cy := h * (rng.randf_range(0.32, 0.40) if birch else rng.randf_range(0.30, 0.38))
-	var crown_bottom := h * (rng.randf_range(0.70, 0.78) if birch else rng.randf_range(0.62, 0.70))
+	var crown_bottom := h * (rng.randf_range(0.76, 0.84) if birch else rng.randf_range(0.62, 0.70))
 	_trunk(img, w * 0.5, h - 1.0, crown_bottom - 2.0, trunk_w, lean, rng, birch)
 
 	# Krone aus überlappenden Ballen, danach Kerben in die Silhouette
@@ -200,9 +200,12 @@ static func _conifer(rng: RandomNumberGenerator, w: int, h: int, tiers: int) -> 
 	for i in tiers:
 		var t := float(i) / float(tiers - 1)
 		var y := lerpf(bottom, top + h * 0.16, t)
-		var half := lerpf(w * 0.48, w * 0.14, t) * rng.randf_range(0.92, 1.06)
-		var tip := y - h * lerpf(0.24, 0.16, t)
+		var half := lerpf(w * 0.54, w * 0.17, t) * rng.randf_range(0.92, 1.06)
+		var tip := y - h * lerpf(0.30, 0.20, t)
 		Pixel.triangle(img, cx - half, y, cx + half, y, cx, tip, Palette.PINE)
+		# zweite, leicht versetzte Lage macht die Zweigetagen dichter
+		Pixel.triangle(img, cx - half * 0.86, y - h * 0.03, cx + half * 0.86, y - h * 0.03,
+			cx, tip - h * 0.02, Palette.PINE)
 		# gezackte Unterkante statt gerader Linie
 		var steps := int(half * 2.0)
 		for s in steps:
@@ -254,29 +257,33 @@ static func _bush(rng: RandomNumberGenerator) -> Dictionary:
 	return _variant(img, Vector2(w * 0.32, 3.0), Vector2(w * 0.36, 2.6))
 
 static func _fern(rng: RandomNumberGenerator) -> Dictionary:
-	var img := Pixel.make(48, 40)
-	var count := rng.randi_range(9, 12)
+	var img := Pixel.make(48, 42)
+	var count := rng.randi_range(7, 9)
 	for i in count:
-		var a := lerpf(-2.75, -0.35, float(i) / float(count - 1)) + rng.randf_range(-0.12, 0.12)
-		var length := rng.randf_range(18.0, 26.0)
+		var a := lerpf(-2.55, -0.55, float(i) / float(count - 1)) + rng.randf_range(-0.10, 0.10)
+		var length := rng.randf_range(20.0, 28.0)
 		var mid := Palette.LEAF_LIGHT if i % 2 == 0 else Palette.LEAF
-		var prev := Vector2(24.0, 39.0)
+		var prev := Vector2(24.0, 41.0)
 		for s in int(length):
 			var t := float(s) / length
 			# Wedel biegen sich nach außen und hängen an der Spitze ab
 			var ang := a + t * 0.55 * signf(cos(a))
 			var p := prev + Vector2(cos(ang), sin(ang) * 0.85)
+			# Mittelstiel zwei Pixel breit, sonst verschwindet der Wedel
 			Pixel.px(img, int(p.x), int(p.y), mid)
-			# Fiederblättchen
+			Pixel.px(img, int(p.x), int(p.y) + 1, Palette.LEAF_DARK)
+			# Fiederblättchen paarweise nach beiden Seiten
 			if s >= 2 and s % 2 == 0:
-				var side := Vector2(-sin(ang), cos(ang)) * (1.0 - t) * 5.0
-				Pixel.px(img, int(p.x + side.x), int(p.y + side.y), Palette.LEAF_DARK)
-				Pixel.px(img, int(p.x + side.x * 0.5), int(p.y + side.y * 0.5), mid)
-				Pixel.px(img, int(p.x - side.x), int(p.y - side.y), mid)
-				Pixel.px(img, int(p.x - side.x * 0.5), int(p.y - side.y * 0.5), Palette.LEAF_LIGHT)
+				var normal := Vector2(-sin(ang), cos(ang))
+				var reach := (1.0 - t * 0.7) * 5.5
+				for k in 3:
+					var f := (k + 1) / 3.0
+					var o := normal * reach * f
+					Pixel.px(img, int(p.x + o.x), int(p.y + o.y), mid if k < 2 else Palette.LEAF_DARK)
+					Pixel.px(img, int(p.x - o.x), int(p.y - o.y), Palette.LEAF_LIGHT if k < 2 else mid)
 			prev = p
-	Pixel.outline(img, Color(Palette.OUTLINE.r, Palette.OUTLINE.g, Palette.OUTLINE.b, 0.5))
-	return _variant(img, Vector2.ZERO, Vector2(12.0, 4.4))
+	Pixel.outline(img, Color(Palette.OUTLINE.r, Palette.OUTLINE.g, Palette.OUTLINE.b, 0.55))
+	return _variant(img, Vector2.ZERO, Vector2(13.0, 5.0))
 
 # --- Felsen ------------------------------------------------------------------
 

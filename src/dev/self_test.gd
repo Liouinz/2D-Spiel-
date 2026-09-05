@@ -180,6 +180,11 @@ func _run() -> void:
 
 	_check(ms_physics < 8.0, "Physikzeit pro Bild unter 8 ms (%.2f)" % ms_physics)
 
+	# --- Lizenzlage: das Projekt darf keine fremden Asset-Dateien enthalten ---
+	var assets := _find_assets("res://")
+	_check(assets.is_empty(), "Keine Asset-Dateien im Projekt (%s)" %
+		("keine" if assets.is_empty() else ", ".join(assets)))
+
 	# --- Audio ---
 	_check(Audio._sfx.size() >= 5, "Effektklänge erzeugt (%d)" % Audio._sfx.size())
 	_check(Audio._music.has("world") and Audio._music["world"].data.size() > 1000,
@@ -218,6 +223,32 @@ func _run() -> void:
 	for f: String in _fails:
 		print("   fehlgeschlagen: ", f)
 	get_tree().quit(0 if _fails.is_empty() else 1)
+
+## Sucht Bild-, Ton- und Schriftdateien im Projekt. Alle Grafiken und Klänge
+## werden zur Laufzeit berechnet; ein Treffer hier hieße, dass sich doch eine
+## fremde Datei eingeschlichen hat und in CREDITS.md gehören würde.
+func _find_assets(path: String) -> Array[String]:
+	const SUFFIX := [".png", ".jpg", ".jpeg", ".wav", ".ogg", ".mp3", ".ttf", ".otf"]
+	var found: Array[String] = []
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return found
+	dir.list_dir_begin()
+	var name := dir.get_next()
+	while name != "":
+		var full := path.path_join(name)
+		if dir.current_is_dir():
+			# docs/ enthält Bildschirmfotos für die Dokumentation, keine Spielinhalte
+			if not name.begins_with(".") and name != "docs" and name != "prototype_godsim":
+				found.append_array(_find_assets(full))
+		else:
+			for suffix: String in SUFFIX:
+				if name.to_lower().ends_with(suffix):
+					found.append(full)
+					break
+		name = dir.get_next()
+	dir.list_dir_end()
+	return found
 
 func _drive(action: String, frames: int) -> void:
 	Input.action_press(action)
