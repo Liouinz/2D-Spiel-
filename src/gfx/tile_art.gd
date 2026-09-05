@@ -5,34 +5,7 @@ extends RefCounted
 const T := Config.TILE
 const VARIANTS := 4
 const SHADES := 3   ## großflächige Helligkeitsstufen gegen einfarbige Wiesen
-const EDGE_DEPTH := 5
-
-## Wer über wen läuft: Sand legt sich auf Gras, Weg auf Gras, Gras über Wasser.
-## Gleiche Stufe = kein Übergang (Gras/Wiese/Wald werden schon verzahnt).
-const BLEED := {
-	MapData.Tile.DEEP_WATER: 0,
-	MapData.Tile.WATER: 10,
-	MapData.Tile.ROCK: 20,
-	MapData.Tile.FOREST: 30,
-	MapData.Tile.GRASS: 31,
-	MapData.Tile.MEADOW: 32,
-	MapData.Tile.PATH: 40,
-	MapData.Tile.COBBLE: 45,
-	MapData.Tile.SAND: 50,
-}
-
-const GRASS_FAMILY := [MapData.Tile.GRASS, MapData.Tile.MEADOW, MapData.Tile.FOREST]
-
-## Innerhalb der Grasfamilie reicht ein sehr zarter Übergang.
-static func soft_pair(a: int, b: int) -> bool:
-	return GRASS_FAMILY.has(a) and GRASS_FAMILY.has(b)
-
-static func bleeds_over(neighbour: int, here: int) -> bool:
-	return int(BLEED.get(neighbour, 0)) > int(BLEED.get(here, 0))
-
 var base: Array = []        ## [tile_type][variante] -> Image
-var edge: Array = []        ## [tile_type][richtung 0..3] -> Image (oben/unten/links/rechts)
-var edge_soft: Array = []   ## zarte Variante für Gras <-> Wiese <-> Wald
 var decor_grass: Array[Image] = []
 var decor_forest: Array[Image] = []
 var decor_sand: Array[Image] = []
@@ -45,7 +18,6 @@ static func build(seed_value: int) -> TileArt:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	a._build_bases(rng)
-	a._build_edges(rng)
 	a._build_decor(rng)
 	return a
 
@@ -57,7 +29,7 @@ func _build_bases(rng: RandomNumberGenerator) -> void:
 		for shade in SHADES:
 			for v in VARIANTS:
 				var img := _make_tile(t, rng)
-				_shift(img, (shade - 1) * -0.055)
+				_shift(img, (shade - 1) * -0.085)
 				list.append(img)
 		base[t] = list
 
@@ -172,43 +144,6 @@ func _water_tile(bg: Color, hi: Color, rng: RandomNumberGenerator) -> Image:
 	for i in 10:
 		Pixel.px(img, rng.randi_range(0, T - 1), rng.randi_range(0, T - 1), Color(hi.r, hi.g, hi.b, 0.28))
 	return img
-
-func _build_edges(rng: RandomNumberGenerator) -> void:
-	var colors := {
-		MapData.Tile.GRASS: Palette.GRASS,
-		MapData.Tile.MEADOW: Palette.GRASS_LIGHT,
-		MapData.Tile.FOREST: Palette.GRASS_DARK,
-		MapData.Tile.PATH: Palette.DIRT,
-		MapData.Tile.COBBLE: Palette.STONE,
-		MapData.Tile.SAND: Palette.SAND,
-		MapData.Tile.ROCK: Palette.STONE,
-		MapData.Tile.WATER: Palette.WATER,
-		MapData.Tile.DEEP_WATER: Palette.WATER_DEEP,
-	}
-	edge.resize(MapData.Tile.COUNT)
-	edge_soft.resize(MapData.Tile.COUNT)
-	for t in MapData.Tile.COUNT:
-		var c: Color = colors.get(t, Palette.GRASS)
-		var soft := Color(c.r, c.g, c.b, 0.5)
-		var softs: Array[Image] = []
-		for d in 4:
-			var si := Pixel.dither_strip(d < 2, T, EDGE_DEPTH, soft, rng)
-			if d == 1:
-				si.flip_y()
-			elif d == 3:
-				si.flip_x()
-			softs.append(si)
-		edge_soft[t] = softs
-		var dirs: Array[Image] = []
-		for d in 4:
-			# 0=oben 1=unten 2=links 3=rechts — Streifen zur Kachelkante hin ausrichten
-			var im := Pixel.dither_strip(d < 2, T, EDGE_DEPTH, c, rng)
-			if d == 1:
-				im.flip_y()
-			elif d == 3:
-				im.flip_x()
-			dirs.append(im)
-		edge[t] = dirs
 
 func _build_decor(rng: RandomNumberGenerator) -> void:
 	decor_grass = [

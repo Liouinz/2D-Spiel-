@@ -20,12 +20,29 @@ func _ready() -> void:
 	builder.build(Config.WORLD_SEED)
 	map = builder.map
 
-	var ground := Sprite2D.new()
+	# Der Boden ist ein echtes Kachelraster: eine TileMapLayer je Schicht,
+	# von unten nach oben per Terrain-Autotiling ineinander eingeblendet.
+	var ground := Node2D.new()
 	ground.name = "Ground"
-	ground.texture = builder.ground_texture
-	ground.centered = false
-	ground.z_index = -20
 	add_child(ground)
+	var t_layers := Time.get_ticks_msec()
+	for pos in GroundTileSet.STACK.size():
+		var layer := TileMapLayer.new()
+		layer.name = "L%d_%s" % [pos, GroundTileSet.NAMES[GroundTileSet.STACK[pos]]]
+		layer.z_index = -40 + pos
+		layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		ground.add_child(layer)
+		builder.ground.paint(layer, pos, builder.cells_for(pos), builder.variant_map())
+
+	builder.timings["schichten"] = Time.get_ticks_msec() - t_layers
+
+	# Streudeko und Schatten sitzen sub-pixelgenau über dem Raster.
+	var overlay := Sprite2D.new()
+	overlay.name = "Overlay"
+	overlay.texture = builder.overlay_texture
+	overlay.centered = false
+	overlay.z_index = -20
+	add_child(overlay)
 
 	var water := WaterFx.new()
 	water.name = "WaterFx"
@@ -78,3 +95,4 @@ func _ready() -> void:
 	build_msec = Time.get_ticks_msec() - started
 	print("Welt aufgebaut in %d ms (%d Objekte, %d Kollisionsformen)" % [
 		build_msec, builder.placed.size(), builder.collision_rects.size()])
+	print("  Phasen: ", builder.timings)

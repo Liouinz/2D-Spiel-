@@ -4,13 +4,13 @@ extends RefCounted
 ## Ein Draw-Call für den Boden -> auch auf schwachen Laptops flüssig.
 
 const T := Config.TILE
-const EDGE_DEPTH := TileArt.EDGE_DEPTH
 
 var map: MapData
 var art: TileArt
 var props: Dictionary                 ## name -> {"variants": [...]}
 var placed: Array[Dictionary] = []    ## {name, variant, pos (px, Fußpunkt)}
-var ground_texture: ImageTexture
+var ground: GroundTileSet            ## Kachelsatz mit Terrain-Übergängen
+var overlay_texture: ImageTexture    ## Dekoration und Schatten über dem Raster
 var collision_rects: Array[Rect2] = []
 
 var _rng := RandomNumberGenerator.new()
@@ -19,19 +19,34 @@ var _density: FastNoiseLite
 var _clearing: FastNoiseLite
 var _species: FastNoiseLite
 var _shade: FastNoiseLite
+var timings: Dictionary = {}   ## Dauer der Bauphasen in ms (Diagnose)
+var _variants := PackedByteArray()
+
+func _phase(name: String, started: int) -> int:
+	timings[name] = Time.get_ticks_msec() - started
+	return Time.get_ticks_msec()
 
 func build(seed_value: int) -> void:
+	var t := Time.get_ticks_msec()
 	_rng.seed = seed_value
 	map = MapData.new()
 	map.generate(seed_value)
+	t = _phase("karte", t)
 	art = TileArt.build(seed_value)
+	t = _phase("kacheln", t)
 	props = PropArt.build(seed_value)
+	t = _phase("requisiten", t)
 	_occupied.resize(Config.MAP_W * Config.MAP_H)
 	_setup_noise(seed_value)
 	_place_village()
 	_place_nature()
-	_bake_ground()
+	t = _phase("platzierung", t)
+	ground = GroundTileSet.build(art, seed_value)
+	t = _phase("kachelsatz", t)
+	_bake_overlay()
+	t = _phase("auflage", t)
 	_build_collision()
+	t = _phase("kollision", t)
 
 func _setup_noise(seed_value: int) -> void:
 	_density = _noise(seed_value + 301, 0.10)    ## Baumgruppen
@@ -236,47 +251,55 @@ func _touches_water(x: int, y: int) -> bool:
 			return true
 	return false
 
-# --- Boden backen ------------------------------------------------------------
+# --- Boden und Auflagen ------------------------------------------------------
 
-func _bake_ground() -> void:
+## Welche Kacheln zu welcher Schicht des Bodenstapels gehören.
+## Sand liegt unter allem Land, Gras darüber (ausser auf Sand) — dadurch
+## entsteht der Strandsaum von selbst, ohne Sonderfälle in der Karte.
+func cells_for(pos: int) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	for y in Config.MAP_H:
+		for x in Config.MAP_W:
+			if _in_layer(pos, map.get_tile(x, y)):
+				out.append(Vector2i(x, y))
+	return out
+
+func _in_layer(pos: int, t: int) -> bool:
+	if pos == 0:
+		return true                                       # Gras füllt alles
+	if pos == 4:
+		# Sand liegt auch unter dem flachen Wasser, damit die Brandung auf Sand
+		# trifft. Unter Tiefwasser wäre er nie zu sehen.
+		return t == MapData.Tile.SAND or t == MapData.Tile.WATER
+	if pos == 5:
+		return _is_water(t)                                # flaches Wasser
+	return t == GroundTileSet.STACK[pos]
+
+static func _is_water(t: int) -> bool:
+	return t == MapData.Tile.WATER or t == MapData.Tile.DEEP_WATER
+
+## Helligkeitsstufe und Variante je Kachel, einmal vorberechnet. Ein Byte je
+## Kachel ist deutlich billiger als ein Callable-Aufruf pro Kachel und Schicht.
+func variant_map() -> PackedByteArray:
+	if not _variants.is_empty():
+		return _variants
+	_variants.resize(Config.MAP_W * Config.MAP_H)
+	for y in Config.MAP_H:
+		for x in Config.MAP_W:
+			var shade := clampi(int(_n01(_shade, x, y) * TileArt.SHADES), 0, TileArt.SHADES - 1)
+			_variants[y * Config.MAP_W + x] = shade * TileArt.VARIANTS + (x * 7 + y * 13) % TileArt.VARIANTS
+	return _variants
+
+## Streudekoration und Schatten liegen als eine durchsichtige Textur über dem
+## Kachelraster. Sie brauchen Sub-Kachel-Positionen, die ein Raster nicht kann.
+func _bake_overlay() -> void:
 	var size := Config.world_size_px()
-	var img := Image.create(size.x, size.y, false, Pixel.FMT)
+	var img := Pixel.make(size.x, size.y)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _rng.seed + 5
-
-	_bake_tiles(img)
-	_bake_edges(img)
 	_bake_decor(img, rng)
 	_bake_shadows(img)
-	ground_texture = ImageTexture.create_from_image(img)
-
-func _bake_tiles(img: Image) -> void:
-	for y in Config.MAP_H:
-		for x in Config.MAP_W:
-			var t := map.get_tile(x, y)
-			var variants: Array = art.base[t]
-			# Helligkeitsstufe aus großflächigem Rauschen -> keine einfarbigen Wiesen
-			var shade := clampi(int(_n01(_shade, x, y) * TileArt.SHADES), 0, TileArt.SHADES - 1)
-			var v_index := (x * 7 + y * 13 + t * 3) % TileArt.VARIANTS
-			var v: Image = variants[shade * TileArt.VARIANTS + v_index]
-			img.blit_rect(v, Rect2i(0, 0, T, T), Vector2i(x * T, y * T))
-
-func _bake_edges(img: Image) -> void:
-	var offsets := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
-	var dst_off := [
-		Vector2i(0, 0), Vector2i(0, T - EDGE_DEPTH), Vector2i(0, 0), Vector2i(T - EDGE_DEPTH, 0)
-	]
-	for y in Config.MAP_H:
-		for x in Config.MAP_W:
-			var t := map.get_tile(x, y)
-			for d in 4:
-				var o: Vector2i = offsets[d]
-				var nt := map.get_tile(x + o.x, y + o.y)
-				if not map.in_bounds(x + o.x, y + o.y) or not TileArt.bleeds_over(nt, t):
-					continue
-				var strip: Image = (art.edge_soft[nt][d] if TileArt.soft_pair(nt, t) else art.edge[nt][d])
-				img.blend_rect(strip, Rect2i(Vector2i.ZERO, strip.get_size()),
-					Vector2i(x * T, y * T) + dst_off[d])
+	overlay_texture = ImageTexture.create_from_image(img)
 
 func _bake_decor(img: Image, rng: RandomNumberGenerator) -> void:
 	for y in Config.MAP_H:

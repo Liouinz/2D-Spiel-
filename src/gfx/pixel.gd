@@ -98,25 +98,6 @@ static func outline(img: Image, c: Color, threshold: float = 0.35) -> void:
 static func tex(img: Image) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
-## Weiche, ausgefranste Kante eines Bodentyps zur Nachbarkachel (Dithering).
-static func dither_strip(horizontal: bool, length: int, depth: int, c: Color, rng: RandomNumberGenerator) -> Image:
-	var img := make(length if horizontal else depth, depth if horizontal else length)
-	for i in length:
-		var reach := depth - rng.randi_range(0, 1)
-		for d in reach:
-			var t := float(d) / float(depth)
-			var a := 1.0 - t
-			var solid := a > 0.86
-			# gestreute Einzelpixel statt weichem Verlauf -> Pixel-Art-Kante
-			if not solid and rng.randf() > a * a * 1.5:
-				continue
-			var col := Color(c.r, c.g, c.b, c.a * (1.0 if solid else 0.92))
-			if horizontal:
-				px(img, i, d, col)
-			else:
-				px(img, d, i, col)
-	return img
-
 ## --- Schattierung -----------------------------------------------------------
 
 ## Geordnete 4x4-Bayer-Matrix: erzeugt Pixel-Art-Verläufe statt weicher Kanten.
