@@ -97,9 +97,14 @@ func _foam(tx: int, ty: int, mask: int) -> void:
 	var segments := T / FOAM_SEG
 	for i in segments:
 		var world_i := tx * T + ty * T + i * FOAM_SEG
+		# Luecken: der Schaum darf die Kachelkante nicht nachzeichnen, sonst
+		# sieht man das Raster durch die Brandung hindurch.
+		var gate := ((tx * 31 + ty * 17 + i * 7) % 5)
+		if gate == 0:
+			continue
 		var wave := sin(_time * 1.7 + world_i * 0.31) * 0.5 + 0.5
-		var h := 1.0 + roundf(wave * 2.0)
-		var col := Color(Palette.WATER_FOAM, 0.34 + wave * 0.34)
+		var h := 1.0 + roundf(wave * 1.4)
+		var col := Color(Palette.WATER_FOAM, 0.22 + wave * 0.26)
 		var ox := float(tx * T + i * FOAM_SEG)
 		var oy := float(ty * T + i * FOAM_SEG)
 		if mask & UP:

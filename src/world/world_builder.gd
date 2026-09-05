@@ -117,6 +117,20 @@ func _place_village() -> void:
 			_add("fence_h" if horizontal else "fence_v", _tile_center(cell.x, cell.y) + Vector2(0, T * 0.5))
 			_occupy(cell.x, cell.y)
 
+	for h: Dictionary in Layout.HEDGES:
+		var ha: Vector2i = h["from"]
+		var hb: Vector2i = h["to"]
+		var hstep := Vector2i(signi(hb.x - ha.x), signi(hb.y - ha.y))
+		var hsteps := maxi(absi(hb.x - ha.x), absi(hb.y - ha.y))
+		for s in hsteps + 1:
+			var cell := ha + hstep * s
+			var t := map.get_tile(cell.x, cell.y)
+			if map.is_water(cell.x, cell.y) or t == MapData.Tile.PATH or t == MapData.Tile.COBBLE:
+				continue
+			var wobble := Vector2(_rng.randf_range(-1.5, 1.5), _rng.randf_range(-1.0, 1.0))
+			_add("bush", _tile_center(cell.x, cell.y) + Vector2(0, T * 0.42) + wobble)
+			_occupy(cell.x, cell.y)
+
 	for d: Dictionary in Layout.DETAILS:
 		var p: Vector2i = d["pos"]
 		if map.is_water(p.x, p.y):
@@ -286,7 +300,12 @@ func variant_map() -> PackedByteArray:
 	_variants.resize(Config.MAP_W * Config.MAP_H)
 	for y in Config.MAP_H:
 		for x in Config.MAP_W:
-			var shade := clampi(int(_n01(_shade, x, y) * TileArt.SHADES), 0, TileArt.SHADES - 1)
+			# Die Stufengrenze wird pro Kachel verrauscht. Ohne das zeichnet sich
+			# die Höhenlinie des Rauschens als sichtbares Rechteckmuster ab.
+			var jitter := float((x * 73856093) ^ (y * 19349663)) 
+			jitter = fmod(absf(jitter), 1000.0) / 1000.0 - 0.5
+			var level := _n01(_shade, x, y) * TileArt.SHADES + jitter * 0.9
+			var shade := clampi(int(level), 0, TileArt.SHADES - 1)
 			_variants[y * Config.MAP_W + x] = shade * TileArt.VARIANTS + (x * 7 + y * 13) % TileArt.VARIANTS
 	return _variants
 
@@ -310,7 +329,7 @@ func _bake_decor(img: Image, rng: RandomNumberGenerator) -> void:
 			match t:
 				MapData.Tile.GRASS:
 					set = art.decor_grass
-					chance = 0.34
+					chance = 0.44
 				MapData.Tile.MEADOW:
 					set = art.decor_grass
 					chance = 0.88

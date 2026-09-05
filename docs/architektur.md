@@ -92,3 +92,50 @@ gezeichnet: rund 260 Rechtecke pro Bild.
 50 ms `TIME_PROCESS`. Der Absolutwert sagt dort nichts über das Spiel aus, deshalb misst der
 Selbsttest den *Aufschlag* der Spielwelt gegenüber dem Menü und die Zahl der gezeichneten
 Wasser-Rechtecke. Auf echter Hardware sind beide Werte unkritisch.
+
+---
+
+## Nachtrag: vom gebackenen Bild zum echten Kachelraster
+
+Der Boden war eine einzige gebackene Textur. Die Übergänge zwischen zwei Bodentypen entstanden
+aus geditherten Streifen an den vier Kachelseiten — ohne Eckkacheln. Küstenlinien und Wegränder
+liefen dadurch treppenförmig, und die Karte war weder inspizierbar noch von Hand nachzubearbeiten.
+
+**Jetzt neun `TileMapLayer`.** Gras füllt die Karte, darüber liegen Wiese, Waldboden, Fels, Sand,
+Wasser, Tiefwasser, Weg und Pflaster. Jede Schicht blendet sich per Eck-Autotiling in die
+darunterliegende ein. Weil Gras die Grundfüllung ist, muss von jeder weiteren Schicht nur die
+tatsächlich sichtbare Fläche gesetzt werden.
+
+**Die Übergangskacheln entstehen rechnerisch.** Für jede der 15 Eckmasken wird die Deckung durch
+bilineare Interpolation der vier Eckwerte bestimmt und mit einer geditherten Schwelle
+freigestellt — daraus ergeben sich runde Aussen- und Innenecken von selbst. Gebaute Flächen (Weg,
+Pflaster) verwenden stattdessen ganze Quadranten mit leicht aufgerauter Innenkante: ein
+gepflasterter Platz hat gerade Kanten, eine Wiese nicht. Für freistehende Kacheln gibt es eine
+eigene Form; ohne sie würde eine Kachel ohne gleichartige Nachbarn verschwinden.
+
+**Zur Engine-Frage.** Godots Terrain-System im Modus `TERRAIN_MODE_MATCH_CORNERS` wurde zuerst
+direkt verwendet. Ein Probelauf hat die Zuordnung Maske → Kachel Bit für Bit festgehalten: eine
+Ecke gilt als bedeckt, wenn alle vier dort zusammenstoßenden Kacheln zur Schicht gehören.
+`set_cells_terrain_connect()` über alle Zellen kostete allerdings **4119 ms**. Dieselbe Regel
+selbst gerechnet liefert dieselbe Ausgabe in **127 ms**, weil die Kachelsuche entfällt. Das
+`TileSet` deklariert die Terrains trotzdem vollständig mit Namen und Eck-Bits — die Karte lässt
+sich also im Godot-Editor mit dem Terrain-Pinsel weiterbearbeiten.
+
+**Wege sind achsparallel.** Zwischen zwei Wegpunkten wird erst entlang der längeren, dann entlang
+der kürzeren Achse gebaut. Das ergibt gerade Strecken, rechte Winkel und echte T-Kreuzungen. Die
+vorherigen Catmull-Rom-Kurven mäanderten und zerfielen beim Autotiling in Punkte: unterhalb von
+zwei Kacheln Breite hat eine Fläche keine vollständig bedeckte Ecke mehr.
+
+**Was beim Umbau kaputtging und wieder repariert wurde**
+- Wege zerfielen zu einzelnen Punkten (zu schmal für Eck-Autotiling)
+- Waldboden und Wiese verschwanden: die Regionen-Verwischung mit 42 % zerlegte sie in
+  Einzelkacheln. Sie war ein Notbehelf gegen harte Kachelkanten und steht jetzt auf 16 %
+- Die Helligkeitsstufen zeichneten die Höhenlinie des Rauschens als sichtbares Rechteck nach,
+  bis die Stufenwahl pro Kachel verrauscht wurde
+- Der Uferschaum zeichnete die Kachelkante nach, statt der neuen Wasserkante zu folgen
+
+**Zur Leistungsmessung.** Die Prüfung „Weltdarstellung unter 12 ms" bewertete einen Wert, der auf
+dem Software-Rasterizer der Testumgebung zwischen −10 ms und +20 ms schwankt — er misst dort die
+Füllrate, nicht das Spiel. Geprüft werden jetzt Ladezeit, Physikzeit, Wasserlast und die Zahl der
+Zeichenaufrufe (38, die Kachelschichten werden also gebündelt). Bricht das Batching, fällt es dort
+sofort auf. Der Prozesszeit-Wert wird nur noch berichtet.

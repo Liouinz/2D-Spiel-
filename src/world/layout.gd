@@ -56,6 +56,17 @@ const FENCES = [
 	{"from": Vector2i(57, 27), "to": Vector2i(61, 27)},
 ]
 
+## Heckenreihen. Sie trennen Grundstücke, ohne den Blick zu verstellen —
+## Zäune wirken an jeder Grenze schnell monoton.
+const HEDGES = [
+	{"from": Vector2i(36, 30), "to": Vector2i(36, 34)},
+	{"from": Vector2i(54, 28), "to": Vector2i(54, 32)},
+	{"from": Vector2i(44, 44), "to": Vector2i(49, 44)},
+	{"from": Vector2i(60, 39), "to": Vector2i(66, 39)},
+	{"from": Vector2i(34, 40), "to": Vector2i(34, 44)},
+	{"from": Vector2i(56, 26), "to": Vector2i(62, 26)},
+]
+
 ## Kleininventar des Dorfes. Reihenfolge egal, Position ist entscheidend.
 const DETAILS = [
 	# Am Brunnen: Bänke und Laternen
@@ -77,11 +88,11 @@ const DETAILS = [
 	{"pos": Vector2i(56, 31), "kind": "planter"},
 	{"pos": Vector2i(60, 31), "kind": "woodpile"},
 	# Werkstatt und Schmiede
-	{"pos": Vector2i(45, 38), "kind": "crate"},
-	{"pos": Vector2i(46, 39), "kind": "barrel"},
-	{"pos": Vector2i(40, 38), "kind": "log"},
-	{"pos": Vector2i(62, 36), "kind": "barrel"},
-	{"pos": Vector2i(57, 36), "kind": "crate"},
+	{"pos": Vector2i(44, 41), "kind": "crate"},
+	{"pos": Vector2i(45, 42), "kind": "barrel"},
+	{"pos": Vector2i(39, 42), "kind": "log"},
+	{"pos": Vector2i(62, 34), "kind": "barrel"},
+	{"pos": Vector2i(57, 34), "kind": "crate"},
 	# Bauernhof und Scheune
 	{"pos": Vector2i(35, 47), "kind": "woodpile"},
 	{"pos": Vector2i(40, 46), "kind": "planter"},

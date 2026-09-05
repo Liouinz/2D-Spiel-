@@ -37,11 +37,22 @@ Jungbaum, große und kleine Fichte) plus Büsche, Farne, Baumstümpfe und Tothol
 folgt Dichtefeldern statt gleichmäßigem Würfeln: es gibt Gruppen, dichte Bestände, Lichtungen und
 ausgedünnte Waldränder.
 
+**Boden** — Ein echtes Kachelraster aus neun `TileMapLayer`. Gras füllt die Karte, darüber liegen
+Wiese, Waldboden, Fels, Sand, Wasser, Tiefwasser, Weg und Pflaster. Die Schichten blenden sich per
+Terrain-Autotiling ineinander: Übergangskacheln entstehen aus bilinearer Eckinterpolation mit
+gedithertem Schwellwert, gebaute Flächen wie Weg und Pflaster bekommen stattdessen eckige
+Quadranten. Das `TileSet` wird prozedural erzeugt, hat benannte Terrains mit Eck-Bits und lässt
+sich im Godot-Editor mit dem Terrain-Pinsel weitermalen. Im Spiel ist vom Raster nichts zu sehen.
+
+**Wege** — Achsparallel gebaut: zwischen zwei Wegpunkten erst die längere, dann die kürzere Achse.
+Daraus entstehen gerade Strecken, rechte Winkel und echte T-Kreuzungen. Zwei Hauptachsen kreuzen
+sich auf dem Dorfplatz, davon zweigen Ausfallstraßen und Stichwege zu den Höfen ab.
+
 **Grafik** — Alle Texturen entstehen zur Laufzeit aus **einer** Farbpalette. Jede Fläche wird über
 eine Farbrampe schattiert, deren Licht bei allen Objekten aus derselben Richtung kommt (oben
 links); zwischen den Stufen wird gedithert. Bodenkacheln gibt es in vier Varianten mal drei
-großflächigen Helligkeitsstufen, dazu weiche Übergänge, Streudekoration, Gras das über den Wegrand
-wächst, und eingebackene Schatten. Das Wasser glitzert, der Uferschaum bewegt sich.
+großflächigen Helligkeitsstufen, dazu Streudekoration, Hecken als Grundstücksgrenzen und
+eingebackene Schatten. Das Wasser glitzert, der Uferschaum bewegt sich.
 
 **Spieler** — Eigene Figur mit Idle- und Laufanimation in drei Blickrichtungen (die vierte wird
 gespiegelt), Beschleunigung und Reibung, Schrittgeräusche.
@@ -51,7 +62,10 @@ gespiegelt), Beschleunigung und Reibung, Schrittgeräusche.
 **Kamera** — Folgt weich, bleibt innerhalb der Weltgrenzen.
 
 **Kollision** — Bäume, Felsen, Häuser, Zäune und Wasser blockieren; Wege, Wiesen und Strand sind
-begehbar. Die Kollisionsflächen des Wassers werden zu wenigen großen Rechtecken zusammengefasst.
+begehbar. Jedes Objekt kollidiert nur mit seinem Fußabdruck am Boden, nicht mit der ganzen
+Bildfläche — man läuft also hinter einer Baumkrone und einem Hausdach vorbei, aber nicht durch
+Stamm oder Wand. Die Wasserflächen werden per Greedy-Zerlegung zu wenigen grossen Rechtecken
+zusammengefasst.
 
 **UI** — Hauptmenü, Pause-Menü und Optionen (Musik, Effekte, Vollbild, Hinweise) mit erzeugten
 Pixel-Art-Rahmen: Holzknöpfe mit Fase und Nieten, gerahmte Tafeln. Das Titelbild hat gestaffelte
@@ -75,12 +89,14 @@ src/core/settings.gd       Autoload: Einstellungen, persistent
 src/core/main.gd           Zustandsautomat MENÜ / SPIEL / PAUSE / OPTIONEN
 
 src/gfx/pixel.gd           Zeichen-Werkzeuge auf Images (Rechteck, Ellipse, Outline, Farbrampe)
-src/gfx/tile_art.gd        Bodenkacheln, Helligkeitsstufen, Übergangskanten, Streudekoration
+src/gfx/tile_art.gd        Bodenkacheln, Helligkeitsstufen, Streudekoration
+src/gfx/terrain_atlas.gd   Übergangskacheln für das Eck-Autotiling
 src/gfx/prop_art.gd        Bäume, Felsen, Gebäude, Dorfinventar — alles mit Varianten
 src/gfx/actor_art.gd       Spielerfigur (Idle + Laufzyklus, 3 Richtungen)
 
-src/world/layout.gd        Von Hand gesetzte Weltstruktur (Dorf, Wege, Zäune)
-src/world/map_data.gd      Kartendaten: Bodentypen, Inselform, Begehbarkeit
+src/world/layout.gd        Von Hand gesetzte Weltstruktur (Dorf, Wege, Zäune, Hecken)
+src/world/map_data.gd      Kartendaten: Bodentypen, Inselform, Wegenetz, Begehbarkeit
+src/world/ground_tileset.gd TileSet mit benannten Terrains, bemalt die Kachelschichten
 src/world/world_builder.gd Boden backen, Requisiten verteilen, Kollision bauen
 src/world/water_fx.gd      Glitzern und Uferschaum (nur im Sichtbereich)
 src/world/world.gd         Setzt die Spielwelt zusammen
@@ -113,7 +129,8 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 35 Prüfungen). Mit einer echten Anzeige
+Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 35 Prüfungen; Weltaufbau ~790 ms,
+616 Objekte, 572 Kollisionsformen, 38 Zeichenaufrufe). Mit einer echten Anzeige
 lassen sich zusätzlich Screenshots und ein Kontaktbogen aller erzeugten Grafiken ablegen:
 
 ```bash
