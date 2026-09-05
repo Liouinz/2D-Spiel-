@@ -131,6 +131,9 @@ func _set_state(next: State) -> void:
 	get_tree().paused = next != State.PLAYING
 	if is_instance_valid(_world):
 		_world.visible = next != State.MENU
+		# Die HUD liegt auf einer CanvasLayer und erbt die Sichtbarkeit nicht.
+		if is_instance_valid(_world.hud):
+			_world.hud.visible = next == State.PLAYING
 	if in_menu:
 		_main_menu.focus_first()
 	elif next == State.PAUSED:

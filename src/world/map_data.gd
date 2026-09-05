@@ -124,23 +124,49 @@ func _land_region(x: int, y: int, region: FastNoiseLite) -> int:
 		return Tile.MEADOW
 	return Tile.GRASS
 
+## Wege verlaufen als weiche Catmull-Rom-Kurve durch ihre Wegpunkte, mit einer
+## Breite, die unterwegs schwankt — so entsteht ein getretener Erdweg statt
+## eines geometrischen Bandes.
 func _carve_roads() -> void:
+	var width := FastNoiseLite.new()
+	width.seed = 20260905
+	width.frequency = 0.09
 	for chain: Array in Layout.ROADS:
-		for i in chain.size() - 1:
-			_road_segment(chain[i], chain[i + 1])
+		_carve_curve(chain, width)
 
-func _road_segment(a: Vector2i, b: Vector2i) -> void:
-	var steps := maxi(absi(b.x - a.x), absi(b.y - a.y)) * 2
-	for s in steps + 1:
-		var t := float(s) / float(maxi(steps, 1))
-		var p := Vector2(a).lerp(Vector2(b), t)
-		var px := int(round(p.x))
-		var py := int(round(p.y))
-		_path_tile(px, py)
-		# ausgefranste Ränder statt eines Bandes gleicher Breite
-		for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-			if ((px * 7 + py * 13 + o.x * 5 + o.y * 11) % 5) != 0:
-				_path_tile(px + o.x, py + o.y)
+func _carve_curve(points: Array, width: FastNoiseLite) -> void:
+	if points.size() < 2:
+		return
+	# Enden verdoppeln, damit die Kurve auch am Anfang und Ende definiert ist
+	var pts: Array[Vector2] = [Vector2(points[0])]
+	for p: Vector2i in points:
+		pts.append(Vector2(p))
+	pts.append(Vector2(points[points.size() - 1]))
+
+	for i in range(1, pts.size() - 2):
+		var steps := int(pts[i].distance_to(pts[i + 1]) * 3.0) + 4
+		for s in steps + 1:
+			var t := float(s) / float(steps)
+			var p := _catmull(pts[i - 1], pts[i], pts[i + 1], pts[i + 2], t)
+			var r := 0.72 + width.get_noise_2d(p.x * 2.5, p.y * 2.5) * 0.30
+			_stamp_road(p, r)
+
+func _catmull(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, t: float) -> Vector2:
+	var t2 := t * t
+	var t3 := t2 * t
+	return 0.5 * ((2.0 * p1) + (-p0 + p2) * t
+		+ (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+		+ (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
+
+func _stamp_road(p: Vector2, r: float) -> void:
+	var x0 := int(floor(p.x - r))
+	var x1 := int(ceil(p.x + r))
+	var y0 := int(floor(p.y - r))
+	var y1 := int(ceil(p.y + r))
+	for y in range(y0, y1 + 1):
+		for x in range(x0, x1 + 1):
+			if Vector2(x, y).distance_to(p) <= r:
+				_path_tile(x, y)
 
 func _path_tile(x: int, y: int) -> void:
 	if not in_bounds(x, y) or is_water(x, y) or get_tile(x, y) == Tile.SAND:

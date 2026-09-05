@@ -42,12 +42,23 @@ func _frames(n: int) -> void:
 
 func _run() -> void:
 	print("=== SELBSTTEST ===")
+	if _shot_dir != "":
+		var sheet: Array[String] = preload("res://src/dev/asset_sheet.gd").dump(_shot_dir, Config.WORLD_SEED)
+		print("Requisiten: ", ", ".join(sheet))
 	await get_tree().process_frame
 
 	# --- Hauptmenü ---
 	_check(main.state == main.State.MENU, "Start im Hauptmenü")
 	await _frames(3)
 	await _shot("01_hauptmenue")
+	# Grundlast ohne Welt — dient als Vergleichswert für die Messung unten
+	await _frames(20)
+	var base := 0.0
+	for i in 30:
+		await get_tree().physics_frame
+		base += Performance.get_monitor(Performance.TIME_PROCESS)
+	var ms_menu := base / 30.0 * 1000.0
+	print("Grundlast im Menü: process %.2f ms" % ms_menu)
 
 	# --- Spiel starten ---
 	main.start_game()
@@ -132,6 +143,36 @@ func _run() -> void:
 	_check(beach != Vector2i(-1, -1), "Strand mit Wasser vorhanden")
 
 	_check(world.build_msec < 5000, "Welt lädt zügig (%d ms)" % world.build_msec)
+
+	# --- Leistung: schlimmster Fall ist die Bucht mit viel Wasser ---
+	if beach != Vector2i(-1, -1):
+		player.position = Vector2(beach.x * Config.TILE, beach.y * Config.TILE)
+		cam.snap_to_target()
+	await _frames(30)                      # aufwärmen
+	var t_process := 0.0
+	var t_physics := 0.0
+	var draws := 0.0
+	var runs := 60
+	Input.action_press("move_right")
+	for i in runs:
+		await get_tree().physics_frame
+		t_process += Performance.get_monitor(Performance.TIME_PROCESS)
+		t_physics += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
+		draws += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+	Input.action_release("move_right")
+	var ms_process := t_process / runs * 1000.0
+	var ms_physics := t_physics / runs * 1000.0
+	print("Leistung: process %.2f ms, physics %.2f ms, Draw-Calls %d, Objekte %d" % [
+		ms_process, ms_physics, int(draws / runs), world.get_node("Sorted").get_child_count()])
+	# Gemessen wird hier auf einem Software-Renderer (Xvfb/llvmpipe); daher zählt
+	# der Aufschlag gegenüber der Grundlast, nicht der Absolutwert.
+	var overhead := ms_process - ms_menu
+	print("Aufschlag der Spielwelt gegenüber dem Menü: %.2f ms" % overhead)
+	var water: WaterFx = world.get_node("WaterFx")
+	print("Wasser-Effekt: %d Rechtecke im letzten Bild" % water.prims)
+	_check(water.prims < 900, "Wasser zeichnet sparsam (%d Rechtecke)" % water.prims)
+	_check(overhead < 12.0, "Weltdarstellung kostet unter 12 ms Skriptzeit (%.2f)" % overhead)
+	_check(ms_physics < 8.0, "Physikzeit pro Bild unter 8 ms (%.2f)" % ms_physics)
 
 	# --- Audio ---
 	_check(Audio._sfx.size() >= 5, "Effektklänge erzeugt (%d)" % Audio._sfx.size())

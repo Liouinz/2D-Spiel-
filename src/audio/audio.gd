@@ -50,10 +50,6 @@ func play_music(track: String) -> void:
 	_music_track = track
 	_start_music()
 
-func stop_music() -> void:
-	_music_track = ""
-	_music_player.stop()
-
 func _start_music() -> void:
 	if _music_track == "" or Settings.music_volume <= 0.001:
 		_music_player.stop()

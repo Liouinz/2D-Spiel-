@@ -31,6 +31,32 @@ const STONE_DARK := Color8(80, 84, 96)
 const STONE := Color8(114, 118, 132)
 const STONE_LIGHT := Color8(152, 156, 170)
 
+# Dachvarianten
+const SLATE_DEEP := Color8(48, 52, 68)
+const SLATE_DARK := Color8(66, 72, 92)
+const SLATE := Color8(88, 96, 118)
+const SLATE_LIGHT := Color8(116, 124, 148)
+
+const THATCH_DEEP := Color8(120, 96, 48)
+const THATCH_DARK := Color8(158, 128, 64)
+const THATCH := Color8(190, 158, 86)
+const THATCH_LIGHT := Color8(216, 188, 120)
+
+const ROOF_DEEP := Color8(96, 46, 44)
+
+# Wandvarianten
+const PLASTER_WARM := Color8(228, 214, 186)
+const PLASTER_WARM_SHADE := Color8(198, 182, 154)
+const PLASTER_COOL := Color8(212, 212, 204)
+const PLASTER_COOL_SHADE := Color8(180, 182, 176)
+const PLANK := Color8(150, 110, 70)
+const PLANK_SHADE := Color8(120, 84, 52)
+const MASONRY := Color8(146, 140, 128)
+const MASONRY_SHADE := Color8(114, 110, 100)
+
+const GLASS_DARK := Color8(84, 128, 158)
+const GLASS_HI := Color8(206, 232, 244)
+
 # Holz / Gebäude
 const WOOD_DARK := Color8(92, 62, 44)
 const WOOD := Color8(132, 92, 60)
@@ -39,15 +65,34 @@ const ROOF_DARK := Color8(124, 62, 58)
 const ROOF := Color8(166, 84, 74)
 const ROOF_LIGHT := Color8(198, 116, 100)
 const WALL := Color8(226, 214, 190)
-const WALL_SHADE := Color8(196, 182, 158)
 
-# Laub
+# Laub — vier Stufen je Baumart, damit die Kronen echtes Licht bekommen
+const LEAF_DEEP := Color8(28, 66, 44)
 const LEAF_DARK := Color8(38, 84, 52)
 const LEAF := Color8(56, 116, 62)
 const LEAF_LIGHT := Color8(86, 152, 78)
+const LEAF_HI := Color8(124, 186, 96)
+
+const PINE_DEEP := Color8(22, 54, 46)
 const PINE_DARK := Color8(30, 70, 58)
 const PINE := Color8(44, 96, 72)
 const PINE_LIGHT := Color8(68, 128, 92)
+const PINE_HI := Color8(98, 158, 112)
+
+# Herbstlicher Laubbaum als Abwechslung im Wald
+const AUTUMN_DEEP := Color8(94, 62, 30)
+const AUTUMN_DARK := Color8(134, 88, 38)
+const AUTUMN := Color8(168, 118, 48)
+const AUTUMN_LIGHT := Color8(198, 152, 70)
+const AUTUMN_HI := Color8(224, 186, 104)
+
+# Rinde
+const BARK_DEEP := Color8(56, 38, 28)
+const BARK_DARK := Color8(82, 56, 40)
+const BARK := Color8(112, 80, 54)
+const BARK_LIGHT := Color8(146, 110, 74)
+const BIRCH := Color8(198, 192, 176)
+const BIRCH_SHADE := Color8(154, 148, 134)
 
 # Blumen & Details
 const FLOWER_RED := Color8(206, 84, 78)

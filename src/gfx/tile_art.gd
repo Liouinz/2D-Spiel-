@@ -4,6 +4,7 @@ extends RefCounted
 
 const T := Config.TILE
 const VARIANTS := 4
+const SHADES := 3   ## großflächige Helligkeitsstufen gegen einfarbige Wiesen
 const EDGE_DEPTH := 5
 
 ## Wer über wen läuft: Sand legt sich auf Gras, Weg auf Gras, Gras über Wasser.
@@ -37,6 +38,7 @@ var decor_forest: Array[Image] = []
 var decor_sand: Array[Image] = []
 var decor_path: Array[Image] = []
 var decor_water: Array[Image] = []
+var decor_edge: Array[Image] = []   ## Gras, das an Wegrändern hereinwächst
 
 static func build(seed_value: int) -> TileArt:
 	var a := TileArt.new()
@@ -51,9 +53,24 @@ func _build_bases(rng: RandomNumberGenerator) -> void:
 	base.resize(MapData.Tile.COUNT)
 	for t in MapData.Tile.COUNT:
 		var list: Array[Image] = []
-		for v in VARIANTS:
-			list.append(_make_tile(t, rng))
+		# Reihenfolge: [stufe * VARIANTS + variante]
+		for shade in SHADES:
+			for v in VARIANTS:
+				var img := _make_tile(t, rng)
+				_shift(img, (shade - 1) * -0.055)
+				list.append(img)
 		base[t] = list
+
+## Hebt oder senkt die Helligkeit einer fertigen Kachel.
+func _shift(img: Image, amount: float) -> void:
+	if is_zero_approx(amount):
+		return
+	for y in img.get_height():
+		for x in img.get_width():
+			var c := img.get_pixel(x, y)
+			if c.a <= 0.0:
+				continue
+			img.set_pixel(x, y, c.lightened(amount) if amount > 0.0 else c.darkened(-amount))
 
 func _make_tile(t: int, rng: RandomNumberGenerator) -> Image:
 	match t:
@@ -197,10 +214,16 @@ func _build_decor(rng: RandomNumberGenerator) -> void:
 	decor_grass = [
 		_flower(Palette.FLOWER_RED), _flower(Palette.FLOWER_YELLOW),
 		_flower(Palette.FLOWER_WHITE), _flower(Palette.FLOWER_BLUE),
-		_tuft(Palette.GRASS_HI), _tuft(Palette.GRASS_LIGHT), _pebble(),
+		_flower_clump(Palette.FLOWER_WHITE), _flower_clump(Palette.FLOWER_YELLOW),
+		_tuft(Palette.GRASS_HI), _tuft(Palette.GRASS_LIGHT), _tuft(Palette.GRASS_HI),
+		_clover(), _pebble(),
 	]
-	decor_forest = [_mushroom(), _twig(), _twig(), _tuft(Palette.GRASS), _tuft(Palette.GRASS_DARK), _pebble()]
-	decor_sand = [_pebble(), _shell(), _twig()]
+	decor_edge = [_tuft(Palette.GRASS_LIGHT), _tuft(Palette.GRASS), _clover()]
+	decor_forest = [
+		_mushroom(), _mushroom_pair(), _twig(), _twig(), _leaf_litter(),
+		_tuft(Palette.GRASS), _tuft(Palette.GRASS_DARK), _pebble(),
+	]
+	decor_sand = [_pebble(), _shell(), _shell(), _twig(), _driftwood()]
 	decor_path = [_pebble(), _pebble()]
 	decor_water = [_lily()]
 
@@ -213,6 +236,40 @@ func _flower(c: Color) -> Image:
 	Pixel.px(img, 1, 1, Color(c.r * 1.25, c.g * 1.25, c.b * 1.05, 1.0))
 	return img
 
+## Mehrere Blüten dicht beieinander — wirkt natürlicher als Einzelblumen.
+func _flower_clump(c: Color) -> Image:
+	var img := Pixel.make(7, 6)
+	for p: Vector2i in [Vector2i(1, 2), Vector2i(4, 1), Vector2i(3, 4)]:
+		Pixel.vline(img, p.x, p.y + 1, 2, Palette.GRASS_DARK)
+		Pixel.px(img, p.x, p.y, c)
+		Pixel.px(img, p.x - 1, p.y + 1, c)
+		Pixel.px(img, p.x + 1, p.y + 1, c)
+	return img
+
+func _clover() -> Image:
+	var img := Pixel.make(5, 4)
+	Pixel.px(img, 1, 1, Palette.GRASS_HI)
+	Pixel.px(img, 3, 1, Palette.GRASS_HI)
+	Pixel.px(img, 2, 2, Palette.GRASS_LIGHT)
+	Pixel.px(img, 2, 3, Palette.GRASS_DARK)
+	return img
+
+func _mushroom_pair() -> Image:
+	var img := Pixel.make(8, 5)
+	for o: int in [0, 4]:
+		Pixel.rect(img, o + 1, 3, 2, 2, Palette.WALL)
+		Pixel.rect(img, o, 2, 4, 1, Palette.FLOWER_RED)
+		Pixel.rect(img, o + 1, 1, 2, 1, Palette.FLOWER_RED)
+		Pixel.px(img, o + 1, 2, Palette.FLOWER_WHITE)
+	return img
+
+func _leaf_litter() -> Image:
+	var img := Pixel.make(7, 5)
+	for p: Vector2i in [Vector2i(0, 1), Vector2i(3, 0), Vector2i(2, 3), Vector2i(5, 2)]:
+		Pixel.rect(img, p.x, p.y, 2, 1, Palette.AUTUMN_DARK)
+		Pixel.px(img, p.x, p.y + 1, Palette.AUTUMN_DEEP)
+	return img
+
 func _tuft(c: Color) -> Image:
 	var img := Pixel.make(5, 4)
 	Pixel.vline(img, 0, 2, 2, c)
@@ -220,6 +277,14 @@ func _tuft(c: Color) -> Image:
 	Pixel.vline(img, 4, 2, 2, c)
 	Pixel.px(img, 1, 3, Palette.GRASS_DARK)
 	Pixel.px(img, 3, 3, Palette.GRASS_DARK)
+	return img
+
+func _driftwood() -> Image:
+	var img := Pixel.make(9, 4)
+	Pixel.rect(img, 0, 1, 8, 2, Palette.BARK_LIGHT)
+	Pixel.rect(img, 0, 1, 8, 1, Palette.SAND_LIGHT)
+	Pixel.px(img, 3, 0, Palette.BARK_DARK)
+	Pixel.px(img, 6, 3, Palette.BARK_DARK)
 	return img
 
 func _pebble() -> Image:

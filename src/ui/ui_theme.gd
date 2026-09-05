@@ -19,23 +19,27 @@ static func _box(bg: Color, border: Color, width: int = 2, radius: int = 3) -> S
 	s.content_margin_bottom = 10
 	return s
 
-static func panel_box() -> StyleBoxFlat:
-	var s := _box(Palette.UI_BG, Palette.UI_BORDER, 3, 4)
-	s.content_margin_left = 32
-	s.content_margin_right = 32
-	s.content_margin_top = 26
-	s.content_margin_bottom = 26
-	s.shadow_color = Color(0, 0, 0, 0.35)
-	s.shadow_size = 8
+## Baut aus einer erzeugten Textur einen 9-teiligen Rahmen, der beim Skalieren
+## seine Pixelgröße behält.
+static func _frame(tex: Texture2D, pad_x: int, pad_y: int) -> StyleBoxTexture:
+	var s := StyleBoxTexture.new()
+	s.texture = tex
+	s.set_texture_margin_all(MenuArt.MARGIN)
+	s.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_TILE
+	s.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_TILE
+	s.content_margin_left = pad_x
+	s.content_margin_right = pad_x
+	s.content_margin_top = pad_y
+	s.content_margin_bottom = pad_y
 	return s
 
 static func build() -> Theme:
 	var t := Theme.new()
 	t.default_font_size = FONT_LABEL
 
-	var normal := _box(Color8(52, 44, 38, 230), Palette.UI_BORDER)
-	var hover := _box(Color8(78, 62, 44, 240), Palette.UI_BORDER_HI)
-	var pressed := _box(Color8(38, 32, 28, 245), Palette.UI_BORDER_HI)
+	var normal := _frame(MenuArt.button_frame(0), 24, 12)
+	var hover := _frame(MenuArt.button_frame(1), 24, 12)
+	var pressed := _frame(MenuArt.button_frame(2), 24, 12)
 	var focus := _box(Color(0, 0, 0, 0), Palette.UI_ACCENT)
 
 	t.set_stylebox("normal", "Button", normal)
@@ -52,7 +56,7 @@ static func build() -> Theme:
 	t.set_color("font_color", "Label", Palette.UI_TEXT)
 	t.set_font_size("font_size", "Label", FONT_LABEL)
 
-	t.set_stylebox("panel", "PanelContainer", panel_box())
+	t.set_stylebox("panel", "PanelContainer", _frame(MenuArt.panel_frame(), 34, 28))
 
 	var slider_bg := StyleBoxFlat.new()
 	slider_bg.bg_color = Color8(28, 26, 24, 220)
@@ -71,6 +75,9 @@ static func build() -> Theme:
 	var flat := StyleBoxEmpty.new()
 	for state: String in ["normal", "hover", "pressed", "disabled", "focus", "hover_pressed"]:
 		t.set_stylebox(state, "CheckBox", flat)
+	t.set_color("icon_normal_color", "CheckBox", Palette.UI_TEXT)
+	t.set_color("icon_hover_color", "CheckBox", Palette.UI_ACCENT)
+	t.set_color("icon_pressed_color", "CheckBox", Palette.UI_ACCENT)
 	t.set_color("font_color", "CheckBox", Palette.UI_TEXT)
 	t.set_color("font_hover_color", "CheckBox", Palette.UI_ACCENT)
 	t.set_font_size("font_size", "CheckBox", FONT_LABEL)
@@ -91,8 +98,21 @@ static func text_label(text: String, size: int = FONT_SMALL, color: Color = Pale
 	l.text = text
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", color)
+	l.add_theme_constant_override("outline_size", 4)
+	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.55))
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	return l
+
+## Schmale Zierleiste unter der Überschrift.
+static func rule() -> Control:
+	var c := CenterContainer.new()
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var line := ColorRect.new()
+	line.color = Palette.UI_ACCENT
+	line.custom_minimum_size = Vector2(260, 2)
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	c.add_child(line)
+	return c
 
 static func button(text: String) -> Button:
 	var b := Button.new()

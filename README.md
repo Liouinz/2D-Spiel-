@@ -22,26 +22,41 @@ Du läufst als Wanderer durch eine überschaubare Insel: Dorf, Wiese, Wald, Fels
 
 ## Was drin ist
 
-**Welt** — Eine Insel aus 96 × 72 Kacheln mit klar erkennbaren Gebieten: gepflasterter Dorfplatz
-mit Brunnen und fünf Häusern, dichter Nadel- und Laubwald im Nordwesten, blühende Wiese im
-Nordosten, Felsland im Osten und eine Bucht mit Sandstrand im Südwesten. Trampelpfade verbinden
-alles miteinander.
+**Welt** — Eine Insel aus 96 × 72 Kacheln mit klar erkennbaren Gebieten: ein Dorf mit
+gepflastertem Platz, Brunnen und elf Gebäuden, dichter Misch­wald im Nordwesten, blühende Wiese im
+Nordosten, Felsland im Osten und eine Bucht mit Sandstrand im Südwesten. Getretene Erdwege
+verbinden alles miteinander.
 
-**Grafik** — Alle Texturen entstehen zur Laufzeit aus **einer** Farbpalette: Bodenkacheln in vier
-Varianten, weiche Übergänge zwischen den Bodentypen, gestreute Blumen, Pilze, Steine und Zweige,
-Bäume, Felsen, Häuser, Zäune, Fässer, Brunnen, Schilf — dazu eingebackene Schatten. Das Wasser
-glitzert und der Uferschaum bewegt sich.
+**Dorf** — Acht Gebäudetypen (Gasthaus, Schmiede, Werkstatt, Bauernhaus, Scheune, Wohnhäuser,
+Schuppen) in insgesamt 17 Varianten: Fachwerk, Putz, Bretterwand oder Bruchstein, dazu Ziegel-,
+Schiefer- oder Reetdächer, Schornsteine, Markisen, Wirtshausschild. Dazwischen Brunnen, Bänke,
+Laternen, Holzstapel, Blumenkästen, Fässer, Kisten, Zäune und Vorgärten.
+
+**Wald** — Neun Baumarten in 26 Varianten (Eiche, dunkle Eiche, Herbsteiche, Birke, alter Baum,
+Jungbaum, große und kleine Fichte) plus Büsche, Farne, Baumstümpfe und Totholz. Die Verteilung
+folgt Dichtefeldern statt gleichmäßigem Würfeln: es gibt Gruppen, dichte Bestände, Lichtungen und
+ausgedünnte Waldränder.
+
+**Grafik** — Alle Texturen entstehen zur Laufzeit aus **einer** Farbpalette. Jede Fläche wird über
+eine Farbrampe schattiert, deren Licht bei allen Objekten aus derselben Richtung kommt (oben
+links); zwischen den Stufen wird gedithert. Bodenkacheln gibt es in vier Varianten mal drei
+großflächigen Helligkeitsstufen, dazu weiche Übergänge, Streudekoration, Gras das über den Wegrand
+wächst, und eingebackene Schatten. Das Wasser glitzert, der Uferschaum bewegt sich.
 
 **Spieler** — Eigene Figur mit Idle- und Laufanimation in drei Blickrichtungen (die vierte wird
 gespiegelt), Beschleunigung und Reibung, Schrittgeräusche.
+
+![Wald und Dorfrand](docs/bilder/wald.png)
 
 **Kamera** — Folgt weich, bleibt innerhalb der Weltgrenzen.
 
 **Kollision** — Bäume, Felsen, Häuser, Zäune und Wasser blockieren; Wege, Wiesen und Strand sind
 begehbar. Die Kollisionsflächen des Wassers werden zu wenigen großen Rechtecken zusammengefasst.
 
-**UI** — Hauptmenü, Pause-Menü und Optionen (Musik, Effekte, Vollbild, Hinweise) in einem
-gemeinsamen Theme; Einstellungen werden gespeichert.
+**UI** — Hauptmenü, Pause-Menü und Optionen (Musik, Effekte, Vollbild, Hinweise) mit erzeugten
+Pixel-Art-Rahmen: Holzknöpfe mit Fase und Nieten, gerahmte Tafeln. Das Titelbild hat gestaffelte
+Hügel mit Dunstschleiern, ziehende Wolken und einen Vordergrund aus Halmen. Einstellungen werden
+gespeichert.
 
 **Audio** — Menü- und Weltmusik sowie alle Effekte werden rechnerisch erzeugt. Es gibt keine
 Audiodateien im Projekt.
@@ -59,9 +74,9 @@ src/core/palette.gd        Die eine Farbpalette für alle Grafiken
 src/core/settings.gd       Autoload: Einstellungen, persistent
 src/core/main.gd           Zustandsautomat MENÜ / SPIEL / PAUSE / OPTIONEN
 
-src/gfx/pixel.gd           Zeichen-Werkzeuge auf Images (Rechteck, Ellipse, Outline, Dither)
-src/gfx/tile_art.gd        Bodenkacheln, Übergangskanten, Streudekoration
-src/gfx/prop_art.gd        Bäume, Felsen, Häuser, Zäune, Kleinkram
+src/gfx/pixel.gd           Zeichen-Werkzeuge auf Images (Rechteck, Ellipse, Outline, Farbrampe)
+src/gfx/tile_art.gd        Bodenkacheln, Helligkeitsstufen, Übergangskanten, Streudekoration
+src/gfx/prop_art.gd        Bäume, Felsen, Gebäude, Dorfinventar — alles mit Varianten
 src/gfx/actor_art.gd       Spielerfigur (Idle + Laufzyklus, 3 Richtungen)
 
 src/world/layout.gd        Von Hand gesetzte Weltstruktur (Dorf, Wege, Zäune)
@@ -79,9 +94,11 @@ src/ui/main_menu.gd        Startmenü
 src/ui/pause_menu.gd       Pause-Menü
 src/ui/options_menu.gd     Optionen
 src/ui/hud.gd              Steuerungshinweis beim Start
+src/ui/cloud_layer.gd      Ziehende Wolken im Hauptmenü
 
 src/audio/audio.gd         Autoload: prozedurale Musik und Effekte
 src/dev/self_test.gd       Automatischer Selbsttest
+src/dev/asset_sheet.gd     Kontaktbogen aller Grafiken zur Sichtprüfung
 
 prototype_godsim/          Früherer God-Sim-Prototyp, unverändert archiviert
 ```
@@ -96,12 +113,14 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist. Mit einer echten Anzeige lassen sich zusätzlich
-Screenshots ablegen:
+Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 35 Prüfungen). Mit einer echten Anzeige
+lassen sich zusätzlich Screenshots und ein Kontaktbogen aller erzeugten Grafiken ablegen:
 
 ```bash
 godot --path . -- --selftest --shots=/tmp/shots
 ```
+
+![Alle Requisiten](docs/bilder/requisiten.png)
 
 ## Nächste Schritte
 

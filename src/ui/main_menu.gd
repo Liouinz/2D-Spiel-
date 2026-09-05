@@ -21,8 +21,10 @@ func _ready() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 
+	add_child(preload("res://src/ui/cloud_layer.gd").new())
+
 	var shade := ColorRect.new()
-	shade.color = Color(0.06, 0.07, 0.10, 0.35)
+	shade.color = Color(0.06, 0.07, 0.10, 0.30)
 	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shade)
@@ -35,8 +37,9 @@ func _ready() -> void:
 	add_child(box)
 
 	box.add_child(UiTheme.title("TALHAIN"))
+	box.add_child(UiTheme.rule())
 	box.add_child(UiTheme.text_label("Ein kleines Abenteuer in Wiese, Wald und Dorf", 18))
-	box.add_child(_spacer(28))
+	box.add_child(_spacer(30))
 
 	var col_center := CenterContainer.new()
 	col_center.mouse_filter = Control.MOUSE_FILTER_IGNORE

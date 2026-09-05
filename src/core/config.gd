@@ -12,7 +12,6 @@ const PLAYER_RUN_SPEED := 108.0       ## Rennen (px/s)
 const PLAYER_ACCEL := 900.0
 const PLAYER_FRICTION := 1100.0
 const PLAYER_HITBOX := Vector2(9, 6)  ## Fußkollision (halbe Größe), fühlt sich natürlich an
-const PLAYER_SPRITE := Vector2i(16, 24)
 
 const CAMERA_ZOOM := 3.0
 const CAMERA_SMOOTH := 6.0            ## Interpolationsgeschwindigkeit der Kamera

@@ -6,6 +6,7 @@ extends Node2D
 var map: MapData
 var player: Player
 var camera: GameCamera
+var hud: CanvasLayer
 
 const HudScene := preload("res://src/ui/hud.gd")
 
@@ -28,8 +29,8 @@ func _ready() -> void:
 
 	var water := WaterFx.new()
 	water.name = "WaterFx"
-	water.map = map
 	water.z_index = -10
+	water.setup(map)
 	add_child(water)
 
 	var body := StaticBody2D.new()
@@ -49,7 +50,7 @@ func _ready() -> void:
 	add_child(_sorted)
 
 	for p: Dictionary in builder.placed:
-		var e: Dictionary = builder.props[p["name"]]
+		var e: Dictionary = PropArt.variant(builder.props, p["name"], p["variant"])
 		var s := Sprite2D.new()
 		s.texture = e["tex"]
 		s.centered = false
@@ -72,7 +73,8 @@ func _ready() -> void:
 	camera.snap_to_target()
 	water.camera = camera
 
-	add_child(HudScene.new())
+	hud = HudScene.new()
+	add_child(hud)
 	build_msec = Time.get_ticks_msec() - started
 	print("Welt aufgebaut in %d ms (%d Objekte, %d Kollisionsformen)" % [
 		build_msec, builder.placed.size(), builder.collision_rects.size()])

@@ -51,3 +51,44 @@ bevor sie einmal wirklich gelaufen ist.
 NPCs, Dialoge, Quests, Inventar, Speichern/Laden, Tag-/Nacht-Zyklus, Gegner, Kämpfe,
 Mehrspieler und Mobile-Steuerung. Erst wenn die Basis stabil steht, lohnen sich diese
 Systeme — und dann jedes einzeln.
+
+---
+
+## Nachtrag: die grafische Überarbeitung
+
+**Jede Requisite hat Varianten.** `PropArt.build()` liefert je Art eine Liste von Varianten
+(`{tex, size, foot, shadow}`); der `WorldBuilder` würfelt beim Platzieren eine davon aus und
+merkt sich den Index. Dadurch sieht kein Baum aus wie sein Nachbar, ohne dass mehr Texturen
+im Speicher liegen als nötig — 26 Baum- und 17 Gebäudevarianten kosten zusammen wenige
+hundert Kilobyte.
+
+**Eine Lichtrichtung für alles.** `Pixel.shade_ramp()` ersetzt die sichtbaren Pixel einer Fläche
+durch eine Farbrampe, abhängig vom Abstand zu einer Lichtquelle, und dithert zwischen den Stufen
+mit einer 4×4-Bayer-Matrix. Kronen, Felsen, Dächer, Fässer und die Spielfigur benutzen dieselbe
+Funktion und dieselbe Richtung (oben links). Das ist der Grund, warum die Objekte
+zusammengehören, obwohl sie von verschiedenen Zeichenroutinen stammen.
+
+Die Funktion nimmt ausdrücklich einen Bereich entgegen. Das war nicht immer so: In der ersten
+Fassung färbte sie das ganze Bild ein und übermalte damit bei den Häusern Wände, Fenster und
+Türen mit der Dachfarbe — die Gebäude waren einfarbige Kuppeln. Der Fehler fiel erst im
+Screenshot auf, nicht im Test.
+
+**Bewuchs nach Dichtefeldern.** Statt pro Kachel unabhängig zu würfeln, liest der `WorldBuilder`
+drei Rauschfelder aus: Dichte (Baumgruppen), Lichtungen und Artenverteilung (Nadel- oder
+Laubwald). So entstehen Bestände, Lichtungen und ausgedünnte Ränder statt eines gleichmäßigen
+Teppichs.
+
+**Wege als Kurven.** Die Wegpunkte in `Layout.ROADS` werden mit einer Catmull-Rom-Kurve
+verbunden und mit schwankendem Radius gestempelt. Vorher waren es gerade Strecken zwischen den
+Punkten, was man deutlich sah.
+
+**Der Wasser-Effekt wurde teuer und ist es nicht mehr.** Der pixelweise Uferschaum lief über
+jede sichtbare Wasserkachel und rechnete pro Pixel einen Sinus — rund 25 000 Durchläufe pro
+Bild. Jetzt werden die Uferkanten einmal beim Weltaufbau in eine Bitmaske geschrieben, der
+Schaum in Segmenten von vier Pixeln gezeichnet und das Ganze nur 24-mal pro Sekunde neu
+gezeichnet: rund 260 Rechtecke pro Bild.
+
+**Zur Messung:** Auf dem Software-Renderer der Testumgebung kostet allein das Hauptmenü über
+50 ms `TIME_PROCESS`. Der Absolutwert sagt dort nichts über das Spiel aus, deshalb misst der
+Selbsttest den *Aufschlag* der Spielwelt gegenüber dem Menü und die Zahl der gezeichneten
+Wasser-Rechtecke. Auf echter Hardware sind beide Werte unkritisch.
