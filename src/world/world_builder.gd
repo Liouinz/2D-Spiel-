@@ -10,7 +10,6 @@ var art: TileArt
 var props: Dictionary                 ## name -> {"variants": [...]}
 var placed: Array[Dictionary] = []    ## {name, variant, pos (px, Fußpunkt)}
 var ground: GroundTileSet            ## Kachelsatz mit Terrain-Übergängen
-var overlay_texture: ImageTexture    ## Dekoration und Schatten über dem Raster
 var collision_rects: Array[Rect2] = []
 
 var _rng := RandomNumberGenerator.new()
@@ -43,8 +42,6 @@ func build(seed_value: int) -> void:
 	t = _phase("platzierung", t)
 	ground = GroundTileSet.build(art, seed_value)
 	t = _phase("kachelsatz", t)
-	_bake_overlay()
-	t = _phase("auflage", t)
 	_build_collision()
 	t = _phase("kollision", t)
 
@@ -300,63 +297,55 @@ func variant_map() -> PackedByteArray:
 	_variants.resize(Config.MAP_W * Config.MAP_H)
 	for y in Config.MAP_H:
 		for x in Config.MAP_W:
-			# Die Stufengrenze wird pro Kachel verrauscht. Ohne das zeichnet sich
-			# die Höhenlinie des Rauschens als sichtbares Rechteckmuster ab.
-			var jitter := float((x * 73856093) ^ (y * 19349663)) 
-			jitter = fmod(absf(jitter), 1000.0) / 1000.0 - 0.5
-			var level := _n01(_shade, x, y) * TileArt.SHADES + jitter * 0.9
-			var shade := clampi(int(level), 0, TileArt.SHADES - 1)
+			# Nur weiches Rauschen, kein Zufall pro Kachel: einzelne abweichende
+			# Kacheln fallen bei 32 Pixeln sofort als Schachbrett auf.
+			var shade := clampi(int(_n01(_shade, x, y) * TileArt.SHADES), 0, TileArt.SHADES - 1)
 			_variants[y * Config.MAP_W + x] = shade * TileArt.VARIANTS + (x * 7 + y * 13) % TileArt.VARIANTS
 	return _variants
 
-## Streudekoration und Schatten liegen als eine durchsichtige Textur über dem
-## Kachelraster. Sie brauchen Sub-Kachel-Positionen, die ein Raster nicht kann.
-func _bake_overlay() -> void:
-	var size := Config.world_size_px()
-	var img := Pixel.make(size.x, size.y)
+## Bestimmt je Kachel, welche Dekorationskachel dort liegt (oder -1).
+## Die Dekoration ist damit Teil des Rasters statt einer gebackenen Textur:
+## das spart bei 32er-Kacheln eine 3072x2304-Auflage und rund 0,8 Sekunden.
+func decor_map() -> PackedInt32Array:
+	var out := PackedInt32Array()
+	out.resize(Config.MAP_W * Config.MAP_H)
+	out.fill(-1)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _rng.seed + 5
-	_bake_decor(img, rng)
-	_bake_shadows(img)
-	overlay_texture = ImageTexture.create_from_image(img)
-
-func _bake_decor(img: Image, rng: RandomNumberGenerator) -> void:
 	for y in Config.MAP_H:
 		for x in Config.MAP_W:
 			var t := map.get_tile(x, y)
-			var set: Array[Image] = []
+			var set_name := ""
 			var chance := 0.0
 			match t:
 				MapData.Tile.GRASS:
-					set = art.decor_grass
+					set_name = "grass"
 					chance = 0.44
 				MapData.Tile.MEADOW:
-					set = art.decor_grass
+					set_name = "grass"
 					chance = 0.88
 				MapData.Tile.FOREST:
-					set = art.decor_forest
+					set_name = "forest"
 					chance = 0.52
 				MapData.Tile.SAND:
-					set = art.decor_sand
+					set_name = "sand"
 					chance = 0.24
 				MapData.Tile.PATH:
-					set = art.decor_path
-					chance = 0.05
+					# Gras wächst über den Wegrand
+					if _borders_grass(x, y):
+						set_name = "edge"
+						chance = 0.55
+					else:
+						set_name = "path"
+						chance = 0.05
 				MapData.Tile.WATER:
-					set = art.decor_water
+					set_name = "water"
 					chance = 0.05
-			if not set.is_empty() and rng.randf() < chance:
-				var count := 1 if rng.randf() > 0.4 else 2
-				for i in count:
-					_stamp(img, set[rng.randi() % set.size()], x, y, rng)
-			# Gras wächst über den Wegrand
-			if t == MapData.Tile.PATH and _borders_grass(x, y) and rng.randf() < 0.55:
-				_stamp(img, art.decor_edge[rng.randi() % art.decor_edge.size()], x, y, rng)
-
-func _stamp(img: Image, dec: Image, x: int, y: int, rng: RandomNumberGenerator) -> void:
-	var dx := rng.randi_range(0, maxi(T - dec.get_width(), 0))
-	var dy := rng.randi_range(0, maxi(T - dec.get_height(), 0))
-	img.blend_rect(dec, Rect2i(Vector2i.ZERO, dec.get_size()), Vector2i(x * T + dx, y * T + dy))
+			if set_name == "" or rng.randf() > chance:
+				continue
+			var range_of: Vector2i = ground.decor_ranges[set_name]
+			out[y * Config.MAP_W + x] = range_of.x + rng.randi() % range_of.y
+	return out
 
 func _borders_grass(x: int, y: int) -> bool:
 	for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
@@ -364,20 +353,6 @@ func _borders_grass(x: int, y: int) -> bool:
 		if t == MapData.Tile.GRASS or t == MapData.Tile.MEADOW or t == MapData.Tile.FOREST:
 			return true
 	return false
-
-## Schatten fallen einheitlich nach unten rechts — Licht kommt von oben links.
-func _bake_shadows(img: Image) -> void:
-	for p: Dictionary in placed:
-		var e: Dictionary = PropArt.variant(props, p["name"], p["variant"])
-		var sh: Vector2 = e["shadow"]
-		if sh == Vector2.ZERO:
-			continue
-		var pos: Vector2 = p["pos"]
-		var cx := pos.x + sh.x * 0.22
-		var cy := pos.y - 2.0 + sh.y * 0.15
-		Pixel.ellipse(img, cx, cy, sh.x * 1.12, sh.y * 1.12, Color(0, 0, 0, 0.10))
-		Pixel.ellipse(img, cx, cy, sh.x, sh.y, Palette.SHADOW)
-		Pixel.ellipse(img, cx - sh.x * 0.12, cy - sh.y * 0.10, sh.x * 0.6, sh.y * 0.6, Color(0, 0, 0, 0.10))
 
 # --- Kollision ---------------------------------------------------------------
 

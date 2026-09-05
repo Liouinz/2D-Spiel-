@@ -50,7 +50,15 @@ const CORNERS := [
 	TileSet.CELL_NEIGHBOR_BOTTOM_LEFT_CORNER,
 ]
 
+## Wie viele fertig bestückte Dekorationskacheln je Sorte erzeugt werden.
+## Bei 32 Pixeln je Kachel und zufälligen Positionen darin fällt die
+## Wiederholung nicht auf.
+const DECOR_VARIANTS := 12
+
 var tileset: TileSet
+var decor_source: int = -1
+var decor_slots: Array[Vector2i] = []   ## flache Liste aller Dekorationskacheln
+var decor_ranges: Dictionary = {}       ## sorte -> Vector2i(start, anzahl)
 var _sources: Array[int] = []          ## Quellen-ID je Stapelposition
 var _slots: Array = []                 ## Array[Vector2i] je Stapelposition
 var _full_count: int = 0               ## Vollkacheln je Bodentyp
@@ -96,8 +104,59 @@ static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 		g._sources.append(sid)
 		g._slots.append(slots)
 
+	g._build_decor(ts, art, rng)
 	g.tileset = ts
 	return g
+
+## Baut aus den Streuobjekten fertige, durchsichtige Dekorationskacheln. Sie
+## kommen in eine eigene TileMapLayer über dem Boden — dadurch entfällt die
+## große gebackene Auflagetextur vollständig.
+func _build_decor(ts: TileSet, art: TileArt, rng: RandomNumberGenerator) -> void:
+	var sets := {
+		"grass": art.decor_grass,
+		"forest": art.decor_forest,
+		"sand": art.decor_sand,
+		"path": art.decor_path,
+		"water": art.decor_water,
+		"edge": art.decor_edge,
+	}
+	var tiles: Array[Image] = []
+	for name: String in sets:
+		var pool: Array[Image] = sets[name]
+		decor_ranges[name] = Vector2i(tiles.size(), DECOR_VARIANTS)
+		for v in DECOR_VARIANTS:
+			var img := Pixel.make(Config.TILE, Config.TILE)
+			if not pool.is_empty():
+				for i in rng.randi_range(1, 3):
+					var dec: Image = pool[rng.randi() % pool.size()]
+					var dx := rng.randi_range(0, maxi(Config.TILE - dec.get_width(), 0))
+					var dy := rng.randi_range(0, maxi(Config.TILE - dec.get_height(), 0))
+					img.blend_rect(dec, Rect2i(Vector2i.ZERO, dec.get_size()), Vector2i(dx, dy))
+			tiles.append(img)
+
+	var cols := 8
+	var rows := int(ceil(float(tiles.size()) / cols))
+	var atlas := Pixel.make(cols * Config.TILE, rows * Config.TILE)
+	var src := TileSetAtlasSource.new()
+	for i in tiles.size():
+		var pos := Vector2i(i % cols, i / cols)
+		atlas.blit_rect(tiles[i], Rect2i(Vector2i.ZERO, tiles[i].get_size()), pos * Config.TILE)
+		decor_slots.append(pos)
+	src.texture = Pixel.tex(atlas)
+	src.texture_region_size = Vector2i(Config.TILE, Config.TILE)
+	for pos: Vector2i in decor_slots:
+		src.create_tile(pos)
+	decor_source = ts.add_source(src)
+
+## Setzt die Dekorationsschicht. `map` enthält je Kachel den flachen Index
+## einer Dekorationskachel oder -1.
+func paint_decor(layer: TileMapLayer, indices: PackedInt32Array) -> void:
+	layer.tile_set = tileset
+	for y in Config.MAP_H:
+		for x in Config.MAP_W:
+			var i := indices[y * Config.MAP_W + x]
+			if i >= 0:
+				layer.set_cell(Vector2i(x, y), decor_source, decor_slots[i])
 
 ## Setzt eine Schicht.
 ##

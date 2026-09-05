@@ -87,17 +87,17 @@ func _run() -> void:
 	# --- Bewegung ---
 	var start := player.position
 	await _drive("move_right", 30)
-	_check(player.position.x > start.x + 8.0, "Bewegung nach rechts")
+	_check(player.position.x > start.x + Config.TILE * 0.5, "Bewegung nach rechts")
 	await _drive("move_up", 30)
-	_check(player.position.y < start.y - 4.0, "Bewegung nach oben")
+	_check(player.position.y < start.y - Config.TILE * 0.25, "Bewegung nach oben")
 	await _drive("move_left", 30)
 	await _drive("move_down", 30)
-	_check(player.position.distance_to(start) < 40.0, "Zurück in Startnähe")
+	_check(player.position.distance_to(start) < Config.TILE * 3.0, "Zurück in Startnähe")
 
 	# --- Kamera folgt ---
 	var cam: GameCamera = world.camera
 	await _frames(20)
-	_check(cam.global_position.distance_to(player.global_position) < 40.0, "Kamera folgt dem Spieler")
+	_check(cam.global_position.distance_to(player.global_position) < Config.TILE * 3.0, "Kamera folgt dem Spieler")
 	_check(cam.limit_right == Config.world_size_px().x, "Kameragrenzen gesetzt")
 
 	# --- Kollision: gegen Wasser laufen ---

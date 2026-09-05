@@ -36,13 +36,32 @@ func _ready() -> void:
 
 	builder.timings["schichten"] = Time.get_ticks_msec() - t_layers
 
-	# Streudeko und Schatten sitzen sub-pixelgenau über dem Raster.
-	var overlay := Sprite2D.new()
-	overlay.name = "Overlay"
-	overlay.texture = builder.overlay_texture
-	overlay.centered = false
-	overlay.z_index = -20
-	add_child(overlay)
+	# Dekoration ist eine eigene Rasterschicht (Blumen, Grasbüschel, Steine).
+	var decor := TileMapLayer.new()
+	decor.name = "Decoration"
+	decor.z_index = -25
+	decor.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	ground.add_child(decor)
+	builder.ground.paint_decor(decor, builder.decor_map())
+
+	# Bodenschatten: ein weicher Fleck je Requisite, passend skaliert.
+	var shadows := Node2D.new()
+	shadows.name = "Shadows"
+	shadows.z_index = -22
+	add_child(shadows)
+	var shadow_tex := PropArt.shadow_texture()
+	for p: Dictionary in builder.placed:
+		var e: Dictionary = PropArt.variant(builder.props, p["name"], p["variant"])
+		var sh: Vector2 = e["shadow"]
+		if sh == Vector2.ZERO:
+			continue
+		var s := Sprite2D.new()
+		s.texture = shadow_tex
+		s.centered = true
+		var pos: Vector2 = p["pos"]
+		s.position = pos + Vector2(sh.x * 0.22, -2.0 + sh.y * 0.15)
+		s.scale = Vector2(sh.x / 26.0, sh.y / 12.5)
+		shadows.add_child(s)
 
 	var water := WaterFx.new()
 	water.name = "WaterFx"

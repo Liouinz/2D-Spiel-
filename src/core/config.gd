@@ -2,18 +2,22 @@ class_name Config
 extends RefCounted
 ## Zentrale Konstanten. Keine hart codierten Werte im restlichen Code (§11).
 
-const TILE := 16                      ## Kantenlänge einer Kachel in Pixeln
+## Kachelgröße in Bildpunkten. 32 statt 16: bei halbem Kamerazoom bleibt das
+## Sichtfeld gleich, aber jede Kachel hat die vierfache Pixelfläche für Details.
+const TILE := 32
 const MAP_W := 96                     ## Weltbreite in Kacheln
 const MAP_H := 72                     ## Welthöhe in Kacheln
 const WORLD_SEED := 20260904          ## fester Seed -> reproduzierbare Welt
 
-const PLAYER_SPEED := 62.0            ## Gehen (px/s)
-const PLAYER_RUN_SPEED := 108.0       ## Rennen (px/s)
-const PLAYER_ACCEL := 900.0
-const PLAYER_FRICTION := 1100.0
-const PLAYER_HITBOX := Vector2(9, 6)  ## Fußkollision (halbe Größe), fühlt sich natürlich an
+const PLAYER_SPEED := 124.0           ## Gehen (px/s)
+const PLAYER_RUN_SPEED := 216.0       ## Rennen (px/s)
+const PLAYER_ACCEL := 1800.0
+const PLAYER_FRICTION := 2200.0
+const PLAYER_HITBOX := Vector2(18, 12)  ## Fußkollision (halbe Größe)
 
-const CAMERA_ZOOM := 3.0
+## Halber Zoom bei doppelter Kachelgröße = unverändertes Sichtfeld,
+## aber doppelt so feine Grafik.
+const CAMERA_ZOOM := 1.5
 const CAMERA_SMOOTH := 6.0            ## Interpolationsgeschwindigkeit der Kamera
 
 static func world_size_px() -> Vector2i:

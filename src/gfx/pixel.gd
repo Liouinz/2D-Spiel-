@@ -77,21 +77,25 @@ static func triangle(img: Image, ax: float, ay: float, bx: float, by: float, cx:
 				px(img, ix, iy, col)
 
 ## Ein Pixel-Outline rund um alles Sichtbare — der wichtigste Stil-Klebstoff.
+##
+## Liest den Alphakanal einmal als Rohpuffer statt über get_pixel(). Bei den
+## 32er-Grafiken hat jede Requisite die vierfache Pixelzahl; der Unterschied
+## macht bei rund 90 Bildern mehrere hundert Millisekunden aus.
 static func outline(img: Image, c: Color, threshold: float = 0.35) -> void:
 	var w := img.get_width()
 	var h := img.get_height()
-	var src := Image.create_from_data(w, h, false, FMT, img.get_data())
+	var data := img.get_data()
+	var lim := int(threshold * 255.0)
 	for y in h:
+		var row := y * w
 		for x in w:
-			if src.get_pixel(x, y).a > threshold:
+			var i := row + x
+			if data[i * 4 + 3] > lim:
 				continue
-			var touches := false
-			for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-				var nx := x + o.x
-				var ny := y + o.y
-				if nx >= 0 and ny >= 0 and nx < w and ny < h and src.get_pixel(nx, ny).a > threshold:
-					touches = true
-					break
+			var touches := (x > 0 and data[(i - 1) * 4 + 3] > lim) \
+				or (x < w - 1 and data[(i + 1) * 4 + 3] > lim) \
+				or (y > 0 and data[(i - w) * 4 + 3] > lim) \
+				or (y < h - 1 and data[(i + w) * 4 + 3] > lim)
 			if touches:
 				img.set_pixel(x, y, c)
 
@@ -121,10 +125,11 @@ static func shade_ramp(img: Image, ramp: Array, light: Vector2, radius: float,
 	if r.size.x <= 0 or r.size.y <= 0:
 		r = Rect2i(0, 0, img.get_width(), img.get_height())
 	r = r.intersection(Rect2i(0, 0, img.get_width(), img.get_height()))
+	var w := img.get_width()
+	var data := img.get_data()
 	for y in range(r.position.y, r.end.y):
 		for x in range(r.position.x, r.end.x):
-			var c := img.get_pixel(x, y)
-			if c.a <= 0.0:
+			if data[(y * w + x) * 4 + 3] == 0:
 				continue
 			var d := Vector2(x + 0.5, y + 0.5).distance_to(light) / maxf(radius, 0.001)
 			var v := clampf(d, 0.0, 0.999) * (steps - 1)
@@ -133,7 +138,7 @@ static func shade_ramp(img: Image, ramp: Array, light: Vector2, radius: float,
 			if v - band > bayer(x, y) and band < steps - 1:
 				band += 1
 			var col: Color = ramp[band]
-			img.set_pixel(x, y, Color(col.r, col.g, col.b, c.a))
+			img.set_pixel(x, y, Color(col.r, col.g, col.b, data[(y * w + x) * 4 + 3] / 255.0))
 
 ## Radiert kleine Kerben in die Silhouette, damit nichts wie ein Kreis aussieht.
 static func notch(img: Image, rng: RandomNumberGenerator, count: int, cx: float, cy: float, rx: float, ry: float) -> void:
