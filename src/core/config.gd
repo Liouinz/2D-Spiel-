@@ -17,8 +17,6 @@ const PLAYER_SPRITE := Vector2i(16, 24)
 const CAMERA_ZOOM := 3.0
 const CAMERA_SMOOTH := 6.0            ## Interpolationsgeschwindigkeit der Kamera
 
-const UI_SCALE := 2                   ## Pixel-Look der Menüs
-
 static func world_size_px() -> Vector2i:
 	return Vector2i(MAP_W * TILE, MAP_H * TILE)
 

@@ -7,6 +7,8 @@ const GRASS_DARK := Color8(58, 110, 60)
 const GRASS := Color8(78, 138, 68)
 const GRASS_LIGHT := Color8(104, 165, 82)
 const GRASS_HI := Color8(134, 190, 100)
+const FOREST_GROUND := Color8(50, 96, 56)
+const MEADOW_GROUND := Color8(88, 148, 74)
 
 # Erde / Weg
 const DIRT_DARK := Color8(104, 78, 54)

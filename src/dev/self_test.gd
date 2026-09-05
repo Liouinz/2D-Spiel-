@@ -10,6 +10,16 @@ func _ready() -> void:
 	for a: String in OS.get_cmdline_user_args():
 		if a.begins_with("--shots="):
 			_shot_dir = a.substr(8)
+	var guard := Timer.new()
+	guard.wait_time = 150.0
+	guard.one_shot = true
+	guard.process_mode = Node.PROCESS_MODE_ALWAYS
+	guard.timeout.connect(func() -> void:
+		push_error("Selbsttest-Zeitüberschreitung")
+		print("=== ERGEBNIS: ZEITÜBERSCHREITUNG ===")
+		get_tree().quit(2))
+	add_child(guard)
+	guard.start()
 	_run.call_deferred()
 
 func _check(ok: bool, what: String) -> void:
@@ -111,17 +121,37 @@ func _run() -> void:
 	await _frames(6)
 	await _shot("03_wald")
 
+	# Strand / Bucht
+	var beach := _find_beach(map)
+	if beach != Vector2i(-1, -1):
+		player.position = Vector2(beach.x * Config.TILE, beach.y * Config.TILE)
+		player.velocity = Vector2.ZERO
+		cam.snap_to_target()
+		await _frames(6)
+		await _shot("04_strand")
+	_check(beach != Vector2i(-1, -1), "Strand mit Wasser vorhanden")
+
+	_check(world.build_msec < 5000, "Welt lädt zügig (%d ms)" % world.build_msec)
+
+	# --- Audio ---
+	_check(Audio._sfx.size() >= 5, "Effektklänge erzeugt (%d)" % Audio._sfx.size())
+	_check(Audio._music.has("world") and Audio._music["world"].data.size() > 1000,
+		"Weltmusik erzeugt und geloopt")
+	Audio.play_ui("confirm")
+	Audio.play_step()
+	_check(true, "Klänge lassen sich abspielen")
+
 	# --- Pause ---
 	main.pause_game()
 	await _frames(2)
 	_check(main.state == main.State.PAUSED and get_tree().paused, "Pause aktiv")
-	await _shot("04_pause")
+	await _shot("05_pause")
 
 	# --- Optionen ---
 	main.open_options()
 	await _frames(2)
 	_check(main.state == main.State.OPTIONS, "Optionen offen")
-	await _shot("05_optionen")
+	await _shot("06_optionen")
 	main.close_options()
 	await _frames(2)
 	_check(main.state == main.State.PAUSED, "Zurück zur Pause")
@@ -147,6 +177,13 @@ func _drive(action: String, frames: int) -> void:
 	await _frames(frames)
 	Input.action_release(action)
 	await _frames(2)
+
+func _find_beach(map: MapData) -> Vector2i:
+	for y in range(Config.MAP_H - 4, 4, -1):
+		for x in range(4, Config.MAP_W - 4):
+			if map.get_tile(x, y) == MapData.Tile.SAND and map.is_water(x, y + 2):
+				return Vector2i(x, y)
+	return Vector2i(-1, -1)
 
 func _find_water_shore(map: MapData) -> Vector2i:
 	for y in range(2, Config.MAP_H - 3):

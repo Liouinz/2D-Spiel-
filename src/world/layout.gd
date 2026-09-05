@@ -6,7 +6,7 @@ extends RefCounted
 const VILLAGE := Vector2i(51, 36)
 const SPAWN := Vector2i(51, 41)          ## Startkachel des Spielers (Dorfplatz-Südrand)
 
-const PLAZA := Rect2i(46, 33, 11, 8)     ## gepflasterter Dorfplatz (Kacheln)
+const PLAZA := Rect2i(48, 34, 7, 5)      ## gepflasterter Dorfplatz (Kacheln)
 const WELL := Vector2i(51, 36)
 
 ## Gebäude: Kachel oben-links + Größe in Kacheln + Typ

@@ -54,12 +54,8 @@ func _place_village() -> void:
 		var pos: Vector2i = h["pos"]
 		var size: Vector2i = h["size"]
 		var name := "house_big" if h["type"] == "big" else "house_small"
-		# Bodenfläche für das Haus einebnen und freihalten
-		for y in range(pos.y, pos.y + size.y):
-			for x in range(pos.x, pos.x + size.x):
-				if map.get_tile(x, y) != MapData.Tile.PATH:
-					map.set_tile(x, y, MapData.Tile.GRASS)
-		for y in range(pos.y - 1, pos.y + size.y + 1):
+		# Nur freihalten — der Boden bleibt, wie er gewachsen ist.
+		for y in range(pos.y - 1, pos.y + size.y + 2):
 			for x in range(pos.x - 1, pos.x + size.x + 1):
 				_occupy(x, y)
 		var foot := Vector2((pos.x + size.x * 0.5) * T, (pos.y + size.y) * T)
@@ -97,7 +93,7 @@ func _place_nature() -> void:
 			if _is_occupied(x, y):
 				continue
 			var t := map.get_tile(x, y)
-			if t == MapData.Tile.PATH or map.is_water(x, y):
+			if t == MapData.Tile.PATH or t == MapData.Tile.COBBLE or map.is_water(x, y):
 				continue
 			# Uferbewuchs
 			if _touches_water(x, y):
@@ -107,14 +103,16 @@ func _place_nature() -> void:
 			var roll := _rng.randf()
 			match t:
 				MapData.Tile.FOREST:
-					if roll < 0.40:
+					if roll < 0.46:
 						_spawn("pine" if _rng.randf() < 0.45 else ("oak" if _rng.randf() < 0.6 else "oak2"), x, y)
-					elif roll < 0.50:
+					elif roll < 0.60:
 						_spawn("bush", x, y)
-					elif roll < 0.55:
+					elif roll < 0.68:
 						_spawn("sapling", x, y)
-					elif roll < 0.57:
+					elif roll < 0.71:
 						_spawn("rock_small", x, y)
+					elif roll < 0.74:
+						_spawn("stump" if _rng.randf() < 0.5 else "log", x, y)
 				MapData.Tile.GRASS:
 					if roll < 0.030:
 						_spawn("oak" if _rng.randf() < 0.7 else "pine", x, y)
@@ -180,9 +178,9 @@ func _bake_ground() -> void:
 			for d in 4:
 				var o: Vector2i = offsets[d]
 				var nt := map.get_tile(x + o.x, y + o.y)
-				if nt == t or not map.in_bounds(x + o.x, y + o.y):
+				if not map.in_bounds(x + o.x, y + o.y) or not TileArt.bleeds_over(nt, t):
 					continue
-				var strip: Image = art.edge[nt][d]
+				var strip: Image = (art.edge_soft[nt][d] if TileArt.soft_pair(nt, t) else art.edge[nt][d])
 				img.blend_rect(strip, Rect2i(Vector2i.ZERO, strip.get_size()),
 					Vector2i(x * T, y * T) + dst_off[d])
 
@@ -198,16 +196,16 @@ func _bake_ground() -> void:
 					chance = 0.30
 				MapData.Tile.MEADOW:
 					set = art.decor_grass
-					chance = 0.62
+					chance = 0.85
 				MapData.Tile.FOREST:
 					set = art.decor_forest
-					chance = 0.34
+					chance = 0.45
 				MapData.Tile.SAND:
 					set = art.decor_sand
 					chance = 0.14
 				MapData.Tile.PATH:
 					set = art.decor_path
-					chance = 0.07
+					chance = 0.035
 				MapData.Tile.WATER:
 					set = art.decor_water
 					chance = 0.05

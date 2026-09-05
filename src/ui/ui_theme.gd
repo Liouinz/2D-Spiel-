@@ -68,6 +68,9 @@ static func build() -> Theme:
 	t.set_stylebox("grabber_area", "HSlider", slider_fg)
 	t.set_stylebox("grabber_area_highlight", "HSlider", slider_fg)
 
+	var flat := StyleBoxEmpty.new()
+	for state: String in ["normal", "hover", "pressed", "disabled", "focus", "hover_pressed"]:
+		t.set_stylebox(state, "CheckBox", flat)
 	t.set_color("font_color", "CheckBox", Palette.UI_TEXT)
 	t.set_color("font_hover_color", "CheckBox", Palette.UI_ACCENT)
 	t.set_font_size("font_size", "CheckBox", FONT_LABEL)

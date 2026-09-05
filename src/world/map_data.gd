@@ -2,7 +2,7 @@ class_name MapData
 extends RefCounted
 ## Die Karte als Daten: Bodentyp je Kachel + Begehbarkeit. Kein Rendering hier.
 
-enum Tile { GRASS, MEADOW, FOREST, PATH, SAND, ROCK, WATER, DEEP_WATER, COUNT }
+enum Tile { GRASS, MEADOW, FOREST, PATH, SAND, ROCK, WATER, DEEP_WATER, COBBLE, COUNT }
 
 const W := Config.MAP_W
 const H := Config.MAP_H
@@ -73,9 +73,32 @@ func generate(seed_value: int) -> void:
 				t = _land_region(x, y, region)
 			set_tile(x, y, t)
 
+	_blur_regions()
 	_carve_roads()
 	_carve_plaza()
 	_mark_solid()
+
+## Franst die Grenzen zwischen Gras, Wiese und Wald aus, damit keine
+## sichtbaren Kanten entstehen.
+func _blur_regions() -> void:
+	const FAMILY := [Tile.GRASS, Tile.MEADOW, Tile.FOREST]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4711
+	var copy := tiles.duplicate()
+	for y in H:
+		for x in W:
+			var t := copy[idx(x, y)]
+			if not FAMILY.has(t):
+				continue
+			var others: Array[int] = []
+			for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				if not in_bounds(x + o.x, y + o.y):
+					continue
+				var n: int = copy[idx(x + o.x, y + o.y)]
+				if n != t and FAMILY.has(n):
+					others.append(n)
+			if not others.is_empty() and rng.randf() < 0.42:
+				set_tile(x, y, others[rng.randi() % others.size()])
 
 ## Bucht im Südwesten: liefert einen „Abstandswert" wie die Inselmetrik.
 func _bay_distance(x: int, y: int, shape: FastNoiseLite) -> float:
@@ -113,13 +136,16 @@ func _road_segment(a: Vector2i, b: Vector2i) -> void:
 		var p := Vector2(a).lerp(Vector2(b), t)
 		var px := int(round(p.x))
 		var py := int(round(p.y))
-		for oy in range(-1, 2):
-			for ox in range(-1, 2):
-				# leicht unregelmäßige Wegbreite
-				if absi(ox) + absi(oy) > 1 and (px + py) % 3 == 0:
-					continue
-				if not is_water(px + ox, py + oy) and get_tile(px + ox, py + oy) != Tile.SAND:
-					set_tile(px + ox, py + oy, Tile.PATH)
+		_path_tile(px, py)
+		# ausgefranste Ränder statt eines Bandes gleicher Breite
+		for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if ((px * 7 + py * 13 + o.x * 5 + o.y * 11) % 5) != 0:
+				_path_tile(px + o.x, py + o.y)
+
+func _path_tile(x: int, y: int) -> void:
+	if not in_bounds(x, y) or is_water(x, y) or get_tile(x, y) == Tile.SAND:
+		return
+	set_tile(x, y, Tile.PATH)
 
 func _carve_plaza() -> void:
 	var r := Layout.PLAZA
@@ -128,8 +154,8 @@ func _carve_plaza() -> void:
 			# abgerundete Ecken -> wirkt handgemacht statt wie ein Rechteck
 			var ex := absf(x - (r.position.x + r.size.x * 0.5 - 0.5)) / (r.size.x * 0.5)
 			var ey := absf(y - (r.position.y + r.size.y * 0.5 - 0.5)) / (r.size.y * 0.5)
-			if ex * ex + ey * ey <= 1.05 and not is_water(x, y):
-				set_tile(x, y, Tile.PATH)
+			if ex * ex + ey * ey <= 1.0 and not is_water(x, y):
+				set_tile(x, y, Tile.COBBLE)
 
 func _mark_solid() -> void:
 	for y in H:

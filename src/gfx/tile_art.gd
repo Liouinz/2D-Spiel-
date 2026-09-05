@@ -4,10 +4,34 @@ extends RefCounted
 
 const T := Config.TILE
 const VARIANTS := 4
-const EDGE_DEPTH := 3
+const EDGE_DEPTH := 5
+
+## Wer über wen läuft: Sand legt sich auf Gras, Weg auf Gras, Gras über Wasser.
+## Gleiche Stufe = kein Übergang (Gras/Wiese/Wald werden schon verzahnt).
+const BLEED := {
+	MapData.Tile.DEEP_WATER: 0,
+	MapData.Tile.WATER: 10,
+	MapData.Tile.ROCK: 20,
+	MapData.Tile.FOREST: 30,
+	MapData.Tile.GRASS: 31,
+	MapData.Tile.MEADOW: 32,
+	MapData.Tile.PATH: 40,
+	MapData.Tile.COBBLE: 45,
+	MapData.Tile.SAND: 50,
+}
+
+const GRASS_FAMILY := [MapData.Tile.GRASS, MapData.Tile.MEADOW, MapData.Tile.FOREST]
+
+## Innerhalb der Grasfamilie reicht ein sehr zarter Übergang.
+static func soft_pair(a: int, b: int) -> bool:
+	return GRASS_FAMILY.has(a) and GRASS_FAMILY.has(b)
+
+static func bleeds_over(neighbour: int, here: int) -> bool:
+	return int(BLEED.get(neighbour, 0)) > int(BLEED.get(here, 0))
 
 var base: Array = []        ## [tile_type][variante] -> Image
 var edge: Array = []        ## [tile_type][richtung 0..3] -> Image (oben/unten/links/rechts)
+var edge_soft: Array = []   ## zarte Variante für Gras <-> Wiese <-> Wald
 var decor_grass: Array[Image] = []
 var decor_forest: Array[Image] = []
 var decor_sand: Array[Image] = []
@@ -36,15 +60,17 @@ func _make_tile(t: int, rng: RandomNumberGenerator) -> Image:
 		MapData.Tile.GRASS:
 			return _speckle(Palette.GRASS, Palette.GRASS_LIGHT, Palette.GRASS_DARK, 26, 16, rng, 3)
 		MapData.Tile.MEADOW:
-			return _speckle(Palette.GRASS_LIGHT, Palette.GRASS_HI, Palette.GRASS, 30, 14, rng, 4)
+			return _speckle(Palette.MEADOW_GROUND, Palette.GRASS_LIGHT, Palette.GRASS, 34, 14, rng, 5)
 		MapData.Tile.FOREST:
-			return _speckle(Palette.GRASS_DARK, Palette.GRASS, Palette.LEAF_DARK, 18, 26, rng, 2)
+			return _forest_tile(rng)
 		MapData.Tile.PATH:
 			return _path_tile(rng)
 		MapData.Tile.SAND:
 			return _speckle(Palette.SAND, Palette.SAND_LIGHT, Palette.SAND_DARK, 22, 18, rng, 0)
 		MapData.Tile.ROCK:
 			return _rock_tile(rng)
+		MapData.Tile.COBBLE:
+			return _cobble_tile(rng)
 		MapData.Tile.WATER:
 			return _water_tile(Palette.WATER, Palette.WATER_LIGHT, rng)
 		MapData.Tile.DEEP_WATER:
@@ -64,17 +90,49 @@ func _speckle(bg: Color, light: Color, dark: Color, n_light: int, n_dark: int, r
 		Pixel.px(img, x + 1, y + 1, dark)
 	return img
 
+func _forest_tile(rng: RandomNumberGenerator) -> Image:
+	var img := _speckle(Palette.FOREST_GROUND, Palette.GRASS_DARK, Palette.LEAF_DARK, 20, 28, rng, 2)
+	# Nadel- und Blattstreu
+	for i in 7:
+		var x := rng.randi_range(0, T - 2)
+		var y := rng.randi_range(0, T - 1)
+		Pixel.px(img, x, y, Palette.WOOD_DARK)
+		if rng.randf() < 0.5:
+			Pixel.px(img, x + 1, y, Palette.WOOD_DARK)
+	return img
+
 func _path_tile(rng: RandomNumberGenerator) -> Image:
 	var img := Pixel.filled(T, T, Palette.DIRT)
 	for i in 34:
 		Pixel.px(img, rng.randi_range(0, T - 1), rng.randi_range(0, T - 1), Palette.DIRT_LIGHT)
 	for i in 26:
 		Pixel.px(img, rng.randi_range(0, T - 1), rng.randi_range(0, T - 1), Palette.DIRT_DARK)
-	for i in 2:
+	if rng.randf() < 0.6:
 		var x := rng.randi_range(1, T - 3)
 		var y := rng.randi_range(1, T - 3)
-		Pixel.rect(img, x, y, 2, 1, Palette.STONE_LIGHT)
-		Pixel.px(img, x, y + 1, Palette.STONE_DARK)
+		Pixel.rect(img, x, y, 2, 1, Palette.DIRT_LIGHT)
+		Pixel.px(img, x, y + 1, Palette.DIRT_DARK)
+	return img
+
+## Gepflasterter Dorfplatz: runde Katzenkopfsteine in Fugensand.
+func _cobble_tile(rng: RandomNumberGenerator) -> Image:
+	var mortar := Palette.DIRT_DARK.lerp(Palette.STONE_DARK, 0.35)
+	var img := Pixel.filled(T, T, mortar)
+	for i in 24:
+		Pixel.px(img, rng.randi_range(0, T - 1), rng.randi_range(0, T - 1), Palette.DIRT)
+	# leicht versetztes 3x3-Raster mit unterschiedlich großen Steinen
+	for gy in 3:
+		for gx in 3:
+			var cx := gx * 5.4 + 2.6 + rng.randf_range(-1.1, 1.1)
+			var cy := gy * 5.4 + 2.6 + rng.randf_range(-1.1, 1.1)
+			var rx := rng.randf_range(2.0, 2.9)
+			var ry := rng.randf_range(1.8, 2.6)
+			var warm := rng.randf_range(0.0, 0.35)
+			var base := Palette.STONE.lerp(Palette.DIRT_LIGHT, warm)
+			Pixel.ellipse(img, cx, cy + 0.5, rx, ry, base.darkened(0.28))
+			Pixel.ellipse(img, cx, cy, rx, ry, base)
+			Pixel.ellipse(img, cx - 0.6, cy - 0.7, rx * 0.55, ry * 0.5,
+				base.lerp(Palette.STONE_LIGHT, 0.65))
 	return img
 
 func _rock_tile(rng: RandomNumberGenerator) -> Image:
@@ -104,14 +162,26 @@ func _build_edges(rng: RandomNumberGenerator) -> void:
 		MapData.Tile.MEADOW: Palette.GRASS_LIGHT,
 		MapData.Tile.FOREST: Palette.GRASS_DARK,
 		MapData.Tile.PATH: Palette.DIRT,
+		MapData.Tile.COBBLE: Palette.STONE,
 		MapData.Tile.SAND: Palette.SAND,
 		MapData.Tile.ROCK: Palette.STONE,
 		MapData.Tile.WATER: Palette.WATER,
 		MapData.Tile.DEEP_WATER: Palette.WATER_DEEP,
 	}
 	edge.resize(MapData.Tile.COUNT)
+	edge_soft.resize(MapData.Tile.COUNT)
 	for t in MapData.Tile.COUNT:
 		var c: Color = colors.get(t, Palette.GRASS)
+		var soft := Color(c.r, c.g, c.b, 0.5)
+		var softs: Array[Image] = []
+		for d in 4:
+			var si := Pixel.dither_strip(d < 2, T, EDGE_DEPTH, soft, rng)
+			if d == 1:
+				si.flip_y()
+			elif d == 3:
+				si.flip_x()
+			softs.append(si)
+		edge_soft[t] = softs
 		var dirs: Array[Image] = []
 		for d in 4:
 			# 0=oben 1=unten 2=links 3=rechts — Streifen zur Kachelkante hin ausrichten
@@ -129,7 +199,7 @@ func _build_decor(rng: RandomNumberGenerator) -> void:
 		_flower(Palette.FLOWER_WHITE), _flower(Palette.FLOWER_BLUE),
 		_tuft(Palette.GRASS_HI), _tuft(Palette.GRASS_LIGHT), _pebble(),
 	]
-	decor_forest = [_mushroom(), _twig(), _tuft(Palette.GRASS), _pebble()]
+	decor_forest = [_mushroom(), _twig(), _twig(), _tuft(Palette.GRASS), _tuft(Palette.GRASS_DARK), _pebble()]
 	decor_sand = [_pebble(), _shell(), _twig()]
 	decor_path = [_pebble(), _pebble()]
 	decor_water = [_lily()]

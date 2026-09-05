@@ -7,9 +7,14 @@ var map: MapData
 var player: Player
 var camera: GameCamera
 
+const HudScene := preload("res://src/ui/hud.gd")
+
+var build_msec: int = 0
+
 var _sorted: Node2D
 
 func _ready() -> void:
+	var started := Time.get_ticks_msec()
 	var builder := WorldBuilder.new()
 	builder.build(Config.WORLD_SEED)
 	map = builder.map
@@ -66,3 +71,8 @@ func _ready() -> void:
 	camera.setup(Config.world_size_px())
 	camera.snap_to_target()
 	water.camera = camera
+
+	add_child(HudScene.new())
+	build_msec = Time.get_ticks_msec() - started
+	print("Welt aufgebaut in %d ms (%d Objekte, %d Kollisionsformen)" % [
+		build_msec, builder.placed.size(), builder.collision_rects.size()])

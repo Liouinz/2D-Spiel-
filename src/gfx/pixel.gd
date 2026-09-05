@@ -110,13 +110,15 @@ static func tex(img: Image) -> ImageTexture:
 static func dither_strip(horizontal: bool, length: int, depth: int, c: Color, rng: RandomNumberGenerator) -> Image:
 	var img := make(length if horizontal else depth, depth if horizontal else length)
 	for i in length:
-		var reach := depth - (1 if rng.randf() < 0.45 else 0)
+		var reach := depth - rng.randi_range(0, 1)
 		for d in reach:
-			var a := 1.0 - float(d) / float(depth)
-			a *= 0.85
-			if d == reach - 1 and rng.randf() < 0.5:
-				a *= 0.45
-			var col := Color(c.r, c.g, c.b, c.a * a)
+			var t := float(d) / float(depth)
+			var a := 1.0 - t
+			var solid := a > 0.86
+			# gestreute Einzelpixel statt weichem Verlauf -> Pixel-Art-Kante
+			if not solid and rng.randf() > a * a * 1.5:
+				continue
+			var col := Color(c.r, c.g, c.b, c.a * (1.0 if solid else 0.92))
 			if horizontal:
 				px(img, i, d, col)
 			else:
