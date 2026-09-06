@@ -4,6 +4,18 @@ extends RefCounted
 
 const FMT := Image.FORMAT_RGBA8
 
+## Kantenumlauf für nahtlose Kacheln.
+##
+## Ist `wrap` grösser als null, laufen alle Zeichenoperationen am Rand um: was
+## rechts hinausragt, kommt links wieder herein. Weil jede Zeichenoperation
+## dieser Datei durch `px()` läuft, werden dadurch Ellipsen, Rechtecke, Linien,
+## Körnung und Platten in einem Zug nahtlos — ohne dass eine einzige
+## Kachelfunktion umgeschrieben werden muss.
+##
+## Nur die Bodenkacheln setzen das. Requisiten, Figuren und Oberfläche dürfen
+## NICHT umlaufen, sonst klebte ein Baumwipfel unten am Bild.
+static var wrap: int = 0
+
 static func make(w: int, h: int) -> Image:
 	var img := Image.create(w, h, false, FMT)
 	img.fill(Color(0, 0, 0, 0))
@@ -16,7 +28,12 @@ static func filled(w: int, h: int, c: Color) -> Image:
 
 ## Setzt ein Pixel mit Alpha-Blending und Bereichsprüfung.
 static func px(img: Image, x: int, y: int, c: Color) -> void:
-	if x < 0 or y < 0 or x >= img.get_width() or y >= img.get_height() or c.a <= 0.0:
+	if c.a <= 0.0:
+		return
+	if wrap > 0:
+		x = posmod(x, wrap)
+		y = posmod(y, wrap)
+	elif x < 0 or y < 0 or x >= img.get_width() or y >= img.get_height():
 		return
 	if c.a >= 1.0:
 		img.set_pixel(x, y, c)

@@ -31,6 +31,16 @@ static func build(seed_value: int) -> TileArt:
 	return a
 
 func _build_bases(rng: RandomNumberGenerator) -> void:
+	# Bodenkacheln werden nahtlos gezeichnet: eine Fläche aus vielen gleichen
+	# Kacheln zeigt sonst an jeder Naht einen Bruch, und genau das liess den
+	# Boden wie aneinandergelegte Rechtecke aussehen.
+	Pixel.wrap = T
+	_build_bases_raw(rng)
+	Pixel.wrap = 0
+
+## Derselbe Aufbau ohne Kantenumlauf — der Selbsttest vergleicht damit, wie
+## stark die Naht vorher auffiel.
+func _build_bases_raw(rng: RandomNumberGenerator) -> void:
 	base.resize(MapData.Tile.COUNT)
 	for t in MapData.Tile.COUNT:
 		var list: Array[Image] = []
@@ -176,16 +186,29 @@ func _rock_tile(rng: RandomNumberGenerator) -> Image:
 	# entsteht — sonst sähe man das 32er-Raster im Boden.
 	# Grössere Platten und engere Fugen: bei neun kleinen Platten je Kachel sah
 	# es aus wie Mosaik statt wie gewachsener Fels.
-	var step := T / 2.0
-	for gy in range(-1, 3):
-		for gx in range(-1, 3):
-			var cx := gx * step + step * 0.5 + rng.randf_range(-2.5, 2.5)
-			var cy := gy * step + step * 0.5 + rng.randf_range(-2.5, 2.5)
-			var rx := step * 0.5 - rng.randf_range(0.2, 1.0)
-			var ry := step * 0.5 - rng.randf_range(0.2, 1.0)
+	# Platten frei verteilt, nicht im Raster.
+	#
+	# Mit einem festen 2x2-Raster lagen alle Platten auf denselben 16 Pixeln
+	# und der Fels sah aus wie Mauerwerk. Weil der Kantenumlauf jede Form
+	# selbst umlaufen lässt, braucht es gar kein Raster: frei gesetzte Platten
+	# in wechselnden Grössen kacheln trotzdem nahtlos.
+	#
+	# Erst wenige grosse, dann kleinere in die Lücken — so entsteht die
+	# typische Staffelung von gewachsenem Fels statt gleich grosser Steine.
+	var counts: Array[int] = [3, 4, 6]
+	var sizes: Array[Vector2] = [Vector2(9.0, 15.0), Vector2(6.0, 10.0), Vector2(3.5, 6.5)]
+	for pass_i in 3:
+		var count := counts[pass_i]
+		var lo := sizes[pass_i].x
+		var hi := sizes[pass_i].y
+		for i in count:
+			var cx := rng.randf_range(0.0, T)
+			var cy := rng.randf_range(0.0, T)
+			var rx := rng.randf_range(lo, hi) * 0.5
+			var ry := rng.randf_range(lo, hi) * 0.5
 			var tone := Palette.STONE.lerp(
 				Palette.STONE_LIGHT if rng.randf() < 0.55 else Palette.STONE_DARK,
-				rng.randf_range(0.08, 0.38))
+				rng.randf_range(0.08, 0.40))
 			_slab(img, cx, cy, rx, ry, tone, rng)
 
 	_grain(img, rng, 34, Palette.STONE_LIGHT)
@@ -205,8 +228,6 @@ func _slab(img: Image, cx: float, cy: float, rx: float, ry: float,
 		rng.randi_range(0, 2), rng.randi_range(0, 2)]
 	for y in range(y0, y1 + 1):
 		for x in range(x0, x1 + 1):
-			if x < 0 or y < 0 or x >= T or y >= T:
-				continue
 			# Ecken abknabbern
 			if x - x0 + y - y0 < nib[0]: continue
 			if x1 - x + y - y0 < nib[1]: continue
@@ -217,7 +238,7 @@ func _slab(img: Image, cx: float, cy: float, rx: float, ry: float,
 				c = tone.lightened(0.22)          # Licht von oben links
 			elif y == y1 or x == x1:
 				c = tone.darkened(0.28)
-			img.set_pixel(x, y, c)
+			Pixel.px(img, x, y, c)
 
 ## Gepflasterter Dorfplatz: runde Katzenkopfsteine in Fugensand.
 func _cobble_tile(rng: RandomNumberGenerator) -> Image:

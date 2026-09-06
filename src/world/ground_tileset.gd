@@ -177,7 +177,10 @@ func _build_table() -> void:
 func variant_at(x: int, y: int) -> int:
 	var n := _shade.get_noise_2d(x, y) * 0.5 + 0.5
 	var shade := clampi(int(n * TileArt.SHADES), 0, TileArt.SHADES - 1)
-	return shade * TileArt.VARIANTS + (x * 7 + y * 13) % TileArt.VARIANTS
+	# Streuwert statt Takt. `(x * 7 + y * 13) % 6` war streng periodisch:
+	# dieselbe Variante kehrte diagonal alle sechs Felder wieder, und das sah
+	# man der Fläche als Muster an.
+	return shade * TileArt.VARIANTS + Config.hash2(x, y) % TileArt.VARIANTS
 
 ## Baut aus den Streuobjekten fertige, durchsichtige Dekorationskacheln. Sie
 ## kommen in eine eigene TileMapLayer über dem Boden — dadurch entfällt die

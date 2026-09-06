@@ -304,18 +304,11 @@ func decor_at(x: int, y: int) -> int:
 			chance = 0.05
 	if set_name == "":
 		return -1
-	var h := _hash(x, y)
+	var h := Config.hash2(x, y)
 	if float(h % 10000) / 10000.0 > chance:
 		return -1
 	var range_of: Vector2i = ground.decor_ranges[set_name]
 	return range_of.x + (h / 10000) % range_of.y
-
-## Streuwert aus zwei Koordinaten. Die Primzahlen sind die üblichen aus
-## Spatial-Hashing; das Durchmischen am Ende verhindert sichtbare Muster.
-static func _hash(x: int, y: int) -> int:
-	var h := (x * 73856093) ^ (y * 19349663)
-	h = (h ^ (h >> 13)) * 1274126177
-	return absi(h ^ (h >> 16))
 
 func _borders_grass(x: int, y: int) -> bool:
 	for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:

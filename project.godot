@@ -19,12 +19,22 @@ Audio="*res://src/audio/audio.gd"
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
-window/stretch/mode="canvas_items"
-window/stretch/aspect="keep"
+; Pixel-Art: Godots eigene Anleitung (Multiple resolutions) verlangt fuer
+; scharfe Pixel den Streckmodus "viewport" mit ganzzahliger Skalierung.
+; "canvas_items" ohne scale_mode zog das Bild auf einem Bildschirm, der nicht
+; 1280x720 hat, mit krummem Faktor hoch: manche Pixel wurden zwei breit,
+; manche einen. Genau das waren die unsauberen Kanten.
+; aspect "expand" statt "keep": keine schwarzen Balken, stattdessen etwas mehr
+; Welt sichtbar - bei weiterhin ganzzahliger Skalierung.
+window/stretch/mode="viewport"
+window/stretch/aspect="expand"
+window/stretch/scale_mode="integer"
 
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
+2d/snap/snap_2d_transforms_to_pixel=true
+2d/snap/snap_2d_vertices_to_pixel=true
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 environment/defaults/default_clear_color=Color(0.08, 0.09, 0.12, 1)

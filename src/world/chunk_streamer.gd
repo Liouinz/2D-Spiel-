@@ -168,9 +168,13 @@ func _collision_for(chunk: Vector2i) -> Array[CollisionShape2D]:
 			for iy in h:
 				for ix in w:
 					used[(oy + iy) * cs + ox + ix] = 1
+			# Einen halben Pixel überlappen lassen. Zwei Rechtecke aus
+			# Nachbarchunks stossen sonst stumpf aneinander, und
+			# move_and_slide() kann an dieser Innenkante hängenbleiben —
+			# das war das „an Terrain-Ecken festgehalten".
 			out.append(_shape(Rect2(
-				(bx + ox) * Config.TILE, (by + oy) * Config.TILE,
-				w * Config.TILE, h * Config.TILE)))
+				(bx + ox) * Config.TILE - 0.5, (by + oy) * Config.TILE - 0.5,
+				w * Config.TILE + 1.0, h * Config.TILE + 1.0)))
 	return out
 
 func _shape(r: Rect2) -> CollisionShape2D:

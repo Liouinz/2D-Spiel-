@@ -4,6 +4,31 @@ extends RefCounted
 
 enum Tile { GRASS, MEADOW, FOREST, PATH, SAND, ROCK, WATER, DEEP_WATER, COBBLE, COUNT }
 
+## Was ein Gelände ist — an EINER Stelle, nicht dreimal nachgebaut.
+##
+## `level`     Höhenstufe. 0 = Boden, 1 = Fels. Hinauf nur im Sprung.
+## `swim`      hier wird geschwommen statt gelaufen.
+## `solid`     hält auf, egal wie: hier kommt niemand durch.
+##
+## Sichtbares Gelände und tatsächliche Begehbarkeit stammen dadurch aus
+## derselben Quelle und können nicht auseinanderlaufen.
+const TERRAIN := {
+	Tile.GRASS:      {"level": 0, "swim": false, "solid": false},
+	Tile.MEADOW:     {"level": 0, "swim": false, "solid": false},
+	Tile.FOREST:     {"level": 0, "swim": false, "solid": false},
+	Tile.PATH:       {"level": 0, "swim": false, "solid": false},
+	Tile.SAND:       {"level": 0, "swim": false, "solid": false},
+	Tile.COBBLE:     {"level": 0, "swim": false, "solid": false},
+	Tile.ROCK:       {"level": 1, "swim": false, "solid": false},
+	Tile.WATER:      {"level": 0, "swim": true,  "solid": false},
+	Tile.DEEP_WATER: {"level": 0, "swim": false, "solid": true},
+}
+
+## Eine Eigenschaft eines Bodentyps. Unbekannte Werte verhalten sich wie Gras.
+static func terrain(tile: int, key: String) -> Variant:
+	var row: Dictionary = TERRAIN.get(tile, TERRAIN[Tile.GRASS])
+	return row[key]
+
 var tiles := PackedByteArray()
 
 func _init() -> void:
@@ -46,11 +71,11 @@ func is_solid(x: int, y: int) -> bool:
 		return true
 	if x == 0 or y == 0 or x == Config.MAP_W - 1 or y == Config.MAP_H - 1:
 		return true
-	return get_tile(x, y) == Tile.DEEP_WATER
+	return terrain(get_tile(x, y), "solid")
 
 ## Kann hier geschwommen werden?
 func is_swimmable(x: int, y: int) -> bool:
-	return in_bounds(x, y) and get_tile(x, y) == Tile.WATER
+	return in_bounds(x, y) and terrain(get_tile(x, y), "swim")
 
 ## Höhenstufe eines Feldes. Fels liegt eine Stufe höher als der übrige Boden —
 ## man muss hinaufspringen und kann wieder herunter. Damit bekommt die
@@ -61,7 +86,7 @@ func is_swimmable(x: int, y: int) -> bool:
 func level_at(x: int, y: int) -> int:
 	if not in_bounds(x, y):
 		return 0
-	return 1 if get_tile(x, y) == Tile.ROCK else 0
+	return terrain(get_tile(x, y), "level")
 
 ## Baut die Karte auf. Im Aufbaumodus entsteht eine leere Fläche, sonst die
 ## komplette Insel.

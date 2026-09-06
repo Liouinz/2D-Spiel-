@@ -84,6 +84,9 @@ func _run() -> void:
 	# schon 2,5. Deshalb wird erst gemessen, wenn das durch ist.
 	await _frames(30)
 
+	# --- Kachelnaht: sind die Bodenkacheln wirklich nahtlos? ---
+	await _check_seams()
+
 	# --- Karte ---
 	# Bei 4,2 Millionen Kacheln wird nicht mehr die ganze Karte gezählt,
 	# sondern der geladene Ausschnitt um die Figur.
@@ -350,6 +353,70 @@ func _find_assets(path: String) -> Array[String]:
 	dir.list_dir_end()
 	return found
 
+## Sind die Bodenkacheln nahtlos?
+##
+## Gemessen, nicht behauptet: verglichen wird der mittlere Farbunterschied an
+## der Naht (letzte Spalte gegen erste Spalte, letzte Zeile gegen erste Zeile)
+## mit dem Unterschied zweier benachbarter Spalten IM Kachelinneren. Bei einer
+## nahtlosen Kachel sind beide Werte ähnlich; ein Bruch an der Naht sticht als
+## Vielfaches heraus.
+##
+## Zum Beleg wird derselbe Satz zusätzlich OHNE Kantenumlauf erzeugt, damit
+## Vorher und Nachher in einer Zahl nebeneinander stehen.
+func _check_seams() -> void:
+	var before := TileArt.new()
+	Pixel.wrap = 0
+	var rng_b := RandomNumberGenerator.new()
+	rng_b.seed = Config.WORLD_SEED
+	before._build_bases_raw(rng_b)
+
+	var art := TileArt.build(Config.WORLD_SEED)
+	var worst := 0.0
+	var worst_name := ""
+	print("Kachelnähte (1,0 = so glatt wie das Kachelinnere):")
+	for t in MapData.Tile.COUNT:
+		var img_after: Image = art.base[t][TileArt.VARIANTS]
+		var img_before: Image = before.base[t][TileArt.VARIANTS]
+		var r_after := _seam_ratio(img_after)
+		var r_before := _seam_ratio(img_before)
+		print("  %-12s vorher %.2f   nachher %.2f" % [
+			GroundTileSet.NAMES[t], r_before, r_after])
+		if r_after > worst:
+			worst = r_after
+			worst_name = GroundTileSet.NAMES[t]
+	# 1,6 lässt Luft für Zufall bei nur 32 Pixeln Kantenlänge, schlägt aber bei
+	# einem echten Bruch (dort lagen die Werte bei 3 bis 8) sicher an.
+	_check(worst < 1.6, "Alle Bodenkacheln sind nahtlos (schlechteste: %s %.2f)"
+		% [worst_name, worst])
+	await get_tree().process_frame
+
+## Naht-Unterschied geteilt durch Innen-Unterschied.
+func _seam_ratio(img: Image) -> float:
+	var w := img.get_width()
+	var h := img.get_height()
+	var seam := 0.0
+	for y in h:
+		seam += _diff(img.get_pixel(w - 1, y), img.get_pixel(0, y))
+	for x in w:
+		seam += _diff(img.get_pixel(x, h - 1), img.get_pixel(x, 0))
+	seam /= float(w + h)
+
+	var inner := 0.0
+	var n := 0
+	for y in h:
+		for x in range(1, w):
+			inner += _diff(img.get_pixel(x - 1, y), img.get_pixel(x, y))
+			n += 1
+	for x in w:
+		for y in range(1, h):
+			inner += _diff(img.get_pixel(x, y - 1), img.get_pixel(x, y))
+			n += 1
+	inner /= maxf(float(n), 1.0)
+	return seam / maxf(inner, 0.0001)
+
+static func _diff(a: Color, b: Color) -> float:
+	return absf(a.r - b.r) + absf(a.g - b.g) + absf(a.b - b.b)
+
 ## Chunk-Rechnung: 16 x 16 Blöcke, die Karte geht ohne Rest darin auf.
 func _check_chunks() -> void:
 	var b := Vector2i(51, 41)
@@ -565,6 +632,9 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 	# --- Eingaben dürfen nicht von der Oberfläche ins Spiel durchsickern ---
 	await _check_input_lock(world, map, player)
 
+	# --- Gelände: sichtbar und begehbar müssen zusammenpassen ---
+	await _check_terrain(world, map, player)
+
 	# --- Alles zusammen, schnell hintereinander ---
 	await _check_stress(world, map, player)
 
@@ -759,6 +829,91 @@ func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
 	player.position = Vector2(o.x + 12.0, o.y + 4.0) * Config.TILE
 	player.velocity = Vector2.ZERO
 	await _frames(4)
+
+## Gelände, Kollision und Übergänge.
+##
+## Alle neun Bodentypen einzeln, dann die sechs Übergänge zwischen Land, Wasser
+## und Fels — in beide Richtungen. Ein gespiegelter Aufbau muss sich gleich
+## verhalten.
+func _check_terrain(world: Node2D, map: MapData, player: Player) -> void:
+	var tool: BuildTool = world.build_tool
+	var home := GridOverlay.block_at(player.global_position)
+	var pad := home + Vector2i(-18, 10)
+
+	# 1. Jeder Bodentyp: was man sieht, ist was man bekommt.
+	var mismatch: Array[String] = []
+	for t in MapData.Tile.COUNT:
+		var cell := pad + Vector2i(t * 2, 0)
+		tool.place(cell, t)
+		await _frames(2)
+		var solid: bool = MapData.terrain(t, "solid")
+		var swim: bool = MapData.terrain(t, "swim")
+		var level: int = MapData.terrain(t, "level")
+		if map.is_solid(cell.x, cell.y) != solid \
+				or map.is_swimmable(cell.x, cell.y) != swim \
+				or map.level_at(cell.x, cell.y) != level:
+			mismatch.append(GroundTileSet.NAMES[t])
+	_check(mismatch.is_empty(),
+		"Alle neun Bodentypen: sichtbar und begehbar stimmen überein%s"
+		% ("" if mismatch.is_empty() else " (%s)" % ", ".join(mismatch)))
+
+	# 2. Schwimmend gegen die Klippe — das war der Hauptfehler.
+	var wet := home + Vector2i(-4, 12)
+	for i in 4:
+		tool.place(wet + Vector2i(i, 0), MapData.Tile.WATER)
+	for i in 4:
+		tool.place(wet + Vector2i(i, -1), MapData.Tile.ROCK)
+	await _frames(2)
+	player.position = Vector2(wet.x + 1.5, wet.y + 0.5) * Config.TILE
+	player.velocity = Vector2.ZERO
+	await _frames(6)
+	_check(player.is_swimming(), "Figur schwimmt vor der Klippe")
+	await _drive("move_up", 80)
+	var stand := GridOverlay.block_at(player.global_position)
+	_check(player.level() == 0 and map.level_at(stand.x, stand.y) == 0,
+		"Schwimmend kommt man NICHT auf den Fels (Stufe %d)" % player.level())
+
+	# 3. Die sechs Übergänge, jeweils hin und zurück, ohne Versatz.
+	var lane := home + Vector2i(-16, 14)
+	var kinds := [MapData.Tile.GRASS, MapData.Tile.WATER, MapData.Tile.ROCK,
+		MapData.Tile.GRASS, MapData.Tile.ROCK, MapData.Tile.WATER, MapData.Tile.GRASS]
+	for i in kinds.size():
+		for k in 3:
+			tool.place(lane + Vector2i(i, k - 1), kinds[i])
+	await _frames(2)
+	var jumped := 0.0
+	for dir: String in ["move_right", "move_left"]:
+		var start := lane + (Vector2i(0, 0) if dir == "move_right" else Vector2i(6, 0))
+		player.position = Vector2(start.x + 0.5, start.y + 0.5) * Config.TILE
+		player.velocity = Vector2.ZERO
+		await _frames(4)
+		Input.action_press(dir)
+		var prev := player.position
+		for i in 90:
+			await get_tree().physics_frame
+			jumped = maxf(jumped, prev.distance_to(player.position))
+			prev = player.position
+		Input.action_release(dir)
+		await _frames(4)
+	# Ein Bild bei Renngeschwindigkeit sind rund 3,6 px. Alles über einer
+	# halben Kachel wäre ein Sprung, kein Laufen.
+	_check(jumped < Config.TILE * 0.5,
+		"Kein Versatz an den Übergängen (grösster Schritt %.1f px)" % jumped)
+
+	# 4. An einer Chunk-Grenze entlang, ohne hängenzubleiben.
+	var border := Vector2i((home.x / Config.CHUNK + 1) * Config.CHUNK, home.y + 18)
+	for i in range(-6, 7):
+		tool.place(Vector2i(border.x, border.y + i), MapData.Tile.DEEP_WATER)
+	await _frames(2)
+	player.position = Vector2(border.x - 1.5, border.y - 5.5) * Config.TILE
+	player.velocity = Vector2.ZERO
+	await _frames(4)
+	var from_y := player.position.y
+	await _drive("move_down", 90)
+	var travelled := player.position.y - from_y
+	# 90 Bilder Gehen sind rund 180 px; unter der Hälfte hiesse hängengeblieben.
+	_check(travelled > 90.0,
+		"Läuft an der Chunk-Grenze entlang ohne hängenzubleiben (%.0f px)" % travelled)
 
 ## Der Durchgang aus Punkt 9: Bewegung, Springen, Bauen, Abbauen, Wasser,
 ## Fels, Inventar, Menü und schnelle Eingaben in einem Rutsch. Geprüft wird

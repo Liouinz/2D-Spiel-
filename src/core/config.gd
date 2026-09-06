@@ -70,6 +70,16 @@ const FALL_TIME := 0.20               ## kurzes Fallen beim Heruntergehen
 const CAMERA_ZOOM := 1.5
 const CAMERA_SMOOTH := 6.0            ## Interpolationsgeschwindigkeit der Kamera
 
+## Streuwert aus zwei Koordinaten — dieselbe Kachel bekommt immer denselben
+## Wert, aber ohne sichtbares Muster. Die Primzahlen sind die üblichen aus
+## Spatial-Hashing; das Durchmischen am Ende verhindert Streifen.
+##
+## Wird für Kachelvarianten und für die Verteilung der Dekoration gebraucht.
+static func hash2(x: int, y: int) -> int:
+	var h := (x * 73856093) ^ (y * 19349663)
+	h = (h ^ (h >> 13)) * 1274126177
+	return absi(h ^ (h >> 16))
+
 static func world_size_px() -> Vector2i:
 	return Vector2i(MAP_W * TILE, MAP_H * TILE)
 

@@ -126,9 +126,18 @@ func _update_swimming() -> void:
 ## Kollisionskörper, sondern eine Prüfung vor der Bewegung: bergauf geht nur im
 ## Sprung und nur oberhalb der Kletterhöhe, bergab immer.
 func _block_ledges(delta: float) -> void:
-	if map == null or _swimming:
+	if map == null:
 		return
-	var reach := _level + (1 if jump_height() >= Config.CLIMB_HEIGHT else 0)
+	# HIER lag der Fehler mit „aus dem Wasser auf den Felsen hochgeklatscht":
+	# beim Schwimmen wurde die ganze Prüfung übersprungen, die Figur lief
+	# ungehindert auf die Klippe und stand danach oben.
+	#
+	# Schwimmend erreicht man nur die eigene Stufe — aus dem Wasser kommt man
+	# dort heraus, wo Land auf gleicher Höhe liegt, nicht die Klippe hinauf.
+	# Gesprungen wird im Wasser ohnehin nicht.
+	var reach := _level
+	if not _swimming and jump_height() >= Config.CLIMB_HEIGHT:
+		reach += 1
 	# Geprüft wird der FUSSABDRUCK, nicht ein einzelner Punkt. Mit nur einem
 	# Punkt in der Mitte schob sich die Figur bis zur halben Breite in den Fels
 	# hinein, bevor sie anhielt — und weil die Klippenwand nur nach unten
