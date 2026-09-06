@@ -18,6 +18,8 @@ var _ui_root: Control
 var _main_menu: Control
 var _pause_menu: Control
 var _options_menu: Control
+var _loading: Label
+var _busy := false          ## Welt wird gerade gebaut — zweiter Klick prallt ab
 
 func _ready() -> void:
 	Config.setup_input()
@@ -55,6 +57,9 @@ func _ready() -> void:
 	_options_menu.visible = false
 	_ui_root.add_child(_options_menu)
 
+	_loading = _make_loading()
+	_ui_root.add_child(_loading)
+
 	_set_state(State.MENU)
 	Audio.play_music("menu")
 
@@ -78,14 +83,51 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # --- Zustandswechsel ---------------------------------------------------------
 
+## Der Weltaufbau dauert einige hundert Millisekunden. Ohne Zwischenschritt
+## friert das Fenster dabei ein und wirkt abgestürzt. Deshalb erst den Hinweis
+## einblenden, zwei Bilder abwarten (eines setzt die Sichtbarkeit, das zweite
+## zeichnet sie wirklich) und dann bauen.
 func start_game() -> void:
+	if _busy:
+		return
+	_busy = true
 	Audio.play_ui("confirm")
 	if is_instance_valid(_world):
 		_world.queue_free()
+		_world = null
+	_main_menu.visible = false
+	_loading.visible = true
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var t0 := Time.get_ticks_msec()
 	_world = WorldScene.new()
 	add_child(_world)
+	print("[start] Welt bereit nach %d ms" % (Time.get_ticks_msec() - t0))
+
+	_loading.visible = false
+	_busy = false
 	_set_state(State.PLAYING)
 	Audio.play_music("world")
+
+func _make_loading() -> Label:
+	var l := Label.new()
+	l.name = "Loading"
+	l.set_anchors_preset(Control.PRESET_FULL_RECT)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.process_mode = Node.PROCESS_MODE_ALWAYS
+	l.add_theme_font_size_override("font_size", 30)
+	l.add_theme_color_override("font_color", Palette.UI_TEXT)
+	l.add_theme_constant_override("outline_size", 6)
+	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	l.text = "Lädt …"
+	l.visible = false
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.06, 0.07, 0.09, 1.0)
+	l.add_theme_stylebox_override("normal", bg)
+	return l
 
 func pause_game() -> void:
 	if state != State.PLAYING:
@@ -112,6 +154,7 @@ func close_options() -> void:
 
 func to_main_menu() -> void:
 	Audio.play_ui("close")
+	_save_world()
 	if is_instance_valid(_world):
 		_world.queue_free()
 		_world = null
@@ -120,20 +163,31 @@ func to_main_menu() -> void:
 
 func quit_game() -> void:
 	Settings.save_settings()
+	_save_world()
 	get_tree().quit()
+
+## Die im Aufbaumodus gebaute Karte darf beim Verlassen nicht verloren gehen.
+func _save_world() -> void:
+	if not Config.EMPTY_WORLD or not is_instance_valid(_world):
+		return
+	if _world.map != null:
+		_world.map.save_user()
 
 func _set_state(next: State) -> void:
 	state = next
 	var in_menu := next == State.MENU
-	_main_menu.visible = in_menu
+	_main_menu.visible = in_menu and not _busy
 	_pause_menu.visible = next == State.PAUSED
 	_options_menu.visible = next == State.OPTIONS
 	get_tree().paused = next != State.PLAYING
 	if is_instance_valid(_world):
 		_world.visible = next != State.MENU
-		# Die HUD liegt auf einer CanvasLayer und erbt die Sichtbarkeit nicht.
+		# HUD und Bau-Leiste liegen auf eigenen CanvasLayer und erben die
+		# Sichtbarkeit der Welt nicht — sie werden einzeln geschaltet.
 		if is_instance_valid(_world.hud):
 			_world.hud.visible = next == State.PLAYING
+		if is_instance_valid(_world.build_bar):
+			_world.build_bar.visible = next == State.PLAYING
 	if in_menu:
 		_main_menu.focus_first()
 	elif next == State.PAUSED:

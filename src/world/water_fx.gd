@@ -31,18 +31,34 @@ func setup(map: MapData) -> void:
 	_shore.resize(Config.MAP_W * Config.MAP_H)
 	for y in Config.MAP_H:
 		for x in Config.MAP_W:
-			if not map.is_water(x, y):
-				continue
-			var mask := 0
-			if map.in_bounds(x, y - 1) and not map.is_water(x, y - 1):
-				mask |= UP
-			if map.in_bounds(x, y + 1) and not map.is_water(x, y + 1):
-				mask |= DOWN
-			if map.in_bounds(x - 1, y) and not map.is_water(x - 1, y):
-				mask |= LEFT
-			if map.in_bounds(x + 1, y) and not map.is_water(x + 1, y):
-				mask |= RIGHT
-			_shore[y * Config.MAP_W + x] = mask
+			_shore[y * Config.MAP_W + x] = _mask_at(x, y)
+
+## Ufermaske einer einzelnen Kachel. Einmal beim Aufbau über die ganze Karte,
+## danach nur noch punktuell, wenn die Bau-Leiste Wasser setzt oder entfernt.
+func _mask_at(x: int, y: int) -> int:
+	if not _map.is_water(x, y):
+		return 0
+	var mask := 0
+	if _map.in_bounds(x, y - 1) and not _map.is_water(x, y - 1):
+		mask |= UP
+	if _map.in_bounds(x, y + 1) and not _map.is_water(x, y + 1):
+		mask |= DOWN
+	if _map.in_bounds(x - 1, y) and not _map.is_water(x - 1, y):
+		mask |= LEFT
+	if _map.in_bounds(x + 1, y) and not _map.is_water(x + 1, y):
+		mask |= RIGHT
+	return mask
+
+## Nach einer Änderung an einer Kachel: die Kachel selbst und ihre vier
+## Nachbarn können ein anderes Ufer bekommen haben.
+func refresh(cell: Vector2i) -> void:
+	if _map == null:
+		return
+	for o: Vector2i in [Vector2i.ZERO, Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+		var c := cell + o
+		if _map.in_bounds(c.x, c.y):
+			_shore[c.y * Config.MAP_W + c.x] = _mask_at(c.x, c.y)
+	queue_redraw()
 
 func _process(delta: float) -> void:
 	_time += delta

@@ -51,15 +51,79 @@ func generate(seed_value: int) -> void:
 	_generate_island(seed_value)
 
 ## Leere Fläche mit unsichtbarer Wand am Rand. Der Boden bleibt Gras, damit das
-## rote Raster darauf gut lesbar ist.
+## rote Raster darauf gut lesbar ist. Liegt eine gespeicherte Karte vor, wird
+## stattdessen sie geladen.
 func _generate_flat() -> void:
 	for y in H:
 		for x in W:
 			set_tile(x, y, Tile.GRASS)
+	var saved := load_user()
+	if not saved.is_empty():
+		tiles = saved
+	rebuild_solid()
+
+## Begehbarkeit neu aus den Bodentypen ableiten: Wasser blockiert, der
+## Kartenrand immer. Wird nach dem Laden gebraucht, weil dort nur die
+## Bodentypen gespeichert sind.
+func rebuild_solid() -> void:
 	for y in H:
 		for x in W:
-			if x == 0 or y == 0 or x == W - 1 or y == H - 1:
-				block(x, y)
+			var edge := x == 0 or y == 0 or x == W - 1 or y == H - 1
+			solid[idx(x, y)] = 1 if (edge or is_water(x, y)) else 0
+
+# --- Gebaute Karte sichern ---------------------------------------------------
+
+const SAVE_PATH := "user://karte.dat"
+const SAVE_MAGIC := 0x484C4154   ## "TALH"
+const SAVE_VERSION := 1
+
+## Schreibt die gebaute Karte. Gespeichert werden nur die Bodentypen — die
+## Begehbarkeit lässt sich daraus jederzeit wieder ableiten.
+func save_user() -> bool:
+	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if f == null:
+		push_warning("Karte konnte nicht gespeichert werden: %s" % SAVE_PATH)
+		return false
+	f.store_32(SAVE_MAGIC)
+	f.store_32(SAVE_VERSION)
+	f.store_32(W)
+	f.store_32(H)
+	f.store_buffer(tiles)
+	f.close()
+	return true
+
+## Liest die gespeicherte Karte. Passt Version oder Größe nicht, kommt ein
+## leeres Ergebnis zurück und die Datei wird schlicht ignoriert — ein
+## geänderter Kartenschnitt darf das Spiel nicht zum Absturz bringen.
+static func load_user() -> PackedByteArray:
+	if not FileAccess.file_exists(SAVE_PATH):
+		return PackedByteArray()
+	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if f == null:
+		return PackedByteArray()
+	if f.get_length() < 16:
+		return PackedByteArray()
+	var magic := f.get_32()
+	var version := f.get_32()
+	var w := f.get_32()
+	var h := f.get_32()
+	if magic != SAVE_MAGIC or version != SAVE_VERSION or w != W or h != H:
+		print("Gespeicherte Karte passt nicht (%d × %d, Fassung %d) — sie wird übergangen." % [w, h, version])
+		return PackedByteArray()
+	var data := f.get_buffer(W * H)
+	f.close()
+	if data.size() != W * H:
+		return PackedByteArray()
+	# Unbekannte Bodentypen abfangen, falls die Aufzählung später wächst.
+	for i in data.size():
+		if data[i] >= Tile.COUNT:
+			data[i] = Tile.GRASS
+	return data
+
+## Löscht die gespeicherte Karte (der Selbsttest räumt damit hinter sich auf).
+static func clear_user() -> void:
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 
 func _generate_island(seed_value: int) -> void:
 	var shape := FastNoiseLite.new()

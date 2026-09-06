@@ -20,6 +20,9 @@ func _ready() -> void:
 	_sfx["open"] = _sequence([[392.0, 0.05], [587.0, 0.08]], 0.30)
 	_sfx["close"] = _sequence([[587.0, 0.05], [392.0, 0.09]], 0.30)
 	_sfx["step"] = _noise(0.055, 0.22)
+	# Absprung steigt, Landung fällt und endet auf einem dumpfen Aufsetzer.
+	_sfx["jump"] = _sequence([[392.0, 0.05], [523.0, 0.06], [659.0, 0.07]], 0.26)
+	_sfx["land"] = _sequence([[330.0, 0.05], [196.0, 0.09]], 0.24)
 	for i in VOICES:
 		var p := AudioStreamPlayer.new()
 		p.process_mode = Node.PROCESS_MODE_ALWAYS

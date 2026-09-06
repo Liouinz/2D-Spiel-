@@ -6,7 +6,7 @@ extends RefCounted
 ## Sichtfeld gleich, aber jede Kachel hat die vierfache Pixelfläche für Details.
 const TILE := 32
 const MAP_W := 96                     ## Weltbreite in Kacheln
-const MAP_H := 72                     ## Welthöhe in Kacheln
+const MAP_H := 80                     ## Welthöhe in Kacheln (= 5 Chunks)
 const WORLD_SEED := 20260904          ## fester Seed -> reproduzierbare Welt
 
 ## Aufbaumodus. true = leere Karte mit sichtbarem Blockraster; damit lässt sich
@@ -18,14 +18,21 @@ const EMPTY_WORLD := true
 ## Blockraster beim Start sichtbar. Im Spiel mit G umschaltbar.
 const SHOW_BLOCK_GRID := true
 
-## Jede wie vielte Blocklinie wird kräftiger gezeichnet (erleichtert Zählen).
-const GRID_MAJOR := 5
+## Kantenlänge eines Chunks in Blöcken. 96 x 80 Blöcke ergeben damit
+## genau 6 x 5 = 30 vollständige Chunks.
+const CHUNK := 16
 
 const PLAYER_SPEED := 124.0           ## Gehen (px/s)
 const PLAYER_RUN_SPEED := 216.0       ## Rennen (px/s)
 const PLAYER_ACCEL := 1800.0
 const PLAYER_FRICTION := 2200.0
 const PLAYER_HITBOX := Vector2(18, 12)  ## Fußkollision (halbe Größe)
+
+## Sprung. Von oben gesehen ist er reine Darstellung: die Figur hebt ab, der
+## Schatten bleibt am Boden. Die Kollision bleibt unverändert — über Wände
+## oder Wasser kommt man nicht.
+const JUMP_TIME := 0.45               ## Dauer eines Sprungs in Sekunden
+const JUMP_HEIGHT := 14.0             ## Scheitelhöhe in Bildpunkten
 
 ## Halber Zoom bei doppelter Kachelgröße = unverändertes Sichtfeld,
 ## aber doppelt so feine Grafik.
@@ -43,6 +50,7 @@ static func setup_input() -> void:
 		"move_left": [KEY_A, KEY_LEFT],
 		"move_right": [KEY_D, KEY_RIGHT],
 		"run": [KEY_SHIFT],
+		"jump": [KEY_SPACE],
 		"toggle_grid": [KEY_G],
 	}
 	for action: String in actions:

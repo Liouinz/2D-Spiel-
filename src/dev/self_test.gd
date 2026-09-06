@@ -5,6 +5,8 @@ extends Node
 var main: Node
 var _fails: Array[String] = []
 var _shot_dir: String = ""
+var _save_backup := PackedByteArray()
+var _had_save := false
 
 func _ready() -> void:
 	for a: String in OS.get_cmdline_user_args():
@@ -42,6 +44,13 @@ func _frames(n: int) -> void:
 
 func _run() -> void:
 	print("=== SELBSTTEST ===")
+	# Der Test baut selbst und speichert dabei. Eine vorhandene Karte des
+	# Spielers wird deshalb beiseitegelegt und am Ende zurückgeschrieben —
+	# ein Testlauf darf niemandem seine Arbeit löschen.
+	_had_save = FileAccess.file_exists(MapData.SAVE_PATH)
+	if _had_save:
+		_save_backup = FileAccess.get_file_as_bytes(MapData.SAVE_PATH)
+	MapData.clear_user()
 	if _shot_dir != "":
 		var sheet: Array[String] = preload("res://src/dev/asset_sheet.gd").dump(_shot_dir, Config.WORLD_SEED)
 		print("Requisiten: ", ", ".join(sheet))
@@ -103,11 +112,36 @@ func _run() -> void:
 	await _drive("move_down", 30)
 	_check(player.position.distance_to(start) < Config.TILE * 3.0, "Zurück in Startnähe")
 
+	# --- Blickrichtung: die Seitenansicht ist nach rechts gezeichnet ---
+	await _drive("move_right", 12)
+	_check(player._dir == ActorArt.Dir.SIDE and not player._flip, "Blick nach rechts ungespiegelt")
+	await _drive("move_left", 12)
+	_check(player._dir == ActorArt.Dir.SIDE and player._flip, "Blick nach links gespiegelt")
+
+	# --- Sprung: hebt ab, Boden bleibt, landet wieder ---
+	player.velocity = Vector2.ZERO
+	await _frames(4)
+	var ground_pos := player.position
+	Input.action_press("jump")
+	await _frames(2)
+	Input.action_release("jump")
+	await _frames(6)
+	_check(player.is_jumping() and player.jump_height() > 1.0,
+		"Sprung hebt ab (%.1f px)" % player.jump_height())
+	_check(player.position.distance_to(ground_pos) < 0.01,
+		"Bodenposition bleibt beim Sprung unverändert")
+	await _frames(45)
+	_check(not player.is_jumping() and player.jump_height() == 0.0, "Sprung landet wieder")
+
 	# --- Kamera folgt ---
 	var cam: GameCamera = world.camera
 	await _frames(20)
 	_check(cam.global_position.distance_to(player.global_position) < Config.TILE * 3.0, "Kamera folgt dem Spieler")
 	_check(cam.limit_right == Config.world_size_px().x, "Kameragrenzen gesetzt")
+
+	if Config.EMPTY_WORLD:
+		await _check_chunks()
+		await _check_building(world, map, player)
 
 	if not Config.EMPTY_WORLD:
 		# --- Kollision: gegen Wasser laufen ---
@@ -236,6 +270,13 @@ func _run() -> void:
 	main.start_game()
 	await _frames(6)
 	_check(main._world != null and main._world != world, "Neustart erzeugt frische Welt")
+	if Config.EMPTY_WORLD:
+		# Der Weg aus dem Bau-Test wurde beim Verlassen automatisch gesichert
+		# und muss jetzt wieder auf der Karte liegen.
+		var again: MapData = main._world.map
+		_check(again.get_tile(21, 21) == MapData.Tile.PATH,
+			"Gebaute Karte wird beim nächsten Start wieder geladen")
+	_restore_save()
 
 	print("=== ERGEBNIS: %s (%d Fehler) ===" % ["OK" if _fails.is_empty() else "FEHLER", _fails.size()])
 	for f: String in _fails:
@@ -267,6 +308,118 @@ func _find_assets(path: String) -> Array[String]:
 		name = dir.get_next()
 	dir.list_dir_end()
 	return found
+
+## Chunk-Rechnung: 16 x 16 Blöcke, die Karte geht ohne Rest darin auf.
+func _check_chunks() -> void:
+	var b := Vector2i(51, 41)
+	_check(GridOverlay.chunk_of(b) == Vector2i(3, 2) and GridOverlay.block_in_chunk(b) == Vector2i(3, 9),
+		"Chunk-Rechnung: Block 51|41 liegt in Chunk 3|2, dort auf 3|9")
+	_check(GridOverlay.chunk_of(Vector2i(0, 0)) == Vector2i.ZERO
+		and GridOverlay.block_in_chunk(Vector2i(Config.CHUNK, Config.CHUNK)) == Vector2i.ZERO,
+		"Chunk-Grenzen liegen richtig")
+	_check(Config.MAP_W % Config.CHUNK == 0 and Config.MAP_H % Config.CHUNK == 0,
+		"Karte ergibt %d × %d volle Chunks" % [Config.MAP_W / Config.CHUNK, Config.MAP_H / Config.CHUNK])
+	await get_tree().process_frame
+
+## Bau-Leiste: Blöcke setzen, Nachbarschaft, Wasserkollision, Speichern.
+func _check_building(world: Node2D, map: MapData, player: Player) -> void:
+	var tool: BuildTool = world.build_tool
+	_check(tool != null and world.build_bar != null, "Bau-Leiste vorhanden")
+	if tool == null:
+		return
+
+	# Stapelposition 7 ist der Weg — dort muss der gesetzte Fleck erscheinen.
+	var path_layer: TileMapLayer = world.get_node("Ground").get_child(7)
+	var before := path_layer.get_used_cells().size()
+	var origin := Vector2i(20, 20)
+	for oy in 3:
+		for ox in 3:
+			tool.place(origin + Vector2i(ox, oy), MapData.Tile.PATH)
+	await _frames(2)
+	_check(map.get_tile(21, 21) == MapData.Tile.PATH, "Block gesetzt (Weg)")
+	_check(path_layer.get_used_cells().size() == before + 9,
+		"Wegschicht bemalt (%d Zellen)" % (path_layer.get_used_cells().size() - before))
+	# Die Mitte ist eine Vollkachel, die Ecke eine Übergangskachel.
+	_check(path_layer.get_cell_atlas_coords(Vector2i(21, 21))
+		!= path_layer.get_cell_atlas_coords(origin),
+		"Randkacheln des Flecks sind Übergänge")
+
+	# Zurücksetzen räumt die Schicht wieder ab.
+	tool.place(origin, MapData.Tile.GRASS)
+	await _frames(2)
+	_check(path_layer.get_cell_source_id(origin) == -1, "Zurückgesetzter Block ist wieder leer")
+
+	# Wasser blockiert und bekommt eine eigene Kollisionsform.
+	var wet := Vector2i(26, 20)
+	tool.place(wet, MapData.Tile.WATER)
+	await _frames(2)
+	_check(map.is_solid(wet.x, wet.y) and tool.water_shapes() == 1,
+		"Gesetztes Wasser blockiert (%d Form)" % tool.water_shapes())
+	player.position = Vector2(wet.x + 0.5, wet.y - 1.5) * Config.TILE
+	player.velocity = Vector2.ZERO
+	await _frames(3)
+	await _drive("move_down", 70)
+	var stand := GridOverlay.block_at(player.global_position)
+	_check(not map.is_solid(stand.x, stand.y), "Spieler läuft nicht ins gesetzte Wasser")
+	tool.place(wet, MapData.Tile.GRASS)
+	await _frames(2)
+	_check(not map.is_solid(wet.x, wet.y) and tool.water_shapes() == 0,
+		"Wasser entfernt, Kollisionsform verschwunden")
+
+	# Ein kleines Stück Dorf bauen — als Bildbeleg und als Belastungsprobe für
+	# die Übergänge zwischen vier verschiedenen Bodentypen auf engem Raum.
+	await _build_demo(tool, world, player)
+
+	# Speichern und Laden ergibt dieselbe Karte.
+	_check(tool.save(), "Karte gespeichert")
+	var reread := MapData.load_user()
+	_check(reread == map.tiles, "Geladene Karte stimmt mit der gebauten überein")
+	MapData.clear_user()
+	_check(MapData.load_user().is_empty(), "Ohne Datei wird nichts geladen")
+
+## Baut von Hand ein Stück Dorf: Hausgrundriss aus Pflaster, ein Weg dorthin,
+## eine Wiese und ein Teich. Setzt dieselben Aufrufe ab wie ein Mausklick.
+func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
+	var o := Vector2i(34, 30)
+	# Hausgrundriss: 3 Reihen zu je 2 Blöcken, wie vom Maßstab her besprochen
+	for y in 3:
+		for x in 2:
+			tool.place(o + Vector2i(x, y), MapData.Tile.COBBLE)
+	# Weg vom Haus nach rechts, zwei Blöcke breit
+	for x in range(2, 14):
+		for y in 2:
+			tool.place(o + Vector2i(x, y + 1), MapData.Tile.PATH)
+	# Wiese ringsum
+	for y in range(-3, 7):
+		for x in range(-3, 3):
+			var c := o + Vector2i(x, y)
+			if tool.map.get_tile(c.x, c.y) == MapData.Tile.GRASS:
+				tool.place(c, MapData.Tile.MEADOW)
+	# Teich mit Sandsaum
+	for y in range(6, 11):
+		for x in range(7, 13):
+			tool.place(o + Vector2i(x, y), MapData.Tile.SAND)
+	for y in range(7, 10):
+		for x in range(8, 12):
+			tool.place(o + Vector2i(x, y), MapData.Tile.WATER)
+	await _frames(2)
+	_check(tool.water_shapes() == 12, "Teich blockiert (%d Formen)" % tool.water_shapes())
+
+	player.position = Vector2(o.x + 7.0, o.y + 4.0) * Config.TILE
+	player.velocity = Vector2.ZERO
+	world.camera.snap_to_target()
+	await _frames(6)
+	await _shot("07_bauen")
+
+## Legt die Karte des Spielers wieder so ab, wie sie vor dem Test war.
+func _restore_save() -> void:
+	MapData.clear_user()
+	if not _had_save:
+		return
+	var f := FileAccess.open(MapData.SAVE_PATH, FileAccess.WRITE)
+	if f != null:
+		f.store_buffer(_save_backup)
+		f.close()
 
 func _drive(action: String, frames: int) -> void:
 	Input.action_press(action)

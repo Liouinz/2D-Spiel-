@@ -33,7 +33,9 @@ func build(seed_value: int) -> void:
 	t = _phase("karte", t)
 	art = TileArt.build(seed_value)
 	t = _phase("kacheln", t)
-	props = PropArt.build(seed_value)
+	# Im Aufbaumodus wird nichts platziert — die rund 90 Requisitengrafiken
+	# kosteten dort eine halbe Sekunde Ladezeit für nichts.
+	props = {} if Config.EMPTY_WORLD else PropArt.build(seed_value)
 	t = _phase("requisiten", t)
 	_occupied.resize(Config.MAP_W * Config.MAP_H)
 	_setup_noise(seed_value)
@@ -273,23 +275,9 @@ func cells_for(pos: int) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
 	for y in Config.MAP_H:
 		for x in Config.MAP_W:
-			if _in_layer(pos, map.get_tile(x, y)):
+			if GroundTileSet.in_layer(pos, map.get_tile(x, y)):
 				out.append(Vector2i(x, y))
 	return out
-
-func _in_layer(pos: int, t: int) -> bool:
-	if pos == 0:
-		return true                                       # Gras füllt alles
-	if pos == 4:
-		# Sand liegt auch unter dem flachen Wasser, damit die Brandung auf Sand
-		# trifft. Unter Tiefwasser wäre er nie zu sehen.
-		return t == MapData.Tile.SAND or t == MapData.Tile.WATER
-	if pos == 5:
-		return _is_water(t)                                # flaches Wasser
-	return t == GroundTileSet.STACK[pos]
-
-static func _is_water(t: int) -> bool:
-	return t == MapData.Tile.WATER or t == MapData.Tile.DEEP_WATER
 
 ## Helligkeitsstufe und Variante je Kachel, einmal vorberechnet. Ein Byte je
 ## Kachel ist deutlich billiger als ein Callable-Aufruf pro Kachel und Schicht.

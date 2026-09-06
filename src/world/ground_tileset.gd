@@ -42,6 +42,22 @@ const NAMES := {
 ## Gebaute Flächen bekommen eckige Übergänge statt runder.
 const HARD := [MapData.Tile.PATH, MapData.Tile.COBBLE]
 
+## Gehört ein Bodentyp zu einer Schicht des Stapels?
+##
+## Diese Regel ist die einzige Wahrheit darüber, welche Schicht wo liegt —
+## der Weltaufbau und die Bau-Leiste benutzen beide sie, damit ein von Hand
+## gesetzter Block genauso aussieht wie ein erzeugter.
+static func in_layer(pos: int, t: int) -> bool:
+	if pos == 0:
+		return true                                       # Gras füllt alles
+	if pos == 4:
+		# Sand liegt auch unter dem flachen Wasser, damit die Brandung auf Sand
+		# trifft. Unter Tiefwasser wäre er nie zu sehen.
+		return t == MapData.Tile.SAND or t == MapData.Tile.WATER
+	if pos == 5:
+		return t == MapData.Tile.WATER or t == MapData.Tile.DEEP_WATER
+	return t == STACK[pos]
+
 ## Reihenfolge muss zur Bitfolge in TerrainAtlas passen.
 const CORNERS := [
 	TileSet.CELL_NEIGHBOR_TOP_LEFT_CORNER,
@@ -62,6 +78,8 @@ var decor_ranges: Dictionary = {}       ## sorte -> Vector2i(start, anzahl)
 var _sources: Array[int] = []          ## Quellen-ID je Stapelposition
 var _slots: Array = []                 ## Array[Vector2i] je Stapelposition
 var _full_count: int = 0               ## Vollkacheln je Bodentyp
+var _member: Array = []                ## PackedByteArray je Stapelposition
+var _variants := PackedByteArray()     ## Helligkeit/Variante je Kachel
 
 static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 	var g := GroundTileSet.new()
@@ -171,20 +189,27 @@ func paint_decor(layer: TileMapLayer, indices: PackedInt32Array) -> void:
 ## weiterbearbeiten.
 func paint(layer: TileMapLayer, pos: int, cells: Array[Vector2i], variants: PackedByteArray) -> void:
 	layer.tile_set = tileset
-	if cells.is_empty():
-		return
-
-	var sid: int = _sources[pos]
+	_variants = variants
 	var w := Config.MAP_W
-	if pos == 0:
-		for cell: Vector2i in cells:
-			layer.set_cell(cell, sid, _full(pos, variants[cell.y * w + cell.x]))
-		return
 
+	# Zugehörigkeit merken: die Bau-Leiste schreibt sie später fort, statt sie
+	# bei jedem Klick über die ganze Karte neu zu bestimmen.
 	var member := PackedByteArray()
 	member.resize(w * Config.MAP_H)
 	for cell: Vector2i in cells:
 		member[cell.y * w + cell.x] = 1
+	while _member.size() <= pos:
+		_member.append(PackedByteArray())
+	_member[pos] = member
+
+	if cells.is_empty():
+		return
+
+	var sid: int = _sources[pos]
+	if pos == 0:
+		for cell: Vector2i in cells:
+			layer.set_cell(cell, sid, _full(pos, variants[cell.y * w + cell.x]))
+		return
 
 	var slots: Array[Vector2i] = _slots[pos]
 	for cell: Vector2i in cells:
@@ -193,6 +218,48 @@ func paint(layer: TileMapLayer, pos: int, cells: Array[Vector2i], variants: Pack
 			layer.set_cell(cell, sid, _full(pos, variants[cell.y * w + cell.x]))
 		else:
 			layer.set_cell(cell, sid, slots[mask])
+
+## Setzt eine einzelne Kachel neu — der Kern der Bau-Leiste.
+##
+## Weil der Boden aus neun Schichten mit Eck-Autotiling besteht, ändert eine
+## einzige geänderte Kachel die Eckmasken im 3 × 3-Umfeld auf jeder Schicht.
+## Mehr aber auch nicht: eine Ecke hängt nur von den vier Kacheln ab, die an
+## ihr zusammenstoßen. Neun Schichten × neun Zellen pro Klick sind billig
+## genug, um bei gedrückter Maustaste flüssig zu malen.
+func update_cell(layers: Array, map: MapData, cell: Vector2i) -> void:
+	if not map.in_bounds(cell.x, cell.y):
+		return
+	var i := cell.y * Config.MAP_W + cell.x
+	var t := map.get_tile(cell.x, cell.y)
+	for pos in STACK.size():
+		var member: PackedByteArray = _member[pos]
+		member[i] = 1 if in_layer(pos, t) else 0
+		_member[pos] = member
+
+	for pos in STACK.size():
+		var layer: TileMapLayer = layers[pos]
+		for oy in range(-1, 2):
+			for ox in range(-1, 2):
+				_refresh(layer, pos, cell.x + ox, cell.y + oy)
+
+func _refresh(layer: TileMapLayer, pos: int, x: int, y: int) -> void:
+	if x < 0 or y < 0 or x >= Config.MAP_W or y >= Config.MAP_H:
+		return
+	var c := Vector2i(x, y)
+	var member: PackedByteArray = _member[pos]
+	var i := y * Config.MAP_W + x
+	if member[i] == 0:
+		layer.erase_cell(c)
+		return
+	var sid: int = _sources[pos]
+	if pos == 0:
+		layer.set_cell(c, sid, _full(pos, _variants[i]))
+		return
+	var mask := _corner_mask(member, x, y)
+	if mask == 15:
+		layer.set_cell(c, sid, _full(pos, _variants[i]))
+	else:
+		layer.set_cell(c, sid, (_slots[pos] as Array[Vector2i])[mask])
 
 ## Eine Ecke ist bedeckt, wenn alle vier dort zusammenstoßenden Kacheln zur
 ## Schicht gehören. Am Kartenrand wird der Wert des Randfeldes fortgesetzt,

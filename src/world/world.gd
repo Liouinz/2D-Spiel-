@@ -8,8 +8,11 @@ var player: Player
 var camera: GameCamera
 var hud: CanvasLayer
 var grid: GridOverlay
+var build_bar: CanvasLayer
+var build_tool: BuildTool
 
 const HudScene := preload("res://src/ui/hud.gd")
+const BuildBarScene := preload("res://src/ui/build_bar.gd")
 
 var build_msec: int = 0
 
@@ -27,6 +30,7 @@ func _ready() -> void:
 	ground.name = "Ground"
 	add_child(ground)
 	var t_layers := Time.get_ticks_msec()
+	var layers: Array = []
 	for pos in GroundTileSet.STACK.size():
 		var layer := TileMapLayer.new()
 		layer.name = "L%d_%s" % [pos, GroundTileSet.NAMES[GroundTileSet.STACK[pos]]]
@@ -34,6 +38,7 @@ func _ready() -> void:
 		layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		ground.add_child(layer)
 		builder.ground.paint(layer, pos, builder.cells_for(pos), builder.variant_map())
+		layers.append(layer)
 
 	builder.timings["schichten"] = Time.get_ticks_msec() - t_layers
 
@@ -121,6 +126,25 @@ func _ready() -> void:
 	hud.player = player
 	hud.grid = grid
 	add_child(hud)
+
+	# Bau-Leiste: nur im Aufbaumodus. Auf der fertigen Insel würde ein Klick
+	# sonst Wege und Küste zerlegen.
+	if Config.EMPTY_WORLD:
+		build_bar = BuildBarScene.new()
+		add_child(build_bar)
+		build_bar.setup(builder.art)
+
+		build_tool = BuildTool.new()
+		build_tool.name = "BuildTool"
+		build_tool.map = map
+		build_tool.ground = builder.ground
+		build_tool.layers = layers
+		build_tool.bar = build_bar
+		build_tool.grid = grid
+		build_tool.camera = camera
+		build_tool.body = body
+		build_tool.water = water
+		add_child(build_tool)
 	build_msec = Time.get_ticks_msec() - started
 	print("Welt aufgebaut in %d ms (%d Objekte, %d Kollisionsformen)" % [
 		build_msec, builder.placed.size(), builder.collision_rects.size()])

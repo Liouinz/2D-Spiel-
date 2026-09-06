@@ -182,6 +182,58 @@ Dekorationsschicht sparte 0,8 s, und `Pixel.outline` und `shade_ramp` lesen den
 Alphakanal jetzt als Rohpuffer statt über `get_pixel` je Pixel — zusammen
 1,5 Sekunden. Bei vierfacher Pixelzahl je Grafik ist das vertretbar.
 
+## Nachtrag: Chunks, Sprung und Bau-Leiste
+
+**Die Figur schaute falsch herum.** `player.gd` spiegelte beim Laufen nach
+rechts. Die Seitenansicht in `actor_art.gd` ist aber bereits nach rechts
+gezeichnet — Auge auf x17–19, Nase auf x23, Hinterkopfhaar auf x6–11.
+Gespiegelt wird jetzt beim Laufen nach links. Der Selbsttest prüft beide
+Richtungen, damit der Dreher nicht zurückkommt.
+
+**Der Klick auf „Spielen" fror das Fenster ein.** Zwei Ursachen, beide
+gemessen: `WorldBuilder.build()` erzeugte immer rund 90 Requisitengrafiken
+(464–519 ms), die im Aufbaumodus nie platziert werden — das entfällt dort
+jetzt. Und `Main.start_game()` baute alles in einem einzigen Bild. Jetzt wird
+erst „Lädt …" eingeblendet und zwei Bilder gewartet, damit der Hinweis
+tatsächlich gezeichnet wird. Aus 800 ms Einfrieren wurden 340 ms sichtbarer
+Ladevorgang. Die Shader-Übersetzung beim allerersten Start bleibt.
+
+**Ein Chunk ist 16 × 16 Blöcke.** `MAP_H` ging von 72 auf 80, damit die Karte
+mit 96 × 80 Blöcken in genau 6 × 5 = 30 vollständige Chunks aufgeht. Die
+frühere Staffelung (jede fünfte Linie kräftiger) entfiel dafür — Chunk-Grenzen
+sind die bessere Orientierung. Die Nummer steht in der oberen linken Ecke des
+Chunks, nicht in seiner Mitte: ein Chunk ist 512 px hoch, der Bildausschnitt
+bei Zoom 1,5 aber nur rund 480 — die Mitte wäre meistens ausserhalb.
+
+**Der Sprung ist reine Darstellung.** Von oben gesehen gibt es keine Höhe, die
+kollidieren könnte. Die Figur folgt einer Wurfparabel (0,45 s, 14 px), ihr
+Schatten bleibt am Boden und wird kleiner und blasser. Position und Kollision
+bleiben unverändert — über Wände oder Wasser kommt man nicht. Später kann
+daraus ein echtes Überspringen von Lücken werden.
+
+**Blöcke setzen: neun Schichten, neun Zellen.** Weil der Boden aus neun
+`TileMapLayer` mit Eck-Autotiling besteht, ändert eine einzige geänderte Kachel
+die Eckmasken im 3 × 3-Umfeld auf jeder Schicht — mehr aber auch nicht, weil
+eine Ecke nur von den vier an ihr zusammenstoßenden Kacheln abhängt.
+`GroundTileSet.update_cell()` schreibt deshalb die beim Aufbau angelegten
+Zugehörigkeitsraster fort und rechnet 9 × 9 Zellen neu, statt die Karte
+durchzugehen. Die Eckregel `_corner_mask()` ist dieselbe wie beim Weltaufbau,
+und die Frage, welcher Bodentyp zu welcher Schicht gehört, steht jetzt nur noch
+an einer Stelle (`GroundTileSet.in_layer()`) statt zweimal.
+
+**Kollision beim Bauen.** Das zusammengefasste Rechteck-Verfahren lohnt sich
+nur beim Aufbau. Ein einzeln gesetzter Wasserblock bekommt stattdessen eine
+eigene `CollisionShape2D`, verwaltet über ein Dictionary `Vector2i -> Shape`;
+beim Entfernen verschwindet sie wieder. Der Kartenrand bleibt in jedem Fall
+gesperrt. Die Brandung rechnet ihre Ufermaske für die betroffene Kachel und
+ihre vier Nachbarn neu, statt die ganze Karte abzusuchen.
+
+**Speichern.** `user://karte.dat` enthält Kennung, Fassung, Kartenmaße und die
+Bodentypen als `PackedByteArray`. Die Begehbarkeit wird daraus abgeleitet statt
+mitgespeichert. Passen Fassung oder Maße nicht, wird die Datei übergangen statt
+zu stürzen. Der Selbsttest legt eine vorhandene Karte vorher beiseite und
+schreibt sie danach zurück — ein Testlauf darf niemandem seine Arbeit löschen.
+
 ## Lizenzlage
 
 Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest

@@ -50,15 +50,38 @@ Raster ist das technische Skelett der Welt und im fertigen Spiel unsichtbar —
 hier wird es absichtlich in Rot gezeigt, damit sich planen lässt, wie viele
 Blöcke ein Objekt belegt.
 
-- **Ein Block = 32 × 32 Pixel.** Die Karte ist 96 × 72 Blöcke groß.
-- Jede fünfte Linie ist kräftiger — so lässt sich abzählen.
+- **Ein Block = 32 × 32 Pixel.** Die Karte ist 96 × 80 Blöcke groß.
+- **Ein Chunk = 16 × 16 Blöcke** (512 px). Die Karte geht damit in genau
+  **6 × 5 = 30 vollständige Chunks** auf. Die Chunk-Grenzen sind gelb und tragen
+  ihre Nummer in der oberen linken Ecke.
 - Der Block unter der Figur ist hervorgehoben.
 - Die orange Umrandung ist die unsichtbare Wand am Kartenrand.
-- Oben links steht, auf welchem Block die Figur gerade steht.
+- Oben links steht Chunk, Block und Position innerhalb des Chunks.
 - **G** schaltet das Raster ein und aus.
 
 Zum Größenvergleich: ein kleines Wohnhaus ist 92 px breit, belegt also rund
 3 Blöcke in der Breite und 3 in der Höhe; die Scheune 5 × 3 Blöcke.
+
+### Bauen
+
+Unten steht eine Leiste mit acht Bodentypen. Jedes Feld zeigt die echte
+Bodenkachel, nicht ein Ersatzsymbol.
+
+- **1 – 8** oder **Mausrad** wählt den Bodentyp.
+- **Linke Maustaste** setzt ihn auf den Block unter dem Zeiger, **rechte
+  Maustaste** setzt zurück auf Gras. Gedrückt halten malt.
+- Der Block unter dem Zeiger ist weiß umrandet.
+- Gesetztes **Wasser blockiert** und bekommt Brandung an den Ufern.
+- Die Übergänge zu den Nachbarn werden sofort mitgerechnet — ein gesetzter Weg
+  bekommt saubere Kanten, ganz ohne Nacharbeit.
+
+![Bauen mit der Leiste](docs/bilder/bauen.png)
+
+Die gebaute Karte wird **beim Zurückgehen ins Hauptmenü und beim Beenden
+automatisch gesichert**, mit **F5** auch von Hand. Sie liegt in
+`user://karte.dat` (unter Linux `~/.local/share/godot/app_userdata/Talhain/`).
+Passen Fassung oder Kartenmaße nicht, wird die Datei übergangen statt zu
+stürzen.
 
 Umschalten in `src/core/config.gd`:
 
@@ -75,13 +98,18 @@ kommt mit `false` unverändert zurück.
 |---|---|
 | **W A S D** oder **Pfeiltasten** | Laufen |
 | **Shift** | Rennen |
+| **Leertaste** | Springen |
 | **G** | Blockraster ein / aus |
+| **1 – 8** / **Mausrad** | Bodentyp wählen (Aufbaumodus) |
+| **Linke Maustaste** | Block setzen (Aufbaumodus) |
+| **Rechte Maustaste** | Block zurücksetzen (Aufbaumodus) |
+| **F5** | Karte speichern (Aufbaumodus) |
 | **ESC** | Pause-Menü öffnen / schließen |
 | **Maus** | Menüs bedienen |
 
 ## Was drin ist
 
-**Welt** — Eine Insel aus 96 × 72 Kacheln mit klar erkennbaren Gebieten: ein Dorf mit
+**Welt** — Eine Insel aus 96 × 80 Kacheln mit klar erkennbaren Gebieten: ein Dorf mit
 gepflastertem Platz, Brunnen und elf Gebäuden, dichter Misch­wald im Nordwesten, blühende Wiese im
 Nordosten, Felsland im Osten und eine Bucht mit Sandstrand im Südwesten. Getretene Erdwege
 verbinden alles miteinander.
@@ -173,7 +201,9 @@ src/ui/menu_art.gd         Titelbild des Hauptmenüs
 src/ui/main_menu.gd        Startmenü
 src/ui/pause_menu.gd       Pause-Menü
 src/ui/options_menu.gd     Optionen
-src/ui/hud.gd              Steuerungshinweis beim Start
+src/ui/hud.gd              Steuerungshinweis, Chunk- und Blockanzeige
+src/ui/build_bar.gd        Bau-Leiste mit acht Bodentypen
+src/world/build_tool.gd    Blöcke setzen, Wasserkollision, Speichern
 src/ui/cloud_layer.gd      Ziehende Wolken im Hauptmenü
 
 src/audio/audio.gd         Autoload: prozedurale Musik und Effekte
@@ -193,8 +223,8 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 36 Prüfungen; Weltaufbau ~1,5 s,
-616 Objekte, 572 Kollisionsformen, 45 Zeichenaufrufe). Eine der Prüfungen durchsucht das
+Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 53 Prüfungen; im Aufbaumodus
+Weltaufbau ~340 ms, auf der Insel ~1,5 s mit 616 Objekten und 572 Kollisionsformen). Eine der Prüfungen durchsucht das
 Projekt nach fremden Asset-Dateien und schlägt fehl, sobald eine auftaucht — siehe
 [`CREDITS.md`](CREDITS.md). Mit einer echten Anzeige
 lassen sich zusätzlich Screenshots und ein Kontaktbogen aller erzeugten Grafiken ablegen:

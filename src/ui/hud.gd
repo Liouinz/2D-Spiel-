@@ -19,23 +19,35 @@ func _ready() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
 
-	if Settings.show_hints:
-		_label = _make_label(18)
-		_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-		_label.offset_top = -64
-		_label.offset_bottom = -28
-		_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_label.text = "WASD / Pfeiltasten – Laufen    ·    Shift – Rennen    ·    ESC – Pause"
-		root.add_child(_label)
-
 	# Blockanzeige: nur im Aufbaumodus sinnvoll
 	if Config.EMPTY_WORLD:
 		_blocks = _make_label(20)
 		_blocks.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		_blocks.offset_left = 24
 		_blocks.offset_top = 18
+		_blocks.offset_right = 900
 		_blocks.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		root.add_child(_blocks)
+
+	if Settings.show_hints:
+		_label = _make_label(17)
+		if Config.EMPTY_WORLD:
+			# Unten ist im Aufbaumodus kein Platz — dort liegt die Bau-Leiste.
+			# Die Steuerungshilfe kommt deshalb unter die Blockanzeige.
+			_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
+			_label.offset_left = 24
+			_label.offset_top = 78
+			_label.offset_right = 900
+			_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+			_label.text = "WASD / Pfeiltasten – Laufen   ·   Shift – Rennen   ·   Leertaste – Springen"
+			_label.text += "\nG – Raster   ·   F5 – Karte speichern   ·   ESC – Pause"
+		else:
+			_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+			_label.offset_top = -64
+			_label.offset_bottom = -28
+			_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			_label.text = "WASD / Pfeiltasten – Laufen   ·   Shift – Rennen   ·   Leertaste – Springen   ·   ESC – Pause"
+		root.add_child(_label)
 
 func _make_label(size: int) -> Label:
 	var l := Label.new()
@@ -49,9 +61,14 @@ func _make_label(size: int) -> Label:
 func _process(delta: float) -> void:
 	if _blocks != null and is_instance_valid(player):
 		var b := GridOverlay.block_at(player.global_position)
+		var c := GridOverlay.chunk_of(b)
+		var ic := GridOverlay.block_in_chunk(b)
 		var on := is_instance_valid(grid) and grid.visible
-		_blocks.text = "Block  %d | %d        Blockgröße %d px        Karte %d × %d Blöcke\nG – Raster %s" % [
-			b.x, b.y, Config.TILE, Config.MAP_W, Config.MAP_H, "aus" if on else "an"]
+		_blocks.text = "Chunk  %d | %d      ·      Block  %d | %d      ·      im Chunk  %d | %d\n%d px je Block   ·   %d × %d Blöcke   =   %d × %d Chunks   ·   G – Raster %s" % [
+			c.x, c.y, b.x, b.y, ic.x, ic.y,
+			Config.TILE, Config.MAP_W, Config.MAP_H,
+			Config.MAP_W / Config.CHUNK, Config.MAP_H / Config.CHUNK,
+			"aus" if on else "an"]
 
 	if _label == null:
 		return
