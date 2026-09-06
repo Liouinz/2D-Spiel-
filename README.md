@@ -15,11 +15,29 @@ Du läufst als Wanderer durch eine überschaubare Insel: Dorf, Wiese, Wald, Fels
 Es startet die Szene `scenes/main.tscn`. Danach erscheint das Hauptmenü,
 **SPIELEN** lädt die Welt (rund 1,5 Sekunden), und die Figur steht am Dorfplatz.
 
-Ohne Editor, direkt von der Kommandozeile:
+### Ohne Editor, direkt im Terminal
+
+Zwei Befehle. Der erste ist **nur beim allerersten Mal** nötig — er legt den
+Import-Cache an. Ohne ihn bricht Godot mit `Identifier "Config" not declared`
+ab, weil die Skripte sich ohne Cache gegenseitig nicht finden.
 
 ```bash
-godot --path .          # Spiel starten
+cd <Ordner mit project.godot>
+godot --headless --import      # einmalig, dauert ein paar Sekunden
+godot                          # Spiel starten
 ```
+
+Heißt die Godot-Datei bei dir anders (etwa `Godot_v4.3-stable_win64.exe` oder
+`Godot.app`), nimm diesen Namen statt `godot`:
+
+| System | erster Befehl (einmalig) | danach jedes Mal |
+|---|---|---|
+| **Windows** | `.\Godot_v4.3-stable_win64.exe --headless --import` | `.\Godot_v4.3-stable_win64.exe` |
+| **macOS** | `/Applications/Godot.app/Contents/MacOS/Godot --headless --import` | `/Applications/Godot.app/Contents/MacOS/Godot` |
+| **Linux** | `./Godot_v4.3-stable_linux.x86_64 --headless --import` | `./Godot_v4.3-stable_linux.x86_64` |
+
+Beim Öffnen über die Godot-Oberfläche entfällt der Import-Befehl — das erledigt
+der Editor selbst.
 
 Alle Grafiken und Klänge entstehen beim Start im Spiel selbst — es müssen
 keine Assets heruntergeladen oder importiert werden. Die Lizenzlage ist in
