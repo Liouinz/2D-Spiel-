@@ -7,6 +7,7 @@ var map: MapData
 var player: Player
 var camera: GameCamera
 var hud: CanvasLayer
+var grid: GridOverlay
 
 const HudScene := preload("res://src/ui/hud.gd")
 
@@ -109,7 +110,16 @@ func _ready() -> void:
 	camera.snap_to_target()
 	water.camera = camera
 
+	# Rotes Blockraster über allem — zeigt das sonst unsichtbare Grid.
+	grid = GridOverlay.new()
+	grid.name = "GridOverlay"
+	grid.camera = camera
+	grid.player = player
+	add_child(grid)
+
 	hud = HudScene.new()
+	hud.player = player
+	hud.grid = grid
 	add_child(hud)
 	build_msec = Time.get_ticks_msec() - started
 	print("Welt aufgebaut in %d ms (%d Objekte, %d Kollisionsformen)" % [

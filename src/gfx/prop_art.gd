@@ -152,7 +152,7 @@ static func _trunk(img: Image, base_x: float, base_y: float, top_y: float, width
 static func _deciduous(rng: RandomNumberGenerator, w: int, h: int, ramp: Array,
 		blob_count: int, scale: float, birch: bool = false) -> Dictionary:
 	var img := Pixel.make(w, h)
-	var trunk_w := (5.0 if not birch else 3.0) * scale
+	var trunk_w := (5.0 if not birch else 4.2) * scale
 	var lean := rng.randf_range(-2.5, 2.5)
 	# Die Birke bekommt eine tiefer sitzende, größere Krone — sonst wirkt der
 	# helle Stamm wie ein Pfahl mit einem Blattball obendrauf.
@@ -191,8 +191,10 @@ static func _conifer(rng: RandomNumberGenerator, w: int, h: int, tiers: int) -> 
 	var img := Pixel.make(w, h)
 	var cx := w * 0.5
 	var base := h - 1.0
-	var trunk_top := h * 0.30
-	_trunk(img, cx, base, h * 0.62, 3.4, 0.0, rng, false)
+	# Stammbreite haengt an der Baumbreite. Ein fester Wert war hier der Fehler:
+	# nach der Verdopplung der Aufloesung blieb ein 3-Pixel-Faden uebrig.
+	var trunk_w := w * 0.115
+	_trunk(img, cx, base, h * 0.62, trunk_w, 0.0, rng, false)
 
 	var ramp := [Palette.PINE_HI, Palette.PINE_LIGHT, Palette.PINE, Palette.PINE_DARK, Palette.PINE_DEEP]
 	var top := h * rng.randf_range(0.03, 0.09)
@@ -216,7 +218,7 @@ static func _conifer(rng: RandomNumberGenerator, w: int, h: int, tiers: int) -> 
 
 	var light := Vector2(cx + LIGHT.x * w * 0.5, top + h * 0.15)
 	Pixel.shade_ramp(img, ramp, light, h * 0.95)
-	_trunk(img, cx, base, h * 0.62, 3.4, 0.0, rng, false)
+	_trunk(img, cx, base, h * 0.62, trunk_w, 0.0, rng, false)
 	Pixel.speckle_opaque(img, rng, int(h * 0.4), Palette.PINE_DEEP, int(h * 0.35), int(bottom))
 	Pixel.outline(img, Palette.OUTLINE)
 	return _variant(img, Vector2(4.0, 4.0), Vector2(w * 0.34, w * 0.15))

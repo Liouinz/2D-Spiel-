@@ -75,12 +75,21 @@ func _run() -> void:
 	var counts := {}
 	for i in map.tiles.size():
 		counts[map.tiles[i]] = counts.get(map.tiles[i], 0) + 1
-	_check(counts.size() >= 6, "Karte enthält mehrere Bereiche (%d Typen)" % counts.size())
-	for t in [MapData.Tile.GRASS, MapData.Tile.FOREST, MapData.Tile.WATER, MapData.Tile.PATH, MapData.Tile.SAND]:
-		_check(counts.get(t, 0) > 20, "Bereich %d vorhanden" % t)
+	if Config.EMPTY_WORLD:
+		_check(counts.size() == 1 and counts.has(MapData.Tile.GRASS), "Karte ist leer (nur Boden)")
+		_check(world.get_node("Sorted").get_child_count() == 1, "Keine Requisiten auf der Karte")
+		_check(map.is_solid(0, 10) and map.is_solid(Config.MAP_W - 1, 10),
+			"Unsichtbare Wand am Kartenrand")
+		var g: GridOverlay = world.grid
+		_check(g != null and g.visible, "Blockraster ist sichtbar")
+		_check(g.z_index > 100, "Raster liegt über der Welt")
+	else:
+		_check(counts.size() >= 6, "Karte enthält mehrere Bereiche (%d Typen)" % counts.size())
+		for t in [MapData.Tile.GRASS, MapData.Tile.FOREST, MapData.Tile.WATER, MapData.Tile.PATH, MapData.Tile.SAND]:
+			_check(counts.get(t, 0) > 20, "Bereich %d vorhanden" % t)
 	var spawn_tile := Vector2i(int(player.position.x) / Config.TILE, int(player.position.y) / Config.TILE)
 	_check(not map.is_solid(spawn_tile.x, spawn_tile.y), "Startpunkt ist begehbar")
-	_check(world.get_node("Collision").get_child_count() > 10, "Kollisionsformen gebaut (%d)" %
+	_check(world.get_node("Collision").get_child_count() > 3, "Kollisionsformen gebaut (%d)" %
 		world.get_node("Collision").get_child_count())
 	await _shot("02_dorf")
 
@@ -100,21 +109,22 @@ func _run() -> void:
 	_check(cam.global_position.distance_to(player.global_position) < Config.TILE * 3.0, "Kamera folgt dem Spieler")
 	_check(cam.limit_right == Config.world_size_px().x, "Kameragrenzen gesetzt")
 
-	# --- Kollision: gegen Wasser laufen ---
-	var wet := _find_water_shore(map)
-	if wet != Vector2i(-1, -1):
-		player.position = Vector2(wet.x * Config.TILE + 8, wet.y * Config.TILE + 8)
-		player.velocity = Vector2.ZERO
-		await _frames(2)
-		await _drive("move_down", 90)
-		var tile := Vector2i(int(player.position.x) / Config.TILE, int(player.position.y) / Config.TILE)
-		_check(not map.is_solid(tile.x, tile.y), "Spieler läuft nicht ins Wasser")
-	else:
-		_check(false, "Uferkachel gefunden")
+	if not Config.EMPTY_WORLD:
+		# --- Kollision: gegen Wasser laufen ---
+		var wet := _find_water_shore(map)
+		if wet != Vector2i(-1, -1):
+			player.position = Vector2(wet.x * Config.TILE + 8, wet.y * Config.TILE + 8)
+			player.velocity = Vector2.ZERO
+			await _frames(2)
+			await _drive("move_down", 90)
+			var tile := Vector2i(int(player.position.x) / Config.TILE, int(player.position.y) / Config.TILE)
+			_check(not map.is_solid(tile.x, tile.y), "Spieler läuft nicht ins Wasser")
+		else:
+			_check(false, "Uferkachel gefunden")
 
-	# --- Kollision: gegen einen Baum laufen ---
-	var blocked: bool = await _walk_into_prop(world)
-	_check(blocked, "Requisiten (Baum/Fels/Haus) blockieren")
+		# --- Kollision: gegen einen Baum laufen ---
+		var blocked: bool = await _walk_into_prop(world)
+		_check(blocked, "Requisiten (Baum/Fels/Haus) blockieren")
 
 	# --- Weltgrenze ---
 	player.position = Vector2(Config.TILE * 4, Config.TILE * 4)
@@ -132,15 +142,23 @@ func _run() -> void:
 	await _frames(6)
 	await _shot("03_wald")
 
-	# Strand / Bucht
-	var beach := _find_beach(map)
-	if beach != Vector2i(-1, -1):
-		player.position = Vector2(beach.x * Config.TILE, beach.y * Config.TILE)
+	var beach := Vector2i(-1, -1)
+	if Config.EMPTY_WORLD:
+		# Aufbaumodus: Raster am Kartenrand zeigen, dort sitzt die Wand
+		player.position = Vector2(Config.TILE * 4, Config.TILE * 4)
 		player.velocity = Vector2.ZERO
 		cam.snap_to_target()
 		await _frames(6)
-		await _shot("04_strand")
-	_check(beach != Vector2i(-1, -1), "Strand mit Wasser vorhanden")
+		await _shot("04_raster_rand")
+	else:
+		beach = _find_beach(map)
+		if beach != Vector2i(-1, -1):
+			player.position = Vector2(beach.x * Config.TILE, beach.y * Config.TILE)
+			player.velocity = Vector2.ZERO
+			cam.snap_to_target()
+			await _frames(6)
+			await _shot("04_strand")
+		_check(beach != Vector2i(-1, -1), "Strand mit Wasser vorhanden")
 
 	_check(world.build_msec < 5000, "Welt lädt zügig (%d ms)" % world.build_msec)
 

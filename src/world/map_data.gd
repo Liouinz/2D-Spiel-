@@ -42,8 +42,26 @@ func block(x: int, y: int) -> void:
 	if in_bounds(x, y):
 		solid[idx(x, y)] = 1
 
-## Baut die komplette Karte auf: Insel, Regionen, Bucht, Wege, Dorfplatz.
+## Baut die Karte auf. Im Aufbaumodus entsteht eine leere Fläche, sonst die
+## komplette Insel.
 func generate(seed_value: int) -> void:
+	if Config.EMPTY_WORLD:
+		_generate_flat()
+		return
+	_generate_island(seed_value)
+
+## Leere Fläche mit unsichtbarer Wand am Rand. Der Boden bleibt Gras, damit das
+## rote Raster darauf gut lesbar ist.
+func _generate_flat() -> void:
+	for y in H:
+		for x in W:
+			set_tile(x, y, Tile.GRASS)
+	for y in H:
+		for x in W:
+			if x == 0 or y == 0 or x == W - 1 or y == H - 1:
+				block(x, y)
+
+func _generate_island(seed_value: int) -> void:
 	var shape := FastNoiseLite.new()
 	shape.seed = seed_value
 	shape.frequency = 0.035

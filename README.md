@@ -43,12 +43,39 @@ Alle Grafiken und Klänge entstehen beim Start im Spiel selbst — es müssen
 keine Assets heruntergeladen oder importiert werden. Die Lizenzlage ist in
 [`CREDITS.md`](CREDITS.md) dokumentiert.
 
+## Aufbaumodus (aktuell aktiv)
+
+Das Spiel startet mit einer **leeren Karte und sichtbarem Blockraster**. Das
+Raster ist das technische Skelett der Welt und im fertigen Spiel unsichtbar —
+hier wird es absichtlich in Rot gezeigt, damit sich planen lässt, wie viele
+Blöcke ein Objekt belegt.
+
+- **Ein Block = 32 × 32 Pixel.** Die Karte ist 96 × 72 Blöcke groß.
+- Jede fünfte Linie ist kräftiger — so lässt sich abzählen.
+- Der Block unter der Figur ist hervorgehoben.
+- Die orange Umrandung ist die unsichtbare Wand am Kartenrand.
+- Oben links steht, auf welchem Block die Figur gerade steht.
+- **G** schaltet das Raster ein und aus.
+
+Zum Größenvergleich: ein kleines Wohnhaus ist 92 px breit, belegt also rund
+3 Blöcke in der Breite und 3 in der Höhe; die Scheune 5 × 3 Blöcke.
+
+Umschalten in `src/core/config.gd`:
+
+```gdscript
+const EMPTY_WORLD := true    # false = wieder die komplette Insel mit Dorf und Wald
+```
+
+Der Code für Insel, Dorf, Wald, Wege und Küste bleibt vollständig erhalten und
+kommt mit `false` unverändert zurück.
+
 ## Steuerung
 
 | Eingabe | Aktion |
 |---|---|
 | **W A S D** oder **Pfeiltasten** | Laufen |
 | **Shift** | Rennen |
+| **G** | Blockraster ein / aus |
 | **ESC** | Pause-Menü öffnen / schließen |
 | **Maus** | Menüs bedienen |
 

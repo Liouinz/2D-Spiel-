@@ -37,8 +37,10 @@ func build(seed_value: int) -> void:
 	t = _phase("requisiten", t)
 	_occupied.resize(Config.MAP_W * Config.MAP_H)
 	_setup_noise(seed_value)
-	_place_village()
-	_place_nature()
+	# Im Aufbaumodus bleibt die Karte leer — nur Boden und Raster.
+	if not Config.EMPTY_WORLD:
+		_place_village()
+		_place_nature()
 	t = _phase("platzierung", t)
 	ground = GroundTileSet.build(art, seed_value)
 	t = _phase("kachelsatz", t)
@@ -310,6 +312,8 @@ func decor_map() -> PackedInt32Array:
 	var out := PackedInt32Array()
 	out.resize(Config.MAP_W * Config.MAP_H)
 	out.fill(-1)
+	if Config.EMPTY_WORLD:
+		return out
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _rng.seed + 5
 	for y in Config.MAP_H:
