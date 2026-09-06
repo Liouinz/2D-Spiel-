@@ -10,6 +10,7 @@ extends Node2D
 const T := Config.TILE
 const FOAM_SEG := 4          ## Segmentbreite des Schaums in Pixeln
 const REDRAW_HZ := 24.0
+const SPLASH_TIME := 0.55    ## Lebensdauer eines Wellenrings
 
 ## Bits der Uferrichtungen je Kachel
 const UP := 1
@@ -22,6 +23,7 @@ var prims: int = 0           ## gezeichnete Rechtecke im letzten Bild (nur Messu
 
 var _map: MapData
 var _time: float = 0.0
+var _splashes: Array = []      ## {"pos": Vector2, "age": float}
 var _accum: float = 0.0
 
 ## Muss vor dem ersten Zeichnen aufgerufen werden.
@@ -52,8 +54,18 @@ func _mask_at(x: int, y: int) -> int:
 func refresh(_cell: Vector2i) -> void:
 	queue_redraw()
 
+## Ein Wellenring, wenn jemand eintaucht.
+func splash(pos: Vector2) -> void:
+	_splashes.append({"pos": pos, "age": 0.0})
+	queue_redraw()
+
 func _process(delta: float) -> void:
 	_time += delta
+	if not _splashes.is_empty():
+		for sp: Dictionary in _splashes:
+			sp["age"] += delta
+		_splashes = _splashes.filter(func(sp: Dictionary) -> bool: return sp["age"] < SPLASH_TIME)
+		queue_redraw()
 	_accum += delta
 	if _accum >= 1.0 / REDRAW_HZ:
 		_accum = 0.0
@@ -81,6 +93,23 @@ func _draw() -> void:
 			var mask := _mask_at(x, y)
 			if mask != 0:
 				_foam(x, y, mask)
+	_draw_splashes()
+
+## Der Ring wächst und wird blasser — wie eine Welle, die sich ausbreitet.
+## Gezeichnet als Kranz kurzer Striche, nicht als glatter Kreis: ein sauberer
+## Kreis sähe in Pixelgrafik falsch aus.
+func _draw_splashes() -> void:
+	for sp: Dictionary in _splashes:
+		var f: float = sp["age"] / SPLASH_TIME
+		var r: float = 5.0 + f * 20.0
+		var a: float = (1.0 - f) * 0.8
+		var center: Vector2 = sp["pos"]
+		for i in 14:
+			var ang := TAU * (float(i) + (0.5 if (i % 2) else 0.0)) / 14.0
+			var dir := Vector2(cos(ang), sin(ang) * 0.55)
+			var p := center + dir * r
+			draw_rect(Rect2(p.x - 1.5, p.y, 3.0, 1.0), Color(Palette.WATER_FOAM, a), true)
+			prims += 1
 
 func _glint(x: int, y: int) -> void:
 	var h := (x * 73856093) ^ (y * 19349663)

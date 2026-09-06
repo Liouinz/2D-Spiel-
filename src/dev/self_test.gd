@@ -369,6 +369,31 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 	if tool == null:
 		return
 
+	# --- Der Fehler aus dem Foto: einzelne Blöcke wurden Klekse ---
+	var home0 := GridOverlay.block_at(player.global_position)
+	var cob: TileMapLayer = world.streamer.layers[8]     # Pflaster
+	var solo := home0 + Vector2i(-10, -8)
+	tool.place(solo, MapData.Tile.COBBLE)
+	await _frames(2)
+	var full_start := TerrainAtlas.FULL_START
+	_check(cob.get_cell_atlas_coords(solo).x + cob.get_cell_atlas_coords(solo).y * TerrainAtlas.COLS
+		>= full_start, "Einzelner Block ist eine Vollkachel, kein Klecks")
+	_check(cob.get_cell_source_id(solo + Vector2i(1, 0)) != -1,
+		"Nachbarfeld bekommt den Saum")
+
+	# Sechs in einer Reihe: früher zerfiel das in sechs Punkte.
+	var rowy := home0.y - 5
+	for i in 6:
+		tool.place(Vector2i(home0.x - 10 + i, rowy), MapData.Tile.COBBLE)
+	await _frames(2)
+	var all_full := true
+	for i in 6:
+		var c := Vector2i(home0.x - 10 + i, rowy)
+		var a := cob.get_cell_atlas_coords(c)
+		if a.x + a.y * TerrainAtlas.COLS < full_start:
+			all_full = false
+	_check(all_full, "Reihe aus sechs Blöcken ergibt sechs Vollkacheln")
+
 	# Die Bauvorschau darf nicht am Raster hängen — genau das war der Fehler.
 	var g: GridOverlay = world.grid
 	g.show_grid = false
@@ -389,17 +414,21 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 	await _frames(2)
 	var mid := origin + Vector2i(1, 1)
 	_check(map.get_tile(mid.x, mid.y) == MapData.Tile.PATH, "Block gesetzt (Weg)")
-	_check(path_layer.get_used_cells().size() == before + 9,
-		"Wegschicht bemalt (%d Zellen)" % (path_layer.get_used_cells().size() - before))
+	# 9 gesetzte Felder plus der Saum auf den 16 Nachbarfeldern ringsum.
+	_check(path_layer.get_used_cells().size() == before + 25,
+		"Wegfläche mit Saum bemalt (%d Zellen)" % (path_layer.get_used_cells().size() - before))
 	# Die Mitte ist eine Vollkachel, die Ecke eine Übergangskachel.
 	_check(path_layer.get_cell_atlas_coords(mid)
 		!= path_layer.get_cell_atlas_coords(origin),
 		"Randkacheln des Flecks sind Übergänge")
 
-	# Zurücksetzen räumt die Schicht wieder ab.
+	# Zurücksetzen: das Feld ist kein Weg mehr, bekommt aber den Saum der
+	# Nachbarn, die noch Weg sind.
 	tool.place(origin, MapData.Tile.GRASS)
 	await _frames(2)
-	_check(path_layer.get_cell_source_id(origin) == -1, "Zurückgesetzter Block ist wieder leer")
+	var a_reset := path_layer.get_cell_atlas_coords(origin)
+	_check(a_reset.x + a_reset.y * TerrainAtlas.COLS < TerrainAtlas.FULL_START,
+		"Zurückgesetzter Block ist keine Vollkachel mehr")
 
 	# Flaches Wasser lässt sich durchschwimmen, Tiefwasser nicht.
 	var wet := home + Vector2i(6, -6)
@@ -430,6 +459,25 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 	await _drive("move_up", 70)
 	_check(not player.is_swimming(), "Nach dem Verlassen wird wieder gelaufen")
 
+	# Sprung ins Wasser: der Sprung wird zu Ende geflogen, erst dann geschwommen.
+	player.position = Vector2(wet.x + 0.5, wet.y - 1.2) * Config.TILE
+	player.velocity = Vector2.ZERO
+	await _frames(3)
+	Input.action_press("jump")
+	await _frames(2)
+	Input.action_release("jump")
+	Input.action_press("move_down")
+	var mid_air_swim := false
+	for i in 40:
+		await get_tree().physics_frame
+		if player.is_swimming() and player.is_jumping():
+			mid_air_swim = true
+	Input.action_release("move_down")
+	await _frames(10)
+	_check(not mid_air_swim, "Im Sprung wird nicht geschwommen")
+	_check(player.is_swimming(), "Nach der Landung im Wasser wird geschwommen")
+	await _drive("move_up", 60)
+
 	# Tiefwasser bleibt eine Wand.
 	var deep := home + Vector2i(8, -6)
 	tool.place(deep, MapData.Tile.DEEP_WATER)
@@ -444,6 +492,47 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 	# Ein kleines Stück Dorf bauen — als Bildbeleg und als Belastungsprobe für
 	# die Übergänge zwischen vier verschiedenen Bodentypen auf engem Raum.
 	await _build_demo(tool, world, player)
+
+	# --- Inventar: ausrüsten, was in der Leiste liegt ---
+	var inv: CanvasLayer = world.inventory
+	_check(inv != null, "Inventar vorhanden")
+	if inv != null:
+		main.toggle_inventory()
+		await _frames(3)
+		_check(main.state == main.State.INVENTORY and inv.visible, "Inventar öffnet mit E")
+		await _frames(4)
+		await _shot("09_inventar")
+		inv.select_slot(2)
+		var before_type: int = world.build_bar.types[2]
+		inv.equip_requested.emit(2, MapData.Tile.DEEP_WATER)
+		await _frames(3)
+		_check(world.build_bar.types[2] == MapData.Tile.DEEP_WATER
+			and before_type != MapData.Tile.DEEP_WATER,
+			"Klick im Inventar rüstet den Typ auf das gewählte Feld")
+		world.build_bar.select(2)
+		_check(world.build_bar.tile_type() == MapData.Tile.DEEP_WATER,
+			"Die Leiste setzt danach den neuen Typ")
+		inv.equip_requested.emit(2, before_type)
+		main.toggle_inventory()
+		await _frames(3)
+		_check(main.state == main.State.PLAYING and not inv.visible, "Inventar schliesst wieder")
+		world.build_bar.select(0)
+
+	# --- Eigene Tasten für Minimap und Anzeige ---
+	var g2: GridOverlay = world.grid
+	var grid_before := g2.show_grid
+	var mini_before: bool = world.hud.minimap.visible
+	world.hud._unhandled_input(_key("toggle_minimap"))
+	await _frames(2)
+	_check(world.hud.minimap.visible != mini_before and g2.show_grid == grid_before,
+		"M schaltet die Minimap, das Raster bleibt")
+	world.hud._unhandled_input(_key("toggle_minimap"))
+	world.hud._unhandled_input(_key("toggle_info"))
+	await _frames(2)
+	_check(not world.hud._blocks.visible and g2.show_grid == grid_before,
+		"H schaltet die Anzeige, das Raster bleibt")
+	world.hud._unhandled_input(_key("toggle_info"))
+	await _frames(2)
 
 	# Minimap zeigt, was unter der Figur liegt.
 	var mini: Control = world.hud.minimap
@@ -497,6 +586,56 @@ func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
 			tool.place(o + Vector2i(x, y), MapData.Tile.WATER)
 	await _frames(2)
 	_check(tool.map.is_swimmable(o.x + 9, o.y + 8), "Teich ist schwimmbar")
+
+	# --- Fels ist eine Stufe: dagegenlaufen hält an, im Sprung kommt man hinauf
+	var ledge := o + Vector2i(17, 3)          # Gras direkt unter dem Plateau
+	player.position = Vector2(ledge.x + 0.5, ledge.y + 0.5) * Config.TILE
+	player.velocity = Vector2.ZERO
+	await _frames(4)
+	_check(player.level() == 0, "Auf dem Boden ist die Höhenstufe 0")
+	await _drive("move_up", 45)
+	_check(player.level() == 0 and tool.map.level_at(
+		GridOverlay.block_at(player.global_position).x,
+		GridOverlay.block_at(player.global_position).y) == 0,
+		"Gegen die Felskante laufen hält an")
+
+	# Jetzt mit Sprung: Leertaste drücken und dabei weiterlaufen.
+	player.position = Vector2(ledge.x + 0.5, ledge.y + 0.6) * Config.TILE
+	player.velocity = Vector2.ZERO
+	await _frames(3)
+	Input.action_press("move_up")
+	Input.action_press("jump")
+	await _frames(2)
+	Input.action_release("jump")
+	var climbed := false
+	for i in 40:
+		await get_tree().physics_frame
+		if player.level() == 1:
+			climbed = true
+			break
+	Input.action_release("move_up")
+	await _frames(4)
+	_check(climbed, "Mit dem Sprung kommt man auf den Fels")
+	if climbed:
+		await _drive("move_up", 25)
+		world.camera.snap_to_target()
+		tool.set_process(false)
+		world.grid.cursor_block = Vector2i(-1, -1)
+		await _frames(6)
+		await _shot("10_auf_dem_fels")
+		tool.set_process(true)
+
+	# Herunter geht immer — bis zur Kante laufen, egal wie weit oben sie steht.
+	Input.action_press("move_down")
+	var dropped := false
+	for i in 120:
+		await get_tree().physics_frame
+		if player.level() == 0:
+			dropped = true
+			break
+	Input.action_release("move_down")
+	await _frames(4)
+	_check(dropped, "Vom Fels herunter geht ohne Sprung")
 
 	# Klippe: Wandkachel auf dem Fels, Schlagschatten auf der Kachel darunter
 	var edges: TileMapLayer = world.streamer.layers[GroundTileSet.LAYER_EDGE]
@@ -581,6 +720,15 @@ func _count_tiles(map: MapData, center: Vector2i, radius: int) -> Dictionary:
 			var t := map.get_tile(x, y)
 			out[t] = out.get(t, 0) + 1
 	return out
+
+## Baut ein Tastenereignis für eine Aktion — für Prüfungen, die direkt in
+## _unhandled_input gehen.
+func _key(action: String) -> InputEventKey:
+	var ev := InputEventKey.new()
+	var list := InputMap.action_get_events(action)
+	ev.physical_keycode = (list[0] as InputEventKey).physical_keycode
+	ev.pressed = true
+	return ev
 
 func _drive(action: String, frames: int) -> void:
 	Input.action_press(action)

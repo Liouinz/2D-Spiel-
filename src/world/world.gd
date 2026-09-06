@@ -10,10 +10,12 @@ var hud: CanvasLayer
 var grid: GridOverlay
 var build_bar: CanvasLayer
 var build_tool: BuildTool
+var inventory: CanvasLayer
 var streamer: ChunkStreamer
 
 const HudScene := preload("res://src/ui/hud.gd")
 const BuildBarScene := preload("res://src/ui/build_bar.gd")
+const InventoryScene := preload("res://src/ui/inventory.gd")
 
 var build_msec: int = 0
 
@@ -103,6 +105,7 @@ func _ready() -> void:
 	camera.setup(Config.world_size_px())
 	camera.snap_to_target()
 	water.camera = camera
+	player.splashed.connect(water.splash)
 
 	# Rotes Blockraster über allem — zeigt das sonst unsichtbare Grid.
 	grid = GridOverlay.new()
@@ -135,10 +138,23 @@ func _ready() -> void:
 		build_tool.camera = camera
 		build_tool.water = water
 		build_tool.minimap = hud.minimap
+		build_tool.main = get_parent()
 		add_child(build_tool)
 		build_bar.slot_clicked.connect(func(i: int) -> void:
 			build_bar.select(i)
 			Audio.play_ui("blip"))
+		build_bar.set_loadout(Settings.build_loadout)
+		build_bar.loadout_changed.connect(func() -> void:
+			Settings.build_loadout = build_bar.loadout()
+			Settings.save_settings())
+
+		inventory = InventoryScene.new()
+		add_child(inventory)
+		inventory.setup(builder.art, build_bar)
+		inventory.equip_requested.connect(func(slot: int, tile: int) -> void:
+			build_bar.equip(slot, tile)
+			inventory.refresh()
+			Audio.play_ui("confirm"))
 
 	build_msec = Time.get_ticks_msec() - started
 	print("Welt aufgebaut in %d ms (%d Objekte, %d Chunks, %d Kollisionsformen)" % [

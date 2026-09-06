@@ -13,9 +13,10 @@ const NAME_H := 16        ## Zeile für den Namen
 const GAP := 8            ## Abstand zwischen den Feldern
 const MARGIN := 14        ## Abstand zum unteren Bildrand
 
-## Reihenfolge der Felder. Tiefwasser fehlt bewusst: als Baufläche ist es von
-## flachem Wasser kaum zu unterscheiden und blockiert genauso.
-const TYPES := [
+## Anfangsbelegung der acht Felder. Änderbar: im Inventar (E) lässt sich jedes
+## Feld mit einem beliebigen Bodentyp belegen, und die Belegung bleibt
+## gespeichert.
+const DEFAULT_TYPES := [
 	MapData.Tile.GRASS,
 	MapData.Tile.MEADOW,
 	MapData.Tile.FOREST,
@@ -27,12 +28,19 @@ const TYPES := [
 ]
 
 var selected: int = 0
+var types: Array = DEFAULT_TYPES.duplicate()
 
 signal slot_clicked(index: int)
+
+## Wird gemeldet, wenn sich die Belegung geändert hat — Settings sichern sie.
+signal loadout_changed
 
 var _root: Control
 var _slots: Array[Panel] = []
 var _textures: Array[Texture2D] = []
+var _previews: Array[TextureRect] = []
+var _names: Array[Label] = []
+var _art: TileArt
 var _hint: Label
 var _flash: float = 0.0
 
@@ -45,7 +53,7 @@ func setup(art: TileArt) -> void:
 
 	var slot_w := SLOT + 2 * PAD
 	var slot_h := SLOT + 2 * PAD + NAME_H
-	var width := TYPES.size() * slot_w + (TYPES.size() - 1) * GAP
+	var width := types.size() * slot_w + (types.size() - 1) * GAP
 
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", GAP)
@@ -57,7 +65,8 @@ func setup(art: TileArt) -> void:
 	row.offset_bottom = -MARGIN
 	_root.add_child(row)
 
-	for i in TYPES.size():
+	_art = art
+	for i in types.size():
 		row.add_child(_make_slot(art, i, slot_w, slot_h))
 
 	# Der Hinweis steht ÜBER der Leiste: unter ihr wäre er am Bildrand
@@ -91,8 +100,9 @@ func _make_slot(art: TileArt, i: int, slot_w: int, slot_h: int) -> Panel:
 
 	# Mittlere Helligkeitsstufe, erste Variante — die neutralste Ansicht.
 	var tex := TextureRect.new()
-	tex.texture = Pixel.tex(art.base[TYPES[i]][TileArt.VARIANTS])
+	tex.texture = Pixel.tex(art.base[types[i]][TileArt.VARIANTS])
 	_textures.append(tex.texture)
+	_previews.append(tex)
 	tex.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	tex.stretch_mode = TextureRect.STRETCH_SCALE
@@ -104,8 +114,10 @@ func _make_slot(art: TileArt, i: int, slot_w: int, slot_h: int) -> Panel:
 	panel.add_child(_slot_label(str(i + 1), 13, Vector2(PAD + 3, PAD - 2), Vector2(20, 18),
 		HORIZONTAL_ALIGNMENT_LEFT))
 	# 11 Punkt: der längste Name ("Waldboden") passt damit noch ins Feld.
-	panel.add_child(_slot_label(GroundTileSet.NAMES[TYPES[i]], 11,
-		Vector2(0, SLOT + 2 * PAD - 3), Vector2(slot_w, NAME_H), HORIZONTAL_ALIGNMENT_CENTER))
+	var nm := _slot_label(GroundTileSet.NAMES[types[i]], 11,
+		Vector2(0, SLOT + 2 * PAD - 3), Vector2(slot_w, NAME_H), HORIZONTAL_ALIGNMENT_CENTER)
+	_names.append(nm)
+	panel.add_child(nm)
 
 	_slots.append(panel)
 	return panel
@@ -125,17 +137,39 @@ func _slot_label(text: String, size: int, pos: Vector2, dim: Vector2, align: int
 
 ## Hebt das gewählte Feld hervor und benennt es.
 func select(i: int) -> void:
-	selected = posmod(i, TYPES.size())
+	selected = posmod(i, types.size())
 	for s in _slots.size():
 		_slots[s].add_theme_stylebox_override("panel", _frame(s == selected))
 	_flash = 0.0
 	if _hint != null:
-		_hint.text = "%s  gewählt   ·   1–8 oder Mausrad wechseln   ·   links setzen   ·   rechts entfernen" % [
-			GroundTileSet.NAMES[TYPES[selected]]]
+		_hint.text = "%s  gewählt   ·   1–8 oder Mausrad wechseln   ·   links setzen   ·   rechts entfernen   ·   E – Inventar" % [
+			GroundTileSet.NAMES[types[selected]]]
 
 ## Der gewählte Bodentyp.
 func tile_type() -> int:
-	return TYPES[selected]
+	return types[selected]
+
+## Belegt ein Feld mit einem anderen Bodentyp — das macht das Inventar.
+func equip(slot: int, tile: int) -> void:
+	if slot < 0 or slot >= types.size() or types[slot] == tile:
+		return
+	types[slot] = tile
+	var tex := Pixel.tex(_art.base[tile][TileArt.VARIANTS])
+	_textures[slot] = tex
+	_previews[slot].texture = tex
+	_names[slot].text = GroundTileSet.NAMES[tile]
+	select(selected)
+	loadout_changed.emit()
+
+## Belegung als Liste von Bodentypen (für das Sichern).
+func loadout() -> Array:
+	return types.duplicate()
+
+func set_loadout(list: Array) -> void:
+	for i in mini(list.size(), types.size()):
+		var t: int = int(list[i])
+		if t >= 0 and t < MapData.Tile.COUNT:
+			equip(i, t)
 
 ## Die Kachel des gewählten Typs — die Bauvorschau zeichnet sie unter den Zeiger.
 func preview_texture() -> Texture2D:

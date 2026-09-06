@@ -291,6 +291,50 @@ ohne acht neue Bilder von Hand.
 anderer Grösse wird mittig in die neue übernommen statt verworfen — eine
 gewachsene Welt darf niemandem seine Arbeit kosten.
 
+## Nachtrag: gesetzte Blöcke verbinden sich
+
+**Der Fehler.** Eine Reihe gesetzter Blöcke zerfiel in einzelne Klekse. Ursache:
+Godots Eck-Autotiling entscheidet über die vier Ecken einer Kachel, und eine
+Ecke gilt dort als bedeckt, wenn ALLE VIER an ihr zusammenstossenden Felder
+dazugehören. Bei einer ein Feld breiten Reihe ist das nirgends der Fall — jede
+Kachel bekam Maske 0, und Maske 0 ist in `terrain_atlas.gd` absichtlich ein
+runder Fleck in der Kachelmitte (`_blob`).
+
+Das Verfahren ist richtig zum Malen von Flächen und falsch zum Setzen von
+Blöcken. Die Regel ist deshalb umgedreht: **ein Feld, das zur Schicht gehört,
+bekommt immer eine Vollkachel**, und der Übergang wächst aus ihm HERAUS in die
+Nachbarfelder — dort wird eine Ecke gesetzt, wenn EINES der drei an ihr
+liegenden Felder dazugehört. Die vorhandenen Übergangskacheln werden unverändert
+weiterbenutzt, nur anders angesprochen; der Klecks-Fall wird nie mehr
+gezeichnet. Sichtbare Folge: eine Fläche wächst optisch um eine halbe Kachel
+nach aussen. Das ist der Preis und er ist es wert.
+
+**Fels ist eine Höhenstufe.** `MapData.level_at()` liefert 1 auf Fels, sonst 0.
+Bewusst KEINE Kollisionskörper: eine Stufe ist keine Wand, man muss ja
+hinaufkommen. Stattdessen prüft `player.gd` vor der Bewegung, ob das Zielfeld
+höher liegt, und lässt nur durch, wenn die Figur im Sprung über der
+Kletterhöhe ist. Herunter geht immer, mit einem kurzen sichtbaren Fallen.
+
+**Fels sah blass und flach aus.** Weiche Ellipsen plus Körnung ergaben fleckiges
+Grau. Jetzt Platten mit heller Kante oben links und dunkler unten rechts, dazu
+eine Fuge dazwischen. Zwei Zwischenschritte waren nötig: mit neun kleinen
+Platten je Kachel sah es aus wie Mosaik, und mit einer sehr dunklen Fuge wie
+Pflaster in Teer. Vier grössere Platten und eine nur leicht abgedunkelte Fuge
+lesen sich als gewachsener Fels.
+
+**Inventar.** `BuildBar.TYPES` war eine Konstante und ist jetzt ein änderbares
+Feld; `equip()` tauscht Typ, Vorschaubild und Beschriftung eines Feldes. Die
+Belegung liegt bei den Einstellungen in `user://`. Das Inventar pausiert den
+Baum wie das Pausenmenü — anders lässt sich nicht in Ruhe klicken.
+
+**Getrennte Schalter.** Vorher hing alles an G. Jetzt G für die Rasterlinien,
+M für die Minimap, H für die Anzeige oben links.
+
+**Sprung ins Wasser.** `_update_swimming()` brach den Sprung ab, sobald die
+Figur über Wasser war — sie klappte mitten in der Luft ins Schwimmbild um. Jetzt
+wird der Sprung zu Ende geflogen; beim Aufkommen kommt der Klang und ein
+Wellenring, den `water_fx.gd` als Kranz kurzer Striche zeichnet.
+
 ## Lizenzlage
 
 Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest

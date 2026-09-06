@@ -52,6 +52,17 @@ func is_solid(x: int, y: int) -> bool:
 func is_swimmable(x: int, y: int) -> bool:
 	return in_bounds(x, y) and get_tile(x, y) == Tile.WATER
 
+## Höhenstufe eines Feldes. Fels liegt eine Stufe höher als der übrige Boden —
+## man muss hinaufspringen und kann wieder herunter. Damit bekommt die
+## Leertaste einen Zweck.
+##
+## Absichtlich eine Zahl statt eines Wahrheitswerts: so lassen sich später
+## weitere Stufen ergänzen, ohne die Bewegungsregel anzufassen.
+func level_at(x: int, y: int) -> int:
+	if not in_bounds(x, y):
+		return 0
+	return 1 if get_tile(x, y) == Tile.ROCK else 0
+
 ## Baut die Karte auf. Im Aufbaumodus entsteht eine leere Fläche, sonst die
 ## komplette Insel.
 func generate(seed_value: int) -> void:

@@ -233,11 +233,16 @@ func paint_decor_chunk(layer: TileMapLayer, chunk: Vector2i, at: Callable) -> vo
 
 ## Malt einen Chunk auf alle neun Bodenschichten.
 ##
-## Die Kachelwahl folgt derselben Eckregel wie Godots Terrain-System: eine Ecke
-## gilt als bedeckt, wenn alle vier an ihr liegenden Kacheln zur Schicht
-## gehören. Diese Regel wurde gegen set_cells_terrain_connect() gemessen und
-## stimmt Bit für Bit überein — nur ist die eigene Berechnung rund zehnmal so
-## schnell, weil sie ohne Kachelsuche auskommt.
+## Ein Feld, das zur Schicht gehört, bekommt IMMER eine Vollkachel. Der
+## Übergang wird nicht aus ihm herausgeschnitten, sondern wächst in die
+## Nachbarfelder hinein: dort wird eine Ecke gesetzt, wenn eines der drei an
+## ihr liegenden Felder dazugehört.
+##
+## Godots eigene Eckregel („alle vier Felder müssen dazugehören") war hier
+## falsch. Sie taugt zum Malen von Flächen, nicht zum Setzen einzelner Blöcke:
+## bei einer ein Feld breiten Reihe ist keine Ecke je bedeckt, jede Kachel
+## bekam Maske 0 — und Maske 0 ist ein Klecks in der Kachelmitte. Eine gesetzte
+## Reihe zerfiel dadurch in einzelne Punkte.
 ##
 ## Gelesen wird direkt aus der Karte statt aus zwischengespeicherten Rastern:
 ## die 3 × 3-Nachbarschaft einmal je Kachel, danach neun Tabellenzugriffe je
@@ -321,23 +326,34 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 	for pos in count:
 		var layer := layers[pos]
 		var base := pos * TABLE_STRIDE
-		if _table[base + t4] == 0:
-			if erase:
-				layer.erase_cell(cell)
-			continue
-		var mask := 0
-		if _table[base + t0] != 0 and _table[base + t1] != 0 and _table[base + t3] != 0:
-			mask |= 1                                   # oben links
-		if _table[base + t1] != 0 and _table[base + t2] != 0 and _table[base + t5] != 0:
-			mask |= 2                                   # oben rechts
-		if _table[base + t5] != 0 and _table[base + t7] != 0 and _table[base + t8] != 0:
-			mask |= 4                                   # unten rechts
-		if _table[base + t3] != 0 and _table[base + t6] != 0 and _table[base + t7] != 0:
-			mask |= 8                                   # unten links
-		if mask == 15 or pos == 0 or _sharp[pos]:
+
+		# Ein gesetzter Block füllt sein Feld — immer.
+		if _table[base + t4] != 0:
 			if variant < 0:
 				variant = variant_at(x, y)
 			layer.set_cell(cell, _sources[pos], _full(pos, variant))
+			continue
+
+		# Fels und Wasser bekommen keinen Saum, ihre Kante sitzt hart am Block.
+		if _sharp[pos]:
+			if erase:
+				layer.erase_cell(cell)
+			continue
+
+		# Der Übergang wächst aus den Nachbarn HERAUS: eine Ecke wird gesetzt,
+		# wenn EINES der drei dort anliegenden Felder dazugehört.
+		var mask := 0
+		if _table[base + t0] != 0 or _table[base + t1] != 0 or _table[base + t3] != 0:
+			mask |= 1                                   # oben links
+		if _table[base + t1] != 0 or _table[base + t2] != 0 or _table[base + t5] != 0:
+			mask |= 2                                   # oben rechts
+		if _table[base + t5] != 0 or _table[base + t7] != 0 or _table[base + t8] != 0:
+			mask |= 4                                   # unten rechts
+		if _table[base + t3] != 0 or _table[base + t6] != 0 or _table[base + t7] != 0:
+			mask |= 8                                   # unten links
+		if mask == 0:
+			if erase:
+				layer.erase_cell(cell)
 		else:
 			layer.set_cell(cell, _sources[pos], (_slots[pos] as Array[Vector2i])[mask])
 

@@ -47,7 +47,8 @@ func _ready() -> void:
 			_label.offset_right = 900
 			_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 			_label.text = "WASD / Pfeiltasten – Laufen   ·   Shift – Rennen   ·   Leertaste – Springen"
-			_label.text += "\nG – Raster   ·   F5 – Karte speichern   ·   ESC – Pause"
+			_label.text += "\nE – Inventar   ·   G – Raster   ·   M – Minimap   ·   H – diese Anzeige"
+			_label.text += "\nF5 – Karte speichern   ·   ESC – Pause"
 		else:
 			_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 			_label.offset_top = -64
@@ -64,6 +65,20 @@ func _make_label(size: int) -> Label:
 	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
+
+## M schaltet die Minimap, H die Anzeige oben links. Beides getrennt vom
+## Raster (G) — vorher hing alles an einer Taste.
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("toggle_minimap"):
+		if is_instance_valid(minimap):
+			minimap.visible = not minimap.visible
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("toggle_info"):
+		if is_instance_valid(_blocks):
+			_blocks.visible = not _blocks.visible
+		if is_instance_valid(_label):
+			_label.visible = not _label.visible
+		get_viewport().set_input_as_handled()
 
 func _process(delta: float) -> void:
 	if _blocks != null and is_instance_valid(player):

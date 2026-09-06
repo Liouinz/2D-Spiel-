@@ -5,6 +5,10 @@ extends CharacterBody2D
 const IDLE_FPS := 1.6
 const WALK_FPS := 9.0
 
+## Wird beim Eintauchen gemeldet, damit die Wasserwirkung einen Ring zeichnen
+## kann. Die Figur weiss nichts vom Wasser-Effekt, nur dass sie eintaucht.
+signal splashed(pos: Vector2)
+
 var _frames: Dictionary
 var _sprite: Sprite2D
 var _shadow: Sprite2D
@@ -15,7 +19,13 @@ var _step_accum: float = 0.0
 var _was_moving: bool = false
 var _jump_time: float = -1.0   ## < 0 = am Boden, sonst Fortschritt in Sekunden
 var _swimming: bool = false
+var _level: int = 0            ## Höhenstufe, auf der die Figur steht
+var _fall_time: float = -1.0   ## < 0 = kein Fallen
 var map: MapData               ## um zu wissen, worauf die Figur steht
+
+## Auf welcher Höhenstufe steht die Figur? 0 = Boden, 1 = Fels.
+func level() -> int:
+	return _level
 
 ## Schwimmt die Figur gerade?
 func is_swimming() -> bool:
@@ -76,8 +86,10 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity = velocity.move_toward(input * top_speed, Config.PLAYER_ACCEL * delta)
 		_face(input)
+	_block_ledges(delta)
 	move_and_slide()
 	_jump(delta)
+	_update_level(delta)
 
 	var moving := velocity.length() > 6.0
 	_anim_time += delta * (WALK_FPS if moving else IDLE_FPS)
@@ -89,19 +101,70 @@ func _physics_process(delta: float) -> void:
 
 ## Im flachen Wasser wird geschwommen: langsamer, ohne Rennen und Springen.
 ## Tiefwasser bleibt eine Wand, dorthin kommt man gar nicht erst.
+##
+## Während eines Sprungs wird NICHT geschwommen: sonst klappte die Figur mitten
+## in der Luft ins Schwimmbild um. Der Sprung wird zu Ende geflogen, das
+## Eintauchen kommt beim Aufkommen.
 func _update_swimming() -> void:
 	if map == null:
 		return
 	var b := GridOverlay.block_at(global_position)
-	var wet := map.is_swimmable(b.x, b.y)
+	var wet := map.is_swimmable(b.x, b.y) and not is_jumping()
 	if wet == _swimming:
 		return
 	_swimming = wet
 	if wet:
-		_jump_time = -1.0
 		Audio.play_ui("splash")
+		splashed.emit(global_position)
 	else:
 		Audio.play_ui("surface")
+
+## Höhenstufen sind keine Wände — man muss ja hinaufkommen. Deshalb keine
+## Kollisionskörper, sondern eine Prüfung vor der Bewegung: bergauf geht nur im
+## Sprung und nur oberhalb der Kletterhöhe, bergab immer.
+func _block_ledges(delta: float) -> void:
+	if map == null or _swimming:
+		return
+	var reach := _level + (1 if jump_height() >= Config.CLIMB_HEIGHT else 0)
+	if velocity.x != 0.0:
+		var ahead := global_position + Vector2(velocity.x * delta, 0.0)
+		var b := GridOverlay.block_at(ahead)
+		if map.level_at(b.x, b.y) > reach:
+			velocity.x = 0.0
+	if velocity.y != 0.0:
+		var ahead2 := global_position + Vector2(0.0, velocity.y * delta)
+		var b2 := GridOverlay.block_at(ahead2)
+		if map.level_at(b2.x, b2.y) > reach:
+			velocity.y = 0.0
+
+## Nach der Bewegung: auf welcher Stufe steht die Figur jetzt? Geht es hinunter,
+## fällt sie kurz sichtbar, statt einfach eine Stufe tiefer zu erscheinen.
+func _update_level(delta: float) -> void:
+	if map == null:
+		return
+	if _fall_time >= 0.0:
+		_fall_time += delta
+		if _fall_time >= Config.FALL_TIME:
+			_fall_time = -1.0
+			Audio.play_ui("land")
+	if is_jumping():
+		return
+	var b := GridOverlay.block_at(global_position)
+	var here := map.level_at(b.x, b.y)
+	if here == _level:
+		return
+	if here < _level and _fall_time < 0.0:
+		_fall_time = 0.0
+	_level = here
+
+## Wie hoch die Figur gerade über dem Boden schwebt: Sprung plus Reststrecke
+## eines Falls von einer Stufe.
+func lift() -> float:
+	var h := jump_height()
+	if _fall_time >= 0.0:
+		var f := 1.0 - _fall_time / Config.FALL_TIME
+		h += EdgeArt.WALL_TOP * f * f
+	return h
 
 ## Der Sprung verschiebt nur die Grafik. Position und Kollision bleiben am
 ## Boden, damit sich niemand über Wände oder Wasser hinwegsetzen kann.
@@ -147,11 +210,12 @@ func _update_sprite(speed: float) -> void:
 		return
 	_shadow.visible = true
 
-	# Sprung: Figur hoch, Schatten bleibt liegen und wird kleiner und blasser.
-	var lift := jump_height()
+	# Sprung und Fallen: Figur hoch, Schatten bleibt liegen und wird kleiner
+	# und blasser.
+	var lift := lift()
 	_sprite.offset.y = -ActorArt.H - lift
 	if lift > 0.0:
-		var f := lift / Config.JUMP_HEIGHT
+		var f := minf(lift / Config.JUMP_HEIGHT, 1.0)
 		_shadow.scale = Vector2.ONE * (1.0 - 0.32 * f)
 		_shadow.modulate.a = 1.0 - 0.45 * f
 	else:

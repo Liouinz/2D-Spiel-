@@ -162,23 +162,62 @@ func _sand_tile(rng: RandomNumberGenerator) -> Image:
 	return img
 
 func _rock_tile(rng: RandomNumberGenerator) -> Image:
-	var img := Pixel.filled(T, T, Palette.STONE)
-	# Facetten: gebrochener Fels statt gleichmäßigem Grau
-	for i in rng.randi_range(4, 6):
-		var cx := rng.randf_range(0, T)
-		var cy := rng.randf_range(0, T)
-		var tint := Palette.STONE_DARK if rng.randf() < 0.5 else Palette.STONE_LIGHT
-		Pixel.ellipse(img, cx, cy, rng.randf_range(4, 9), rng.randf_range(3, 7),
-			Color(tint.r, tint.g, tint.b, 0.5))
-	_grain(img, rng, 80, Palette.STONE_LIGHT)
-	_grain(img, rng, 60, Palette.STONE_DARK)
-	# Risse
-	for i in rng.randi_range(2, 3):
-		var x := rng.randi_range(3, T - 4)
-		var y := rng.randi_range(2, T - 8)
-		for s in rng.randi_range(4, 8):
-			Pixel.px(img, x + (s % 3) - 1, y + s, Palette.STONE_DARK.darkened(0.3))
+	# Fels aus PLATTEN, nicht aus weichen Flecken. Weiche Flecken plus Körnung
+	# ergaben fleckiges Grau ohne Halt — auf dem Bildschirm blass und flach.
+	# Eine Platte mit heller Oberkante links, dunkler Unterkante rechts und
+	# einer dunklen Fuge ringsum liest sich dagegen sofort als Stein.
+	# Die Fuge ist Schatten zwischen Steinen, kein Loch. Zu dunkel gesetzt sah
+	# der Fels aus wie Pflaster in Teer.
+	var joint := Palette.STONE_DARK.darkened(0.18)
+	var img := Pixel.filled(T, T, joint)
+
+	# Ein leicht verzogenes 3x3-Raster von Platten. Die Platten laufen über den
+	# Kachelrand hinaus, damit an der Kachelgrenze keine durchgehende Fuge
+	# entsteht — sonst sähe man das 32er-Raster im Boden.
+	# Grössere Platten und engere Fugen: bei neun kleinen Platten je Kachel sah
+	# es aus wie Mosaik statt wie gewachsener Fels.
+	var step := T / 2.0
+	for gy in range(-1, 3):
+		for gx in range(-1, 3):
+			var cx := gx * step + step * 0.5 + rng.randf_range(-2.5, 2.5)
+			var cy := gy * step + step * 0.5 + rng.randf_range(-2.5, 2.5)
+			var rx := step * 0.5 - rng.randf_range(0.2, 1.0)
+			var ry := step * 0.5 - rng.randf_range(0.2, 1.0)
+			var tone := Palette.STONE.lerp(
+				Palette.STONE_LIGHT if rng.randf() < 0.55 else Palette.STONE_DARK,
+				rng.randf_range(0.08, 0.38))
+			_slab(img, cx, cy, rx, ry, tone, rng)
+
+	_grain(img, rng, 34, Palette.STONE_LIGHT)
+	_grain(img, rng, 26, Palette.STONE_DARK)
 	return img
+
+## Eine einzelne Steinplatte: Fläche, Lichtkante oben links, Schattenkante
+## unten rechts. Die Ecken werden angeknabbert, damit sie nicht wie gestanzt
+## aussieht.
+func _slab(img: Image, cx: float, cy: float, rx: float, ry: float,
+		tone: Color, rng: RandomNumberGenerator) -> void:
+	var x0 := int(round(cx - rx))
+	var x1 := int(round(cx + rx))
+	var y0 := int(round(cy - ry))
+	var y1 := int(round(cy + ry))
+	var nib := [rng.randi_range(0, 2), rng.randi_range(0, 2),
+		rng.randi_range(0, 2), rng.randi_range(0, 2)]
+	for y in range(y0, y1 + 1):
+		for x in range(x0, x1 + 1):
+			if x < 0 or y < 0 or x >= T or y >= T:
+				continue
+			# Ecken abknabbern
+			if x - x0 + y - y0 < nib[0]: continue
+			if x1 - x + y - y0 < nib[1]: continue
+			if x1 - x + y1 - y < nib[2]: continue
+			if x - x0 + y1 - y < nib[3]: continue
+			var c := tone
+			if y == y0 or x == x0:
+				c = tone.lightened(0.22)          # Licht von oben links
+			elif y == y1 or x == x1:
+				c = tone.darkened(0.28)
+			img.set_pixel(x, y, c)
 
 ## Gepflasterter Dorfplatz: runde Katzenkopfsteine in Fugensand.
 func _cobble_tile(rng: RandomNumberGenerator) -> Image:

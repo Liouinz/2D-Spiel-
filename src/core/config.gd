@@ -60,6 +60,11 @@ const JUMP_HEIGHT := 14.0             ## Scheitelhöhe in Bildpunkten
 ## rund 55 % der Gehgeschwindigkeit. Gerannt und gesprungen wird nicht.
 const SWIM_SPEED := 68.0
 
+## Ab dieser Sprunghöhe kommt man eine Stufe hinauf. Knapp die halbe
+## Scheitelhöhe: man muss den Sprung wirklich treffen, aber nicht auf den Punkt.
+const CLIMB_HEIGHT := 7.0
+const FALL_TIME := 0.20               ## kurzes Fallen beim Heruntergehen
+
 ## Halber Zoom bei doppelter Kachelgröße = unverändertes Sichtfeld,
 ## aber doppelt so feine Grafik.
 const CAMERA_ZOOM := 1.5
@@ -82,7 +87,10 @@ static func setup_input() -> void:
 		"move_right": [KEY_D, KEY_RIGHT],
 		"run": [KEY_SHIFT],
 		"jump": [KEY_SPACE],
+		"inventory": [KEY_E],
 		"toggle_grid": [KEY_G],
+		"toggle_minimap": [KEY_M],
+		"toggle_info": [KEY_H],
 	}
 	for action: String in actions:
 		if not InputMap.has_action(action):

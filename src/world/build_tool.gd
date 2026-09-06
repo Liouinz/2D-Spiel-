@@ -17,6 +17,7 @@ var grid: GridOverlay
 var camera: GameCamera
 var water: WaterFx              ## Brandung neu berechnen, wenn Wasser entsteht
 var minimap: Control            ## sofort nachziehen statt erst beim nächsten Takt
+var main: Node                  ## öffnet und schliesst das Inventar
 
 var _last: Vector2i = Vector2i(-9999, -9999)
 
@@ -40,6 +41,10 @@ func _process(_delta: float) -> void:
 		_last = Vector2i(-9999, -9999)
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("inventory"):
+		main.toggle_inventory()
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		var k: int = (event as InputEventKey).physical_keycode
 		if k >= KEY_1 and k <= KEY_8:

@@ -1,7 +1,7 @@
 extends Node
 ## Einstiegspunkt und Spielzustands-Automat (§11: Game State getrennt vom Rest).
 
-enum State { MENU, PLAYING, PAUSED, OPTIONS }
+enum State { MENU, PLAYING, PAUSED, OPTIONS, INVENTORY }
 
 const WorldScene := preload("res://src/world/world.gd")
 const MainMenu := preload("res://src/ui/main_menu.gd")
@@ -79,7 +79,28 @@ func _unhandled_input(event: InputEvent) -> void:
 			resume_game()
 		State.OPTIONS:
 			close_options()
+		State.INVENTORY:
+			close_inventory()
 	get_viewport().set_input_as_handled()
+
+## E öffnet und schliesst das Inventar. Der Baum pausiert dabei, damit sich in
+## Ruhe klicken lässt.
+func toggle_inventory() -> void:
+	if state == State.INVENTORY:
+		close_inventory()
+	elif state == State.PLAYING:
+		open_inventory()
+
+func open_inventory() -> void:
+	if not is_instance_valid(_world) or not is_instance_valid(_world.inventory):
+		return
+	Audio.play_ui("open")
+	_world.inventory.refresh()
+	_set_state(State.INVENTORY)
+
+func close_inventory() -> void:
+	Audio.play_ui("close")
+	_set_state(State.PLAYING)
 
 # --- Zustandswechsel ---------------------------------------------------------
 
@@ -187,7 +208,9 @@ func _set_state(next: State) -> void:
 		if is_instance_valid(_world.hud):
 			_world.hud.visible = next == State.PLAYING
 		if is_instance_valid(_world.build_bar):
-			_world.build_bar.visible = next == State.PLAYING
+			_world.build_bar.visible = next == State.PLAYING or next == State.INVENTORY
+		if is_instance_valid(_world.inventory):
+			_world.inventory.visible = next == State.INVENTORY
 	if in_menu:
 		_main_menu.focus_first()
 	elif next == State.PAUSED:

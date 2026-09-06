@@ -73,13 +73,17 @@ Unten steht eine Leiste mit acht Bodentypen. Jedes Feld zeigt die echte
 Bodenkachel, nicht ein Ersatzsymbol.
 
 - **1 – 8**, **Mausrad** oder ein **Klick auf das Feld** wählt den Bodentyp.
+- **E** öffnet das Inventar: dort lässt sich jedes der acht Felder mit einem
+  beliebigen Bodentyp belegen. Die Belegung bleibt gespeichert.
 - **Linke Maustaste** setzt ihn auf den Block unter dem Zeiger, **rechte
   Maustaste** setzt zurück auf Gras. Gedrückt halten malt.
 - Der Block unter dem Zeiger ist weiß umrandet.
 - Gesetztes **Wasser lässt sich durchschwimmen** — die Figur sinkt ein, wird
   langsamer und bekommt einen Wellenkragen. **Tiefwasser** bleibt eine Wand.
-- **Fels** sieht aus wie eine Klippe: Wandfläche nach unten, Lichtkante oben,
-  Schlagschatten darunter. Begehbar bleibt er trotzdem.
+- **Fels liegt eine Stufe höher.** Dagegenlaufen hält an; mit der **Leertaste**
+  springst Du hinauf und stehst oben. Herunter geht immer.
+- Ein gesetzter Block **füllt sein Feld** und verbindet sich mit den Nachbarn —
+  eine Reihe wird ein Streifen, kein Punktmuster.
 - Die Übergänge zu den Nachbarn werden sofort mitgerechnet — ein gesetzter Weg
   bekommt saubere Kanten, ganz ohne Nacharbeit.
 
@@ -88,6 +92,12 @@ Bodenkachel, nicht ein Ersatzsymbol.
 Klippe mit Wand und Schlagschatten, Teich mit Uferkante, Minimap oben rechts.
 
 ![Schwimmen](docs/bilder/schwimmen.png)
+
+Inventar (**E**) und Fels als Stufe, auf die man springen muss:
+
+![Inventar](docs/bilder/inventar.png)
+
+![Auf dem Fels](docs/bilder/fels.png)
 
 Die gebaute Karte wird **beim Zurückgehen ins Hauptmenü und beim Beenden
 automatisch gesichert**, mit **F5** auch von Hand. Sie liegt in
@@ -110,8 +120,11 @@ kommt mit `false` unverändert zurück.
 |---|---|
 | **W A S D** oder **Pfeiltasten** | Laufen |
 | **Shift** | Rennen (nicht im Wasser) |
-| **Leertaste** | Springen (nicht im Wasser) |
+| **Leertaste** | Springen — und auf Fels hinauf |
+| **E** | Inventar öffnen / schliessen |
 | **G** | Blockraster ein / aus |
+| **M** | Minimap ein / aus |
+| **H** | Anzeige oben links ein / aus |
 | **1 – 8** / **Mausrad** | Bodentyp wählen (Aufbaumodus) |
 | **Linke Maustaste** | Block setzen (Aufbaumodus) |
 | **Rechte Maustaste** | Block zurücksetzen (Aufbaumodus) |
@@ -215,6 +228,7 @@ src/ui/pause_menu.gd       Pause-Menü
 src/ui/options_menu.gd     Optionen
 src/ui/hud.gd              Steuerungshinweis, Chunk- und Blockanzeige
 src/ui/build_bar.gd        Bau-Leiste mit acht Bodentypen
+src/ui/inventory.gd        Inventar: Bodentypen auf die Leiste legen
 src/ui/minimap.gd          Übersichtskarte oben rechts
 src/world/build_tool.gd    Blöcke setzen, Speichern
 src/world/chunk_streamer.gd  Lädt und entlädt Chunks um die Figur
@@ -238,7 +252,7 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 78 Prüfungen; im Aufbaumodus
+Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 94 Prüfungen; im Aufbaumodus
 Weltaufbau ~550 ms bei 2048 × 2048 Blöcken, auf der Insel ~1,5 s mit 616 Objekten).
 Ein Chunk ist in 1,5 ms gemalt, die Minimap in 1,1 ms, die Physik braucht 0,3 ms je
 Bild und der Boden kommt mit 72 Zeichenaufrufen aus. Eine der Prüfungen durchsucht das
