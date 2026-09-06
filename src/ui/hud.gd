@@ -11,6 +11,8 @@ var grid: GridOverlay
 var _label: Label
 var _blocks: Label
 var minimap: Control
+var perf: Control
+var debug: Control
 var _time: float = 0.0
 
 func _ready() -> void:
@@ -35,6 +37,19 @@ func _ready() -> void:
 		minimap = preload("res://src/ui/minimap.gd").new()
 		minimap.name = "Minimap"
 		root.add_child(minimap)
+
+	# Leistungsanzeige: immer vorhanden, beim Start immer unsichtbar.
+	perf = preload("res://src/ui/perf_overlay.gd").new()
+	perf.name = "Perf"
+	perf.visible = Settings.show_perf
+	root.add_child(perf)
+	Settings.changed.connect(func() -> void:
+		if is_instance_valid(perf):
+			perf.visible = Settings.show_perf)
+
+	debug = preload("res://src/ui/debug_overlay.gd").new()
+	debug.name = "Debug"
+	root.add_child(debug)
 
 	if Settings.show_hints:
 		_label = _make_label(17)

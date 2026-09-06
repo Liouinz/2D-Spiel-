@@ -7,6 +7,7 @@ var _music: HSlider
 var _sfx: HSlider
 var _fullscreen: CheckBox
 var _hints: CheckBox
+var _perf: CheckBox
 var _back: Button
 
 func _init() -> void:
@@ -52,8 +53,14 @@ func _ready() -> void:
 	_hints.toggled.connect(func(v: bool) -> void: Settings.show_hints = v)
 	grid.add_child(_hints)
 
-	col.add_child(UiTheme.text_label(
-		"Bewegen: W A S D oder Pfeiltasten   ·   Rennen: Shift   ·   Pause: ESC", 15))
+	grid.add_child(_label("Leistungsanzeige"))
+	_perf = CheckBox.new()
+	_perf.toggled.connect(func(v: bool) -> void:
+		Settings.show_perf = v
+		Settings.changed.emit())
+	grid.add_child(_perf)
+
+	col.add_child(_controls_section())
 
 	_back = UiTheme.button("ZURÜCK")
 	_back.pressed.connect(func() -> void: back_pressed.emit())
@@ -61,6 +68,32 @@ func _ready() -> void:
 	col.add_child(_back)
 
 	refresh()
+
+## Steuerungsübersicht.
+##
+## Die Tasten kommen aus der InputMap, nicht aus einer Liste im Code. Ändert
+## sich eine Belegung, ändert sich diese Anzeige mit — hier kann also nie eine
+## veraltete oder erfundene Taste stehen.
+func _controls_section() -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	box.add_child(UiTheme.title("STEUERUNG", 22))
+
+	var rows := GridContainer.new()
+	rows.columns = 2
+	rows.add_theme_constant_override("h_separation", 22)
+	rows.add_theme_constant_override("v_separation", 3)
+	for entry: Array in Config.CONTROL_ROWS:
+		var keys := _label(Config.keys_for(entry[0]))
+		keys.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		keys.custom_minimum_size = Vector2(210, 0)
+		keys.add_theme_font_size_override("font_size", 15)
+		rows.add_child(keys)
+		var what := _label(entry[1])
+		what.add_theme_font_size_override("font_size", 15)
+		rows.add_child(what)
+	box.add_child(rows)
+	return box
 
 func _label(text: String) -> Label:
 	var l := Label.new()
@@ -88,6 +121,7 @@ func refresh() -> void:
 	_sfx.set_value_no_signal(Settings.sfx_volume)
 	_fullscreen.set_pressed_no_signal(Settings.fullscreen)
 	_hints.set_pressed_no_signal(Settings.show_hints)
+	_perf.set_pressed_no_signal(Settings.show_perf)
 	if not _music.value_changed.is_connected(_on_music):
 		_music.value_changed.connect(_on_music)
 		_sfx.value_changed.connect(_on_sfx)

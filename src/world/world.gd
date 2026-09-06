@@ -130,6 +130,10 @@ func _ready() -> void:
 	if is_instance_valid(hud.minimap):
 		hud.minimap.map = map
 		hud.minimap.player = player
+	if is_instance_valid(hud.debug):
+		hud.debug.map = map
+		hud.debug.player = player
+		hud.debug.streamer = streamer
 
 	# Bau-Leiste: nur im Aufbaumodus. Auf der fertigen Insel würde ein Klick
 	# sonst Wege und Küste zerlegen.

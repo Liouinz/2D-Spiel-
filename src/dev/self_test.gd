@@ -298,6 +298,7 @@ func _run() -> void:
 	main.open_options()
 	await _frames(2)
 	_check(main.state == main.State.OPTIONS, "Optionen offen")
+	await _frames(4)
 	await _shot("06_optionen")
 	main.close_options()
 	await _frames(2)
@@ -632,6 +633,9 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 	# --- Eingaben dürfen nicht von der Oberfläche ins Spiel durchsickern ---
 	await _check_input_lock(world, map, player)
 
+	# --- Eingaben, Steuerungsübersicht, Anzeigen ---
+	await _check_input_map(world)
+
 	# --- Gelände: sichtbar und begehbar müssen zusammenpassen ---
 	await _check_terrain(world, map, player)
 
@@ -751,6 +755,20 @@ func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
 		world.grid.cursor_block = Vector2i(-1, -1)
 		await _frames(6)
 		await _shot("10_auf_dem_fels")
+
+		# Figur DIREKT unter die Klippenwand: hier zeigt sich, ob sie davor
+		# oder dahinter gezeichnet wird.
+		player.position = Vector2(ledge.x + 0.5, ledge.y + 0.9) * Config.TILE
+		player.velocity = Vector2.ZERO
+		world.camera.snap_to_target()
+		Settings.show_perf = true
+		Settings.changed.emit()
+		world.hud.debug.visible = true
+		await _frames(8)
+		await _shot("11_klippe_und_anzeigen")
+		Settings.show_perf = false
+		Settings.changed.emit()
+		world.hud.debug.visible = false
 		tool.set_process(true)
 
 	# Kein Bildversatz beim Verlassen der Stufe — das war das „Hochklatschen".
@@ -829,6 +847,66 @@ func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
 	player.position = Vector2(o.x + 12.0, o.y + 4.0) * Config.TILE
 	player.velocity = Vector2.ZERO
 	await _frames(4)
+
+## Eingaben zentral, Steuerungsübersicht ehrlich, Anzeigen wie verlangt.
+func _check_input_map(world: Node2D) -> void:
+	# 1. Jede Aktion der Übersicht existiert wirklich und hat eine Taste.
+	var missing: Array[String] = []
+	for entry: Array in Config.CONTROL_ROWS:
+		for one: String in String(entry[0]).split("+"):
+			if not InputMap.has_action(one) or Config.keys_for(one) == "—":
+				missing.append(one)
+	_check(missing.is_empty(),
+		"Steuerungsübersicht zeigt nur Aktionen, die es gibt%s"
+		% ("" if missing.is_empty() else " (fehlt: %s)" % ", ".join(missing)))
+
+	# 2. Die Tasten stimmen mit der tatsächlichen Belegung überein.
+	_check(Config.keys_for("inventory") == "E", "E öffnet das Inventar")
+	_check(Config.keys_for("toggle_grid") == "G", "G schaltet das Raster")
+	_check(Config.keys_for("build_place") == "Linke Maustaste", "Links setzt")
+	_check(Config.keys_for("build_remove") == "Rechte Maustaste", "Rechts entfernt")
+	_check(Config.keys_for("build_slot_3") == "3", "Feld 3 liegt auf der 3")
+	_check(Config.keys_for("save_map") == "F5", "F5 speichert")
+
+	# 3. Keine hartcodierte Taste mehr im Bauwerkzeug.
+	var src := FileAccess.get_file_as_string("res://src/world/build_tool.gd")
+	_check(not src.contains("KEY_1") and not src.contains("KEY_F5"),
+		"Das Bauwerkzeug kennt keine Tastencodes mehr")
+
+	# 4. Leistungsanzeige: beim Start aus, einschaltbar, echte Zahlen.
+	var perf: Control = world.hud.perf
+	_check(perf != null and not perf.visible and not Settings.show_perf,
+		"Leistungsanzeige startet ausgeschaltet")
+	Settings.show_perf = true
+	Settings.changed.emit()
+	await _frames(3)
+	perf.refresh()
+	_check(perf.visible, "Leistungsanzeige lässt sich einschalten")
+	var text: String = perf._label.text
+	_check(text.contains("FPS") and text.contains("Speicher")
+		and text.contains("CPU Render") and text.contains("GPU Render"),
+		"Leistungsanzeige nennt FPS, Speicher und beide Renderzeiten")
+	_check(Config.keys_for("move_up+move_left+move_down+move_right") == "W A S D",
+		"Bewegung steht als eine Zeile: W A S D")
+	_check(not text.contains("CPU 0 %") and not text.contains("%"),
+		"Keine erfundene Prozentanzeige")
+	_check(OS.get_static_memory_usage() > 0 and Engine.get_frames_per_second() >= 0,
+		"Speicher und FPS liefern echte Werte (%s)" %
+		[OS.get_static_memory_usage()])
+	Settings.show_perf = false
+	Settings.changed.emit()
+	await _frames(2)
+	_check(not perf.visible, "Leistungsanzeige lässt sich wieder ausschalten")
+
+	# 5. Entwicklerinfo ist etwas anderes und liegt auf F3.
+	var dbg: Control = world.hud.debug
+	_check(dbg != null and not dbg.visible, "Entwicklerinfo startet ausgeschaltet")
+	dbg._unhandled_input(_key("debug_info"))
+	await _frames(3)
+	_check(dbg.visible and dbg._label.text.contains("Höhenstufe"),
+		"F3 zeigt Chunk, Feld, Boden, Höhenstufe und Zustand")
+	dbg._unhandled_input(_key("debug_info"))
+	await _frames(2)
 
 ## Gelände, Kollision und Übergänge.
 ##

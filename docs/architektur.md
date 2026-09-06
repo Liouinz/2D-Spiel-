@@ -389,6 +389,42 @@ lange Spur zieht.
 Bauwerkzeug läuft bei pausiertem Baum zu Recht nicht mehr und kam nicht mehr
 dazu, den Zeigerkasten zu löschen. Das macht jetzt der Zustandswechsel selbst.
 
+## Nachtrag: Eingaben zentral, Steuerungsanzeige, Leistungsanzeige
+
+**Alle Tasten liegen jetzt in der InputMap.** Im Bauwerkzeug standen zuletzt
+noch `KEY_1` bis `KEY_8` und `KEY_F5` fest im Code, die Maustasten ebenso.
+Beides sind jetzt Aktionen (`build_slot_1` … `build_slot_8`, `save_map`,
+`build_place`, `build_remove`), angelegt an einer Stelle in
+`Config.setup_input()`. Die Belegung hat sich nicht geändert, nur ihr Ort.
+
+**Die Steuerungsübersicht kann nicht veralten.** `Config.CONTROL_ROWS` enthält
+ausschliesslich Beschriftungen; welche Taste dazugehört, holt
+`Config.keys_for()` zur Laufzeit aus der InputMap
+(`InputMap.action_get_events()` → `OS.get_keycode_string()`). Ändert jemand
+eine Belegung, ändert sich die Anzeige mit. Ein Selbsttest prüft ausserdem,
+dass jede aufgeführte Aktion existiert und eine Taste hat.
+
+**Leistungsanzeige: nur gemessene Werte.** Godot liefert keine
+Systemauslastung, sondern Renderzeiten — deshalb steht dort „CPU Render" und
+„GPU Render" in Millisekunden und keine erfundene Prozentzahl. Gemessen wird
+über `RenderingServer.viewport_set_measure_render_time()` und die beiden
+zugehörigen Abfragen; dass es diese Methoden gibt, wurde aus der laufenden
+Engine geprüft, nicht angenommen. Liefert ein Treiber keinen Wert — im
+Testcontainer ist das bei beiden Renderzeiten so — steht „—" statt einer
+glatten Null, die wie ein Messwert aussähe. Die Anzeige ist bewusst **nicht
+gespeichert**: sie ist bei jedem Start aus.
+
+**Entwicklerinfo auf F3** ist etwas anderes und liegt getrennt davon: Chunk,
+Feld, Bodentyp, Höhenstufe, begehbar, Kollisionsformen, Zustand der Figur.
+
+**Zur Y-Sortierung, ehrlich:** Requisiten und Figur liegen seit Langem in einem
+sortierten Knoten, Häuser und Bäume verdecken die Figur also korrekt. Für die
+Klippe habe ich beide Fälle im Bild geprüft — Figur oberhalb und unterhalb der
+Wand — und beide werden richtig gezeichnet. Die Wand ist 16 Pixel hoch und
+sitzt am unteren Rand ihrer eigenen Kachel; eine Lage, in der sie die Figur
+verdecken müsste, gibt es dadurch nicht. Ich habe deshalb keine zusätzliche
+Sortierung eingebaut, die nichts zu tun hätte.
+
 ## Lizenzlage
 
 Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest

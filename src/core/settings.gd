@@ -13,6 +13,10 @@ var show_hints: bool = true
 ## Belegung der acht Felder der Bau-Leiste. Leer = Standardbelegung.
 var build_loadout: Array = []
 
+## Leistungsanzeige. Bewusst NICHT gespeichert: sie soll bei jedem Start aus
+## sein und nur für die laufende Sitzung eingeschaltet werden können.
+var show_perf: bool = false
+
 func _ready() -> void:
 	load_settings()
 

@@ -87,6 +87,11 @@ Bodenkachel, nicht ein Ersatzsymbol.
 - **Gedrückt halten malt lückenlos**, auch bei schneller Maus.
 - Während **Menü oder Inventar** offen sind, passiert in der Welt nichts: keine
   Blöcke, keine Bewegung, keine Vorschau.
+
+Im **Optionsmenü** steht unter „Steuerung" die vollständige Tastenbelegung —
+erzeugt aus der tatsächlichen Belegung, sie kann also nicht veralten. Dort lässt
+sich auch die **Leistungsanzeige** einschalten (FPS, Speicher, CPU- und
+GPU-Renderzeit, Zeichenaufrufe). Sie ist bei jedem Start aus.
 - Die Übergänge zu den Nachbarn werden sofort mitgerechnet — ein gesetzter Weg
   bekommt saubere Kanten, ganz ohne Nacharbeit.
 
@@ -255,7 +260,7 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 115 Prüfungen; im Aufbaumodus
+Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 138 Prüfungen; im Aufbaumodus
 Weltaufbau ~550 ms bei 2048 × 2048 Blöcken, auf der Insel ~1,5 s mit 616 Objekten).
 Ein Chunk ist in 1,5 ms gemalt, die Minimap in 1,1 ms, die Physik braucht 0,3 ms je
 Bild und der Boden kommt mit 72 Zeichenaufrufen aus. Eine der Prüfungen durchsucht das

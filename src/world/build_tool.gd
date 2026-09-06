@@ -69,15 +69,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if not _playing():
 		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		var k: int = (event as InputEventKey).physical_keycode
-		if k >= KEY_1 and k <= KEY_8:
-			bar.select(k - KEY_1)
+	# Belegung über die InputMap, nicht über Tastencodes im Code. Die
+	# Steuerungsübersicht im Optionsmenü liest dieselben Aktionen.
+	for i in 8:
+		if event.is_action_pressed("build_slot_%d" % (i + 1)):
+			bar.select(i)
 			Audio.play_ui("blip")
 			get_viewport().set_input_as_handled()
-		elif k == KEY_F5:
-			save()
-			get_viewport().set_input_as_handled()
+			return
+	if event.is_action_pressed("save_map"):
+		save()
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventKey:
 		return
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -112,6 +116,8 @@ func _world_cell(cell: Vector2i) -> bool:
 		return false
 	return not (is_instance_valid(bar) and bar.covers(_screen_mouse()))
 
+## Welcher Bodentyp gehört zu welcher Maustaste? „Entfernen" heisst: zurück auf
+## Gras — es gibt kein Loch im Boden.
 func _tile_for(button: int) -> int:
 	return MapData.Tile.GRASS if button == MOUSE_BUTTON_RIGHT else bar.tile_type()
 

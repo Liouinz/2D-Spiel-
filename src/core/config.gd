@@ -101,6 +101,16 @@ static func setup_input() -> void:
 		"toggle_grid": [KEY_G],
 		"toggle_minimap": [KEY_M],
 		"toggle_info": [KEY_H],
+		"debug_info": [KEY_F3],
+		"save_map": [KEY_F5],
+		"build_slot_1": [KEY_1],
+		"build_slot_2": [KEY_2],
+		"build_slot_3": [KEY_3],
+		"build_slot_4": [KEY_4],
+		"build_slot_5": [KEY_5],
+		"build_slot_6": [KEY_6],
+		"build_slot_7": [KEY_7],
+		"build_slot_8": [KEY_8],
 	}
 	for action: String in actions:
 		if not InputMap.has_action(action):
@@ -109,3 +119,71 @@ static func setup_input() -> void:
 			var ev := InputEventKey.new()
 			ev.physical_keycode = key
 			InputMap.action_add_event(action, ev)
+
+	# Maustasten gehören genauso in die InputMap wie Tasten — sonst steht die
+	# Belegung an zwei Orten und die Steuerungsübersicht kennt nur die Hälfte.
+	var mouse := {
+		"build_place": MOUSE_BUTTON_LEFT,
+		"build_remove": MOUSE_BUTTON_RIGHT,
+	}
+	for action: String in mouse:
+		if not InputMap.has_action(action):
+			InputMap.add_action(action)
+		var ev := InputEventMouseButton.new()
+		ev.button_index = mouse[action]
+		InputMap.action_add_event(action, ev)
+
+## Reihenfolge und Beschriftung der Steuerungsübersicht.
+##
+## Hier stehen NUR die Beschriftungen. Welche Taste eine Aktion auslöst, holt
+## die Anzeige aus der InputMap — dadurch kann dort nie eine veraltete oder
+## erfundene Taste stehen.
+const CONTROL_ROWS := [
+	["move_up+move_left+move_down+move_right", "Laufen (auch Pfeiltasten)"],
+	["run", "Rennen"],
+	["jump", "Springen — und auf Fels hinauf"],
+	["build_place", "Block setzen"],
+	["build_remove", "Block entfernen"],
+	["build_slot_1", "Bau-Leiste Feld 1 (bis Feld 8 mit 2–8)"],
+	["inventory", "Inventar öffnen und schliessen"],
+	["toggle_grid", "Blockraster ein und aus"],
+	["toggle_minimap", "Minimap ein und aus"],
+	["toggle_info", "Anzeige oben links ein und aus"],
+	["save_map", "Karte speichern"],
+	["debug_info", "Entwicklerinfo ein und aus"],
+	["ui_cancel", "Pause / zurück"],
+]
+
+## Lesbare Tastennamen einer Aktion, direkt aus der InputMap.
+##
+## Mausrad und weitere Sonderfälle sind bewusst mit aufgeführt: was die Engine
+## kennt, soll auch dastehen.
+static func keys_for(action: String) -> String:
+	# Mehrere Aktionen mit „+" verbunden ergeben eine Zeile: bei der Bewegung
+	# soll „W A S D" dastehen und nicht viermal dieselbe Zeile.
+	if action.contains("+"):
+		var parts: Array[String] = []
+		for one: String in action.split("+"):
+			var k := keys_for(one)
+			parts.append(k.split(" / ")[0])
+		return " ".join(parts)
+	if not InputMap.has_action(action):
+		return "—"
+	var names: Array[String] = []
+	for ev: InputEvent in InputMap.action_get_events(action):
+		if ev is InputEventKey:
+			var k := ev as InputEventKey
+			var code := k.physical_keycode if k.physical_keycode != 0 else k.keycode
+			names.append(OS.get_keycode_string(code))
+		elif ev is InputEventMouseButton:
+			names.append(MOUSE_NAMES.get((ev as InputEventMouseButton).button_index,
+				"Maustaste"))
+	return " / ".join(names) if not names.is_empty() else "—"
+
+const MOUSE_NAMES := {
+	MOUSE_BUTTON_LEFT: "Linke Maustaste",
+	MOUSE_BUTTON_RIGHT: "Rechte Maustaste",
+	MOUSE_BUTTON_MIDDLE: "Mausrad-Klick",
+	MOUSE_BUTTON_WHEEL_UP: "Mausrad hoch",
+	MOUSE_BUTTON_WHEEL_DOWN: "Mausrad runter",
+}
