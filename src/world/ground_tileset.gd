@@ -78,8 +78,11 @@ var decor_ranges: Dictionary = {}       ## sorte -> Vector2i(start, anzahl)
 var _sources: Array[int] = []          ## Quellen-ID je Stapelposition
 var _slots: Array = []                 ## Array[Vector2i] je Stapelposition
 var _full_count: int = 0               ## Vollkacheln je Bodentyp
-var _member: Array = []                ## PackedByteArray je Stapelposition
-var _variants := PackedByteArray()     ## Helligkeit/Variante je Kachel
+## Nachschlagtabelle Schicht x Bodentyp -> gehoert dazu (0/1). Ersetzt neun
+## ganzseitige Zugehoerigkeitsraster: bei 2048 x 2048 Bloecken waeren das 37 MB
+## gewesen, hier sind es 81 Bytes.
+var _table := PackedByteArray()
+var _shade: FastNoiseLite               ## grossflaechige Bodenhelligkeit
 
 static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 	var g := GroundTileSet.new()
@@ -122,9 +125,36 @@ static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 		g._sources.append(sid)
 		g._slots.append(slots)
 
+	g._build_table()
+	g._shade = FastNoiseLite.new()
+	g._shade.seed = seed_value + 809
+	g._shade.frequency = 0.030
 	g._build_decor(ts, art, rng)
 	g.tileset = ts
 	return g
+
+## Die Tabelle ist über den ganzen Bytebereich aufgespannt, nicht nur über die
+## bekannten Bodentypen: dadurch darf `_paint_cell` direkt in `map.tiles`
+## greifen, ohne dass ein beschädigter Wert aus einer Speicherdatei die
+## Kachelsuche aus dem Ruder laufen lässt. Kostet 2304 statt 81 Bytes.
+const TABLE_STRIDE := 256
+
+func _build_table() -> void:
+	_table.resize(STACK.size() * TABLE_STRIDE)
+	for pos in STACK.size():
+		for t in TABLE_STRIDE:
+			var known := t < MapData.Tile.COUNT and in_layer(pos, t)
+			# Unbekannte Werte verhalten sich wie Gras: die Grundfüllung greift,
+			# alles darüber nicht.
+			_table[pos * TABLE_STRIDE + t] = 1 if (known or pos == 0) else 0
+
+## Helligkeitsstufe und Variante einer Kachel — frueher einmal ueber die ganze
+## Karte vorberechnet, jetzt bei Bedarf. Dieselbe Formel, damit sich am
+## Aussehen nichts aendert.
+func variant_at(x: int, y: int) -> int:
+	var n := _shade.get_noise_2d(x, y) * 0.5 + 0.5
+	var shade := clampi(int(n * TileArt.SHADES), 0, TileArt.SHADES - 1)
+	return shade * TileArt.VARIANTS + (x * 7 + y * 13) % TileArt.VARIANTS
 
 ## Baut aus den Streuobjekten fertige, durchsichtige Dekorationskacheln. Sie
 ## kommen in eine eigene TileMapLayer über dem Boden — dadurch entfällt die
@@ -165,18 +195,20 @@ func _build_decor(ts: TileSet, art: TileArt, rng: RandomNumberGenerator) -> void
 	for pos: Vector2i in decor_slots:
 		src.create_tile(pos)
 	decor_source = ts.add_source(src)
-
-## Setzt die Dekorationsschicht. `map` enthält je Kachel den flachen Index
-## einer Dekorationskachel oder -1.
-func paint_decor(layer: TileMapLayer, indices: PackedInt32Array) -> void:
+## Setzt die Dekorationsschicht eines Chunks. `at` liefert je Kachel den
+## flachen Index einer Dekorationskachel oder -1.
+func paint_decor_chunk(layer: TileMapLayer, chunk: Vector2i, at: Callable) -> void:
 	layer.tile_set = tileset
-	for y in Config.MAP_H:
-		for x in Config.MAP_W:
-			var i := indices[y * Config.MAP_W + x]
+	var cs := Config.CHUNK
+	for oy in cs:
+		for ox in cs:
+			var x := chunk.x * cs + ox
+			var y := chunk.y * cs + oy
+			var i: int = at.call(x, y)
 			if i >= 0:
 				layer.set_cell(Vector2i(x, y), decor_source, decor_slots[i])
 
-## Setzt eine Schicht.
+## Malt einen Chunk auf alle neun Bodenschichten.
 ##
 ## Die Kachelwahl folgt derselben Eckregel wie Godots Terrain-System: eine Ecke
 ## gilt als bedeckt, wenn alle vier an ihr liegenden Kacheln zur Schicht
@@ -184,102 +216,118 @@ func paint_decor(layer: TileMapLayer, indices: PackedInt32Array) -> void:
 ## stimmt Bit für Bit überein — nur ist die eigene Berechnung rund zehnmal so
 ## schnell, weil sie ohne Kachelsuche auskommt.
 ##
-## Das TileSet deklariert die Terrains trotzdem mit Eck-Bits. Dadurch lässt
-## sich dieselbe Karte im Godot-Editor von Hand mit dem Terrain-Pinsel
-## weiterbearbeiten.
-func paint(layer: TileMapLayer, pos: int, cells: Array[Vector2i], variants: PackedByteArray) -> void:
-	layer.tile_set = tileset
-	_variants = variants
-	var w := Config.MAP_W
+## Gelesen wird direkt aus der Karte statt aus zwischengespeicherten Rastern:
+## die 3 × 3-Nachbarschaft einmal je Kachel, danach neun Tabellenzugriffe je
+## Schicht. Dadurch stimmen die Eckmasken auch an Chunk-Grenzen, ohne dass der
+## Nachbarchunk geladen sein muss.
+func paint_chunk(layers: Array[TileMapLayer], map: MapData, chunk: Vector2i) -> void:
+	var cs := Config.CHUNK
+	var count := STACK.size()
+	for pos in count:
+		layers[pos].tile_set = tileset
+	for oy in cs:
+		var y := chunk.y * cs + oy
+		for ox in cs:
+			var x := chunk.x * cs + ox
+			# Ein frisch geladener Chunk ist auf allen Schichten leer — das
+			# Löschen entfällt und spart rund 51 000 Aufrufe je Chunk.
+			_paint_cell(layers, map, x, y, false)
 
-	# Zugehörigkeit merken: die Bau-Leiste schreibt sie später fort, statt sie
-	# bei jedem Klick über die ganze Karte neu zu bestimmen.
-	var member := PackedByteArray()
-	member.resize(w * Config.MAP_H)
-	for cell: Vector2i in cells:
-		member[cell.y * w + cell.x] = 1
-	while _member.size() <= pos:
-		_member.append(PackedByteArray())
-	_member[pos] = member
-
-	if cells.is_empty():
-		return
-
-	var sid: int = _sources[pos]
-	if pos == 0:
-		for cell: Vector2i in cells:
-			layer.set_cell(cell, sid, _full(pos, variants[cell.y * w + cell.x]))
-		return
-
-	var slots: Array[Vector2i] = _slots[pos]
-	for cell: Vector2i in cells:
-		var mask := _corner_mask(member, cell.x, cell.y)
-		if mask == 15:
-			layer.set_cell(cell, sid, _full(pos, variants[cell.y * w + cell.x]))
-		else:
-			layer.set_cell(cell, sid, slots[mask])
+## Löscht die Kacheln eines Chunks wieder aus allen Schichten.
+func erase_chunk(layers: Array[TileMapLayer], chunk: Vector2i) -> void:
+	var cs := Config.CHUNK
+	for pos in layers.size():
+		var layer := layers[pos]
+		for oy in cs:
+			for ox in cs:
+				layer.erase_cell(Vector2i(chunk.x * cs + ox, chunk.y * cs + oy))
 
 ## Setzt eine einzelne Kachel neu — der Kern der Bau-Leiste.
 ##
 ## Weil der Boden aus neun Schichten mit Eck-Autotiling besteht, ändert eine
 ## einzige geänderte Kachel die Eckmasken im 3 × 3-Umfeld auf jeder Schicht.
 ## Mehr aber auch nicht: eine Ecke hängt nur von den vier Kacheln ab, die an
-## ihr zusammenstoßen. Neun Schichten × neun Zellen pro Klick sind billig
-## genug, um bei gedrückter Maustaste flüssig zu malen.
-func update_cell(layers: Array, map: MapData, cell: Vector2i) -> void:
-	if not map.in_bounds(cell.x, cell.y):
-		return
-	var i := cell.y * Config.MAP_W + cell.x
-	var t := map.get_tile(cell.x, cell.y)
-	for pos in STACK.size():
-		var member: PackedByteArray = _member[pos]
-		member[i] = 1 if in_layer(pos, t) else 0
-		_member[pos] = member
+## ihr zusammenstoßen.
+func update_cell(layers: Array[TileMapLayer], map: MapData, cell: Vector2i) -> void:
+	for oy in range(-1, 2):
+		for ox in range(-1, 2):
+			var x := cell.x + ox
+			var y := cell.y + oy
+			if x >= 0 and y >= 0 and x < Config.MAP_W and y < Config.MAP_H:
+				_paint_cell(layers, map, x, y, true)
 
-	for pos in STACK.size():
-		var layer: TileMapLayer = layers[pos]
-		for oy in range(-1, 2):
-			for ox in range(-1, 2):
-				_refresh(layer, pos, cell.x + ox, cell.y + oy)
-
-func _refresh(layer: TileMapLayer, pos: int, x: int, y: int) -> void:
-	if x < 0 or y < 0 or x >= Config.MAP_W or y >= Config.MAP_H:
-		return
-	var c := Vector2i(x, y)
-	var member: PackedByteArray = _member[pos]
-	var i := y * Config.MAP_W + x
-	if member[i] == 0:
-		layer.erase_cell(c)
-		return
-	var sid: int = _sources[pos]
-	if pos == 0:
-		layer.set_cell(c, sid, _full(pos, _variants[i]))
-		return
-	var mask := _corner_mask(member, x, y)
-	if mask == 15:
-		layer.set_cell(c, sid, _full(pos, _variants[i]))
+func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, erase: bool) -> void:
+	# Die 3 × 3-Nachbarschaft einmal lesen — danach kostet jede Schicht nur
+	# noch Tabellenzugriffe. Innerhalb der Karte wird direkt im Puffer gelesen,
+	# das spart neun Funktionsaufrufe je Kachel.
+	var w := Config.MAP_W
+	var t0: int; var t1: int; var t2: int
+	var t3: int; var t4: int; var t5: int
+	var t6: int; var t7: int; var t8: int
+	if x > 0 and y > 0 and x < w - 1 and y < Config.MAP_H - 1:
+		var buf := map.tiles
+		var i := y * w + x
+		t0 = buf[i - w - 1]; t1 = buf[i - w]; t2 = buf[i - w + 1]
+		t3 = buf[i - 1];     t4 = buf[i];     t5 = buf[i + 1]
+		t6 = buf[i + w - 1]; t7 = buf[i + w]; t8 = buf[i + w + 1]
 	else:
-		layer.set_cell(c, sid, (_slots[pos] as Array[Vector2i])[mask])
+		t0 = _tile(map, x - 1, y - 1); t1 = _tile(map, x, y - 1); t2 = _tile(map, x + 1, y - 1)
+		t3 = _tile(map, x - 1, y);     t4 = _tile(map, x, y);     t5 = _tile(map, x + 1, y)
+		t6 = _tile(map, x - 1, y + 1); t7 = _tile(map, x, y + 1); t8 = _tile(map, x + 1, y + 1)
 
-## Eine Ecke ist bedeckt, wenn alle vier dort zusammenstoßenden Kacheln zur
-## Schicht gehören. Am Kartenrand wird der Wert des Randfeldes fortgesetzt,
-## sonst würde die Schicht dort ausfransen.
-static func _corner_mask(member: PackedByteArray, x: int, y: int) -> int:
-	var mask := 0
-	if _at(member, x - 1, y - 1) and _at(member, x, y - 1) and _at(member, x - 1, y):
-		mask |= 1                                   # oben links
-	if _at(member, x, y - 1) and _at(member, x + 1, y - 1) and _at(member, x + 1, y):
-		mask |= 2                                   # oben rechts
-	if _at(member, x + 1, y) and _at(member, x, y + 1) and _at(member, x + 1, y + 1):
-		mask |= 4                                   # unten rechts
-	if _at(member, x - 1, y) and _at(member, x - 1, y + 1) and _at(member, x, y + 1):
-		mask |= 8                                   # unten links
-	return mask
+	var cell := Vector2i(x, y)
+	var count := STACK.size()
 
-static func _at(member: PackedByteArray, x: int, y: int) -> bool:
-	var cx := clampi(x, 0, Config.MAP_W - 1)
-	var cy := clampi(y, 0, Config.MAP_H - 1)
-	return member[cy * Config.MAP_W + cx] != 0
+	# Häufigster Fall, gerade auf einer noch leeren Karte: ringsum derselbe
+	# Bodentyp. Dann ist jede Ecke bedeckt und die Eckrechnung entfällt.
+	if t0 == t4 and t1 == t4 and t2 == t4 and t3 == t4 \
+			and t5 == t4 and t6 == t4 and t7 == t4 and t8 == t4:
+		var full := _full_for(t4, x, y)
+		for pos in count:
+			if _table[pos * TABLE_STRIDE + t4] == 0:
+				if erase:
+					layers[pos].erase_cell(cell)
+			else:
+				layers[pos].set_cell(cell, _sources[pos], full[pos])
+		return
+
+	var variant := -1
+	for pos in count:
+		var layer := layers[pos]
+		var base := pos * TABLE_STRIDE
+		if _table[base + t4] == 0:
+			if erase:
+				layer.erase_cell(cell)
+			continue
+		var mask := 0
+		if _table[base + t0] != 0 and _table[base + t1] != 0 and _table[base + t3] != 0:
+			mask |= 1                                   # oben links
+		if _table[base + t1] != 0 and _table[base + t2] != 0 and _table[base + t5] != 0:
+			mask |= 2                                   # oben rechts
+		if _table[base + t5] != 0 and _table[base + t7] != 0 and _table[base + t8] != 0:
+			mask |= 4                                   # unten rechts
+		if _table[base + t3] != 0 and _table[base + t6] != 0 and _table[base + t7] != 0:
+			mask |= 8                                   # unten links
+		if mask == 15 or pos == 0:
+			if variant < 0:
+				variant = variant_at(x, y)
+			layer.set_cell(cell, _sources[pos], _full(pos, variant))
+		else:
+			layer.set_cell(cell, _sources[pos], (_slots[pos] as Array[Vector2i])[mask])
+
+## Die Vollkacheln aller Schichten für eine Kachel ohne abweichende Nachbarn.
+func _full_for(tile: int, x: int, y: int) -> Array:
+	var variant := variant_at(x, y)
+	var out := []
+	out.resize(STACK.size())
+	for pos in STACK.size():
+		out[pos] = _full(pos, variant) if _table[pos * TABLE_STRIDE + tile] != 0 else Vector2i.ZERO
+	return out
+
+## Bodentyp mit Fortsetzung über den Kartenrand hinaus — sonst würde jede
+## Schicht am Rand ausfransen.
+static func _tile(map: MapData, x: int, y: int) -> int:
+	return map.get_tile(clampi(x, 0, Config.MAP_W - 1), clampi(y, 0, Config.MAP_H - 1))
 
 func _full(pos: int, variant: int) -> Vector2i:
 	var slots: Array[Vector2i] = _slots[pos]

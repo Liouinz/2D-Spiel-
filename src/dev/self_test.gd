@@ -81,9 +81,9 @@ func _run() -> void:
 	_check(not get_tree().paused, "Baum läuft")
 
 	# --- Karte ---
-	var counts := {}
-	for i in map.tiles.size():
-		counts[map.tiles[i]] = counts.get(map.tiles[i], 0) + 1
+	# Bei 4,2 Millionen Kacheln wird nicht mehr die ganze Karte gezählt,
+	# sondern der geladene Ausschnitt um die Figur.
+	var counts := _count_tiles(map, GridOverlay.block_at(player.position), 40)
 	if Config.EMPTY_WORLD:
 		_check(counts.size() == 1 and counts.has(MapData.Tile.GRASS), "Karte ist leer (nur Boden)")
 		_check(world.get_node("Sorted").get_child_count() == 1, "Keine Requisiten auf der Karte")
@@ -98,8 +98,9 @@ func _run() -> void:
 			_check(counts.get(t, 0) > 20, "Bereich %d vorhanden" % t)
 	var spawn_tile := Vector2i(int(player.position.x) / Config.TILE, int(player.position.y) / Config.TILE)
 	_check(not map.is_solid(spawn_tile.x, spawn_tile.y), "Startpunkt ist begehbar")
-	_check(world.get_node("Collision").get_child_count() > 3, "Kollisionsformen gebaut (%d)" %
-		world.get_node("Collision").get_child_count())
+	var want := (2 * Config.LOAD_RADIUS + 1) * (2 * Config.LOAD_RADIUS + 1)
+	_check(world.streamer.loaded_count() == want,
+		"Chunks um die Figur geladen (%d von %d)" % [world.streamer.loaded_count(), want])
 	await _shot("02_dorf")
 
 	# --- Bewegung ---
@@ -142,6 +143,7 @@ func _run() -> void:
 	if Config.EMPTY_WORLD:
 		await _check_chunks()
 		await _check_building(world, map, player)
+		await _check_streaming(world, player)
 
 	if not Config.EMPTY_WORLD:
 		# --- Kollision: gegen Wasser laufen ---
@@ -161,16 +163,18 @@ func _run() -> void:
 		_check(blocked, "Requisiten (Baum/Fels/Haus) blockieren")
 
 	# --- Weltgrenze ---
-	player.position = Vector2(Config.TILE * 4, Config.TILE * 4)
+	player.position = Vector2(Config.TILE * 4.0, Config.TILE * 4.0)
 	player.velocity = Vector2.ZERO
 	await _frames(2)
 	await _drive("move_left", 120)
 	var size := Config.world_size_px()
 	_check(player.position.x >= 0.0 and player.position.y >= 0.0
 		and player.position.x <= size.x and player.position.y <= size.y, "Spieler bleibt in der Welt")
+	_check(world.streamer.shape_count() > 0,
+		"Weltrand hat Kollisionsformen (%d)" % world.streamer.shape_count())
 
 	# Für den Screenshot zurück ins Dorf und in den Wald
-	player.position = Vector2(Layout.SPAWN.x * Config.TILE, (Layout.SPAWN.y - 16) * Config.TILE)
+	player.position = Vector2(Config.spawn_block().x, Config.spawn_block().y - 16) * Config.TILE
 	player.velocity = Vector2.ZERO
 	cam.snap_to_target()
 	await _frames(6)
@@ -179,7 +183,7 @@ func _run() -> void:
 	var beach := Vector2i(-1, -1)
 	if Config.EMPTY_WORLD:
 		# Aufbaumodus: Raster am Kartenrand zeigen, dort sitzt die Wand
-		player.position = Vector2(Config.TILE * 4, Config.TILE * 4)
+		player.position = Vector2(Config.TILE * 4.0, Config.TILE * 4.0)
 		player.velocity = Vector2.ZERO
 		cam.snap_to_target()
 		await _frames(6)
@@ -274,7 +278,8 @@ func _run() -> void:
 		# Der Weg aus dem Bau-Test wurde beim Verlassen automatisch gesichert
 		# und muss jetzt wieder auf der Karte liegen.
 		var again: MapData = main._world.map
-		_check(again.get_tile(21, 21) == MapData.Tile.PATH,
+		var mid2 := Config.spawn_block() + Vector2i(-5, -5)
+		_check(again.get_tile(mid2.x, mid2.y) == MapData.Tile.PATH,
 			"Gebaute Karte wird beim nächsten Start wieder geladen")
 	_restore_save()
 
@@ -328,19 +333,30 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 	if tool == null:
 		return
 
+	# Die Bauvorschau darf nicht am Raster hängen — genau das war der Fehler.
+	var g: GridOverlay = world.grid
+	g.show_grid = false
+	await _frames(2)
+	_check(g.visible and not g.show_grid, "Raster aus, Vorschau bleibt gezeichnet")
+	_check(world.build_bar.preview_texture() != null, "Vorschau kennt die gewählte Kachel")
+	g.show_grid = true
+
 	# Stapelposition 7 ist der Weg — dort muss der gesetzte Fleck erscheinen.
-	var path_layer: TileMapLayer = world.get_node("Ground").get_child(7)
+	var path_layer: TileMapLayer = world.streamer.layers[7]
 	var before := path_layer.get_used_cells().size()
-	var origin := Vector2i(20, 20)
+	# Gebaut wird neben der Figur — nur dort sind Chunks geladen.
+	var home := GridOverlay.block_at(player.global_position)
+	var origin := home + Vector2i(-6, -6)
 	for oy in 3:
 		for ox in 3:
 			tool.place(origin + Vector2i(ox, oy), MapData.Tile.PATH)
 	await _frames(2)
-	_check(map.get_tile(21, 21) == MapData.Tile.PATH, "Block gesetzt (Weg)")
+	var mid := origin + Vector2i(1, 1)
+	_check(map.get_tile(mid.x, mid.y) == MapData.Tile.PATH, "Block gesetzt (Weg)")
 	_check(path_layer.get_used_cells().size() == before + 9,
 		"Wegschicht bemalt (%d Zellen)" % (path_layer.get_used_cells().size() - before))
 	# Die Mitte ist eine Vollkachel, die Ecke eine Übergangskachel.
-	_check(path_layer.get_cell_atlas_coords(Vector2i(21, 21))
+	_check(path_layer.get_cell_atlas_coords(mid)
 		!= path_layer.get_cell_atlas_coords(origin),
 		"Randkacheln des Flecks sind Übergänge")
 
@@ -350,11 +366,12 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 	_check(path_layer.get_cell_source_id(origin) == -1, "Zurückgesetzter Block ist wieder leer")
 
 	# Wasser blockiert und bekommt eine eigene Kollisionsform.
-	var wet := Vector2i(26, 20)
+	var wet := home + Vector2i(6, -6)
+	var before_shapes := tool.shape_count()
 	tool.place(wet, MapData.Tile.WATER)
 	await _frames(2)
-	_check(map.is_solid(wet.x, wet.y) and tool.water_shapes() == 1,
-		"Gesetztes Wasser blockiert (%d Form)" % tool.water_shapes())
+	_check(map.is_solid(wet.x, wet.y) and tool.shape_count() > before_shapes,
+		"Gesetztes Wasser blockiert")
 	player.position = Vector2(wet.x + 0.5, wet.y - 1.5) * Config.TILE
 	player.velocity = Vector2.ZERO
 	await _frames(3)
@@ -363,8 +380,7 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 	_check(not map.is_solid(stand.x, stand.y), "Spieler läuft nicht ins gesetzte Wasser")
 	tool.place(wet, MapData.Tile.GRASS)
 	await _frames(2)
-	_check(not map.is_solid(wet.x, wet.y) and tool.water_shapes() == 0,
-		"Wasser entfernt, Kollisionsform verschwunden")
+	_check(not map.is_solid(wet.x, wet.y), "Wasser entfernt, Kollision weg")
 
 	# Ein kleines Stück Dorf bauen — als Bildbeleg und als Belastungsprobe für
 	# die Übergänge zwischen vier verschiedenen Bodentypen auf engem Raum.
@@ -380,7 +396,7 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 ## Baut von Hand ein Stück Dorf: Hausgrundriss aus Pflaster, ein Weg dorthin,
 ## eine Wiese und ein Teich. Setzt dieselben Aufrufe ab wie ein Mausklick.
 func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
-	var o := Vector2i(34, 30)
+	var o := GridOverlay.block_at(player.global_position) + Vector2i(-8, 2)
 	# Hausgrundriss: 3 Reihen zu je 2 Blöcken, wie vom Maßstab her besprochen
 	for y in 3:
 		for x in 2:
@@ -403,13 +419,38 @@ func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
 		for x in range(8, 12):
 			tool.place(o + Vector2i(x, y), MapData.Tile.WATER)
 	await _frames(2)
-	_check(tool.water_shapes() == 12, "Teich blockiert (%d Formen)" % tool.water_shapes())
+	_check(tool.map.is_solid(o.x + 9, o.y + 8), "Teich blockiert")
 
 	player.position = Vector2(o.x + 7.0, o.y + 4.0) * Config.TILE
 	player.velocity = Vector2.ZERO
 	world.camera.snap_to_target()
 	await _frames(6)
 	await _shot("07_bauen")
+
+## Chunk-Laden: die Welt kommt und geht um die Figur herum.
+func _check_streaming(world: Node2D, player: Player) -> void:
+	var st: ChunkStreamer = world.streamer
+	var want := (2 * Config.LOAD_RADIUS + 1) * (2 * Config.LOAD_RADIUS + 1)
+	var here := GridOverlay.chunk_of(GridOverlay.block_at(player.global_position))
+	_check(st.is_loaded(here), "Chunk unter der Figur ist geladen")
+	var cells := st.layers[0].get_used_cells().size()
+	_check(cells == want * Config.CHUNK * Config.CHUNK,
+		"Grundschicht hat genau die geladenen Zellen (%d)" % cells)
+
+	# Weit weg versetzen: alles Alte muss verschwinden, Neues nachkommen.
+	var far := here + Vector2i(20, 20)
+	player.position = Vector2(far.x * Config.CHUNK + 8, far.y * Config.CHUNK + 8) * Config.TILE
+	player.velocity = Vector2.ZERO
+	var loads_before := st.loads
+	await _frames(40)
+	_check(not st.is_loaded(here), "Alte Chunks sind entladen")
+	_check(st.is_loaded(far), "Chunk am neuen Ort ist geladen")
+	_check(st.loaded_count() == want,
+		"Wieder %d Chunks geladen (%d)" % [want, st.loaded_count()])
+	_check(st.layers[0].get_used_cells().size() == cells,
+		"Zellzahl bleibt begrenzt (%d)" % st.layers[0].get_used_cells().size())
+	_check(st.loads - loads_before == want and st.unloads >= want,
+		"Genau %d nachgeladen, %d entladen" % [st.loads - loads_before, st.unloads])
 
 ## Legt die Karte des Spielers wieder so ab, wie sie vor dem Test war.
 func _restore_save() -> void:
@@ -420,6 +461,17 @@ func _restore_save() -> void:
 	if f != null:
 		f.store_buffer(_save_backup)
 		f.close()
+
+## Zählt die Bodentypen in einem Quadrat um einen Block.
+func _count_tiles(map: MapData, center: Vector2i, radius: int) -> Dictionary:
+	var out := {}
+	for y in range(center.y - radius, center.y + radius + 1):
+		for x in range(center.x - radius, center.x + radius + 1):
+			if not map.in_bounds(x, y):
+				continue
+			var t := map.get_tile(x, y)
+			out[t] = out.get(t, 0) + 1
+	return out
 
 func _drive(action: String, frames: int) -> void:
 	Input.action_press(action)
@@ -442,7 +494,7 @@ func _find_water_shore(map: MapData) -> Vector2i:
 	return Vector2i(-1, -1)
 
 func _walk_into_prop(world: Node2D) -> bool:
-	var body: StaticBody2D = world.get_node("Collision")
+	var body: StaticBody2D = world.streamer.body
 	for child in body.get_children():
 		var cs := child as CollisionShape2D
 		var r := (cs.shape as RectangleShape2D).size

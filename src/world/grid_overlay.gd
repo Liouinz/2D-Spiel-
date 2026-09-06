@@ -6,32 +6,37 @@ extends Node2D
 ## gezeigt, damit sich planen lässt, wie viele Blöcke ein Objekt belegt.
 ## Rot = einzelne Blöcke, Gelb = Chunk-Grenzen mit Nummer.
 ##
-## Umschalten mit G. Gezeichnet wird nur der sichtbare Ausschnitt.
+## Umschalten mit G. Wichtig: G schaltet nur die LINIEN aus, nicht den Knoten.
+## Die Bauvorschau unter dem Mauszeiger bleibt immer sichtbar — das Raster
+## dient dem Nachsehen, die Vorschau dem Bauen, und das sind zwei Dinge.
+##
+## Gezeichnet wird nur der sichtbare Ausschnitt.
 
 const BLOCK_LINE := Color(0.90, 0.20, 0.22, 0.30)
 const CHUNK_LINE := Color(1.00, 0.85, 0.25, 0.80)
 const CHUNK_TEXT := Color(1.00, 0.90, 0.45, 0.60)
 const PLAYER_FILL := Color(1.00, 0.35, 0.35, 0.22)
 const PLAYER_LINE := Color(1.00, 0.55, 0.45, 0.95)
-const CURSOR_LINE := Color(1.00, 1.00, 1.00, 0.90)
+const CURSOR_LINE := Color(1.00, 1.00, 1.00, 0.95)
+const CURSOR_GHOST := Color(1.00, 1.00, 1.00, 0.55)   ## Deckkraft des Geistbilds
 const BORDER := Color(1.00, 0.45, 0.20, 0.85)
 
 var camera: GameCamera
 var player: Node2D
-var cursor_block := Vector2i(-1, -1)   ## Vorschau der Bau-Leiste, -1 = aus
+var show_grid := Config.SHOW_BLOCK_GRID   ## nur die Linien, nicht die Vorschau
+var cursor_block := Vector2i(-1, -1)      ## Vorschau der Bau-Leiste, -1 = aus
+var cursor_tex: Texture2D                 ## gewählte Bodenkachel als Geistbild
 
 func _init() -> void:
 	z_index = 500          ## über allem, auch über Bäumen
-	visible = Config.SHOW_BLOCK_GRID
 
 func _process(_delta: float) -> void:
-	if visible:
-		queue_redraw()
+	queue_redraw()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_action_pressed("toggle_grid"):
 		return
-	visible = not visible
+	show_grid = not show_grid
 	queue_redraw()
 	get_viewport().set_input_as_handled()
 
@@ -59,6 +64,12 @@ func _draw() -> void:
 	var x1 := mini(int(rect.end.x / t) + 1, Config.MAP_W)
 	var y1 := mini(int(rect.end.y / t) + 1, Config.MAP_H)
 
+	if show_grid:
+		_draw_grid(t, x0, y0, x1, y1)
+	_draw_cursor(t)
+
+## Alles, was G umschaltet: Linien, Chunk-Nummern, Weltrand, Spielerblock.
+func _draw_grid(t: float, x0: int, y0: int, x1: int, y1: int) -> void:
 	# Blocklinien
 	for bx in range(x0, x1 + 1):
 		if bx % Config.CHUNK != 0:
@@ -87,9 +98,18 @@ func _draw() -> void:
 		draw_rect(cell, PLAYER_FILL, true)
 		draw_rect(cell, PLAYER_LINE, false, 2.0)
 
-	# Block unter dem Mauszeiger (Bau-Vorschau)
-	if cursor_block.x >= 0:
-		draw_rect(Rect2(cursor_block.x * t, cursor_block.y * t, t, t), CURSOR_LINE, false, 3.0)
+## Die Bauvorschau — unabhängig vom Raster, sonst baut man blind.
+##
+## Gezeichnet wird nicht nur der Rahmen, sondern die gewählte Bodenkachel
+## halbdurchsichtig darin: so sieht man nicht nur wohin, sondern auch was.
+func _draw_cursor(t: float) -> void:
+	if cursor_block.x < 0:
+		return
+	var box := Rect2(cursor_block.x * t, cursor_block.y * t, t, t)
+	if cursor_tex != null:
+		draw_texture_rect(cursor_tex, box, false, CURSOR_GHOST)
+	draw_rect(box, Color(0, 0, 0, 0.55), false, 5.0)
+	draw_rect(box, CURSOR_LINE, false, 2.0)
 
 ## Chunk-Nummer in die obere linke Ecke jedes sichtbaren Chunks.
 ##

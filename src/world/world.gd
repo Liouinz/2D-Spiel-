@@ -10,6 +10,7 @@ var hud: CanvasLayer
 var grid: GridOverlay
 var build_bar: CanvasLayer
 var build_tool: BuildTool
+var streamer: ChunkStreamer
 
 const HudScene := preload("res://src/ui/hud.gd")
 const BuildBarScene := preload("res://src/ui/build_bar.gd")
@@ -17,38 +18,30 @@ const BuildBarScene := preload("res://src/ui/build_bar.gd")
 var build_msec: int = 0
 
 var _sorted: Node2D
-
 func _ready() -> void:
 	var started := Time.get_ticks_msec()
 	var builder := WorldBuilder.new()
 	builder.build(Config.WORLD_SEED)
 	map = builder.map
 
-	# Der Boden ist ein echtes Kachelraster: eine TileMapLayer je Schicht,
-	# von unten nach oben per Terrain-Autotiling ineinander eingeblendet.
-	var ground := Node2D.new()
-	ground.name = "Ground"
-	add_child(ground)
+	# Die Figur muss vor dem Boden dastehen: der ChunkStreamer lädt um sie
+	# herum, also braucht er ihre Position, bevor die erste Kachel fällt.
+	player = Player.new()
+	player.name = "Player"
+	var spawn := map.find_free_near(Config.spawn_block())
+	player.position = Vector2(spawn.x + 0.5, spawn.y + 0.5) * Config.TILE
+
+	# Der Boden ist ein echtes Kachelraster: eine TileMapLayer je Schicht, von
+	# unten nach oben per Terrain-Autotiling ineinander eingeblendet. Geladen
+	# wird chunkweise um die Figur herum.
 	var t_layers := Time.get_ticks_msec()
-	var layers: Array = []
-	for pos in GroundTileSet.STACK.size():
-		var layer := TileMapLayer.new()
-		layer.name = "L%d_%s" % [pos, GroundTileSet.NAMES[GroundTileSet.STACK[pos]]]
-		layer.z_index = -40 + pos
-		layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		ground.add_child(layer)
-		builder.ground.paint(layer, pos, builder.cells_for(pos), builder.variant_map())
-		layers.append(layer)
-
+	streamer = ChunkStreamer.new()
+	streamer.name = "Streamer"
+	add_child(streamer)
+	streamer.setup(map, builder.ground, player)
+	streamer.decor_at = builder.decor_at
+	streamer.prime()
 	builder.timings["schichten"] = Time.get_ticks_msec() - t_layers
-
-	# Dekoration ist eine eigene Rasterschicht (Blumen, Grasbüschel, Steine).
-	var decor := TileMapLayer.new()
-	decor.name = "Decoration"
-	decor.z_index = -25
-	decor.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	ground.add_child(decor)
-	builder.ground.paint_decor(decor, builder.decor_map())
 
 	# Bodenschatten: ein weicher Fleck je Requisite, passend skaliert.
 	var shadows := Node2D.new()
@@ -75,16 +68,15 @@ func _ready() -> void:
 	water.setup(map)
 	add_child(water)
 
-	var body := StaticBody2D.new()
-	body.name = "Collision"
-	for r: Rect2 in builder.collision_rects:
+	# Requisiten haben eigene Fussabdrücke; Wasser und Weltrand macht der
+	# Streamer chunkweise.
+	for r: Rect2 in builder.prop_collision():
 		var shape := RectangleShape2D.new()
 		shape.size = r.size
 		var cs := CollisionShape2D.new()
 		cs.shape = shape
 		cs.position = r.position + r.size * 0.5
-		body.add_child(cs)
-	add_child(body)
+		streamer.body.add_child(cs)
 
 	_sorted = Node2D.new()
 	_sorted.name = "Sorted"
@@ -101,10 +93,6 @@ func _ready() -> void:
 		s.position = p["pos"]
 		_sorted.add_child(s)
 
-	player = Player.new()
-	player.name = "Player"
-	var spawn := map.find_free_near(Layout.SPAWN)
-	player.position = Vector2(spawn.x * Config.TILE + Config.TILE * 0.5, spawn.y * Config.TILE + Config.TILE * 0.5)
 	_sorted.add_child(player)
 
 	camera = GameCamera.new()
@@ -137,15 +125,17 @@ func _ready() -> void:
 		build_tool = BuildTool.new()
 		build_tool.name = "BuildTool"
 		build_tool.map = map
-		build_tool.ground = builder.ground
-		build_tool.layers = layers
+		build_tool.streamer = streamer
 		build_tool.bar = build_bar
 		build_tool.grid = grid
 		build_tool.camera = camera
-		build_tool.body = body
 		build_tool.water = water
 		add_child(build_tool)
+		build_bar.slot_clicked.connect(func(i: int) -> void:
+			build_bar.select(i)
+			Audio.play_ui("blip"))
+
 	build_msec = Time.get_ticks_msec() - started
-	print("Welt aufgebaut in %d ms (%d Objekte, %d Kollisionsformen)" % [
-		build_msec, builder.placed.size(), builder.collision_rects.size()])
+	print("Welt aufgebaut in %d ms (%d Objekte, %d Chunks, %d Kollisionsformen)" % [
+		build_msec, builder.placed.size(), streamer.loaded_count(), streamer.shape_count()])
 	print("  Phasen: ", builder.timings)

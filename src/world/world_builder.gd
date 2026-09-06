@@ -1,7 +1,10 @@
 class_name WorldBuilder
 extends RefCounted
-## Verteilt die Requisiten, backt den Boden in EINE Textur und baut die Kollision.
-## Ein Draw-Call für den Boden -> auch auf schwachen Laptops flüssig.
+## Erzeugt Karte, Kachelgrafik und Kachelsatz und verteilt die Requisiten.
+##
+## Was hier NICHT mehr passiert: Boden malen und Kollision bauen. Beides läuft
+## seit der grossen Welt chunkweise im ChunkStreamer — ganzseitige Raster wären
+## bei 4,2 Millionen Kacheln weder vom Speicher noch von der Zeit her tragbar.
 
 const T := Config.TILE
 
@@ -10,16 +13,13 @@ var art: TileArt
 var props: Dictionary                 ## name -> {"variants": [...]}
 var placed: Array[Dictionary] = []    ## {name, variant, pos (px, Fußpunkt)}
 var ground: GroundTileSet            ## Kachelsatz mit Terrain-Übergängen
-var collision_rects: Array[Rect2] = []
 
 var _rng := RandomNumberGenerator.new()
 var _occupied := PackedByteArray()
 var _density: FastNoiseLite
 var _clearing: FastNoiseLite
 var _species: FastNoiseLite
-var _shade: FastNoiseLite
 var timings: Dictionary = {}   ## Dauer der Bauphasen in ms (Diagnose)
-var _variants := PackedByteArray()
 
 func _phase(name: String, started: int) -> int:
 	timings[name] = Time.get_ticks_msec() - started
@@ -37,23 +37,21 @@ func build(seed_value: int) -> void:
 	# kosteten dort eine halbe Sekunde Ladezeit für nichts.
 	props = {} if Config.EMPTY_WORLD else PropArt.build(seed_value)
 	t = _phase("requisiten", t)
-	_occupied.resize(Config.MAP_W * Config.MAP_H)
 	_setup_noise(seed_value)
-	# Im Aufbaumodus bleibt die Karte leer — nur Boden und Raster.
+	# Im Aufbaumodus bleibt die Karte leer — nur Boden und Raster. Das
+	# Belegungsraster braucht dort niemand und kostete 4,2 MB.
 	if not Config.EMPTY_WORLD:
+		_occupied.resize(Config.MAP_W * Config.MAP_H)
 		_place_village()
 		_place_nature()
 	t = _phase("platzierung", t)
 	ground = GroundTileSet.build(art, seed_value)
 	t = _phase("kachelsatz", t)
-	_build_collision()
-	t = _phase("kollision", t)
 
 func _setup_noise(seed_value: int) -> void:
 	_density = _noise(seed_value + 301, 0.10)    ## Baumgruppen
 	_clearing = _noise(seed_value + 457, 0.055)  ## Lichtungen
 	_species = _noise(seed_value + 613, 0.045)   ## Nadel- oder Laubwald
-	_shade = _noise(seed_value + 809, 0.030)     ## großflächige Bodenhelligkeit
 
 func _noise(s: int, freq: float) -> FastNoiseLite:
 	var n := FastNoiseLite.new()
@@ -265,79 +263,59 @@ func _touches_water(x: int, y: int) -> bool:
 		if map.is_water(x + o.x, y + o.y):
 			return true
 	return false
+# --- Dekoration --------------------------------------------------------------
 
-# --- Boden und Auflagen ------------------------------------------------------
-
-## Welche Kacheln zu welcher Schicht des Bodenstapels gehören.
-## Sand liegt unter allem Land, Gras darüber (ausser auf Sand) — dadurch
-## entsteht der Strandsaum von selbst, ohne Sonderfälle in der Karte.
-func cells_for(pos: int) -> Array[Vector2i]:
-	var out: Array[Vector2i] = []
-	for y in Config.MAP_H:
-		for x in Config.MAP_W:
-			if GroundTileSet.in_layer(pos, map.get_tile(x, y)):
-				out.append(Vector2i(x, y))
-	return out
-
-## Helligkeitsstufe und Variante je Kachel, einmal vorberechnet. Ein Byte je
-## Kachel ist deutlich billiger als ein Callable-Aufruf pro Kachel und Schicht.
-func variant_map() -> PackedByteArray:
-	if not _variants.is_empty():
-		return _variants
-	_variants.resize(Config.MAP_W * Config.MAP_H)
-	for y in Config.MAP_H:
-		for x in Config.MAP_W:
-			# Nur weiches Rauschen, kein Zufall pro Kachel: einzelne abweichende
-			# Kacheln fallen bei 32 Pixeln sofort als Schachbrett auf.
-			var shade := clampi(int(_n01(_shade, x, y) * TileArt.SHADES), 0, TileArt.SHADES - 1)
-			_variants[y * Config.MAP_W + x] = shade * TileArt.VARIANTS + (x * 7 + y * 13) % TileArt.VARIANTS
-	return _variants
-
-## Bestimmt je Kachel, welche Dekorationskachel dort liegt (oder -1).
-## Die Dekoration ist damit Teil des Rasters statt einer gebackenen Textur:
-## das spart bei 32er-Kacheln eine 3072x2304-Auflage und rund 0,8 Sekunden.
-func decor_map() -> PackedInt32Array:
-	var out := PackedInt32Array()
-	out.resize(Config.MAP_W * Config.MAP_H)
-	out.fill(-1)
+## Welche Dekorationskachel auf einer Kachel liegt (oder -1).
+##
+## Früher einmal über die ganze Karte gewürfelt; das ging nicht mehr, als die
+## Welt chunkweise geladen wurde — ein fortlaufender Zufallsgenerator liefert
+## je nach Reihenfolge andere Ergebnisse. Jetzt entscheidet ein Streuwert aus
+## den Koordinaten: dieselbe Kachel bekommt immer dieselbe Dekoration, egal
+## wann ihr Chunk geladen wird.
+func decor_at(x: int, y: int) -> int:
 	if Config.EMPTY_WORLD:
-		return out
-	var rng := RandomNumberGenerator.new()
-	rng.seed = _rng.seed + 5
-	for y in Config.MAP_H:
-		for x in Config.MAP_W:
-			var t := map.get_tile(x, y)
-			var set_name := ""
-			var chance := 0.0
-			match t:
-				MapData.Tile.GRASS:
-					set_name = "grass"
-					chance = 0.44
-				MapData.Tile.MEADOW:
-					set_name = "grass"
-					chance = 0.88
-				MapData.Tile.FOREST:
-					set_name = "forest"
-					chance = 0.52
-				MapData.Tile.SAND:
-					set_name = "sand"
-					chance = 0.24
-				MapData.Tile.PATH:
-					# Gras wächst über den Wegrand
-					if _borders_grass(x, y):
-						set_name = "edge"
-						chance = 0.55
-					else:
-						set_name = "path"
-						chance = 0.05
-				MapData.Tile.WATER:
-					set_name = "water"
-					chance = 0.05
-			if set_name == "" or rng.randf() > chance:
-				continue
-			var range_of: Vector2i = ground.decor_ranges[set_name]
-			out[y * Config.MAP_W + x] = range_of.x + rng.randi() % range_of.y
-	return out
+		return -1
+	var t := map.get_tile(x, y)
+	var set_name := ""
+	var chance := 0.0
+	match t:
+		MapData.Tile.GRASS:
+			set_name = "grass"
+			chance = 0.44
+		MapData.Tile.MEADOW:
+			set_name = "grass"
+			chance = 0.88
+		MapData.Tile.FOREST:
+			set_name = "forest"
+			chance = 0.52
+		MapData.Tile.SAND:
+			set_name = "sand"
+			chance = 0.24
+		MapData.Tile.PATH:
+			# Gras wächst über den Wegrand
+			if _borders_grass(x, y):
+				set_name = "edge"
+				chance = 0.55
+			else:
+				set_name = "path"
+				chance = 0.05
+		MapData.Tile.WATER:
+			set_name = "water"
+			chance = 0.05
+	if set_name == "":
+		return -1
+	var h := _hash(x, y)
+	if float(h % 10000) / 10000.0 > chance:
+		return -1
+	var range_of: Vector2i = ground.decor_ranges[set_name]
+	return range_of.x + (h / 10000) % range_of.y
+
+## Streuwert aus zwei Koordinaten. Die Primzahlen sind die üblichen aus
+## Spatial-Hashing; das Durchmischen am Ende verhindert sichtbare Muster.
+static func _hash(x: int, y: int) -> int:
+	var h := (x * 73856093) ^ (y * 19349663)
+	h = (h ^ (h >> 13)) * 1274126177
+	return absi(h ^ (h >> 16))
 
 func _borders_grass(x: int, y: int) -> bool:
 	for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
@@ -346,39 +324,18 @@ func _borders_grass(x: int, y: int) -> bool:
 			return true
 	return false
 
-# --- Kollision ---------------------------------------------------------------
+# --- Kollision der Requisiten ------------------------------------------------
 
-func _build_collision() -> void:
-	# a) Wasser/Rand als zusammengefasste Rechtecke (wenige Formen statt tausender)
-	var used := PackedByteArray()
-	used.resize(Config.MAP_W * Config.MAP_H)
-	for y in Config.MAP_H:
-		for x in Config.MAP_W:
-			if not map.is_solid(x, y) or used[y * Config.MAP_W + x] != 0:
-				continue
-			var w := 0
-			while x + w < Config.MAP_W and map.is_solid(x + w, y) and used[y * Config.MAP_W + x + w] == 0:
-				w += 1
-			var h := 1
-			while y + h < Config.MAP_H:
-				var ok := true
-				for i in w:
-					if not map.is_solid(x + i, y + h) or used[(y + h) * Config.MAP_W + x + i] != 0:
-						ok = false
-						break
-				if not ok:
-					break
-				h += 1
-			for oy in h:
-				for ox in w:
-					used[(y + oy) * Config.MAP_W + x + ox] = 1
-			collision_rects.append(Rect2(x * T, y * T, w * T, h * T))
-
-	# b) Requisiten mit Fußabdruck
+## Fussabdrücke der Requisiten. Wasser und Weltrand macht der ChunkStreamer
+## chunkweise; die Requisiten stehen nur im Inselmodus und sind so wenige, dass
+## sie am Stück bleiben können.
+func prop_collision() -> Array[Rect2]:
+	var out: Array[Rect2] = []
 	for p: Dictionary in placed:
 		var e: Dictionary = PropArt.variant(props, p["name"], p["variant"])
 		var foot: Vector2 = e["foot"]
 		if foot == Vector2.ZERO:
 			continue
 		var pos: Vector2 = p["pos"]
-		collision_rects.append(Rect2(pos.x - foot.x, pos.y - foot.y * 2.0, foot.x * 2.0, foot.y * 2.0))
+		out.append(Rect2(pos.x - foot.x, pos.y - foot.y * 2.0, foot.x * 2.0, foot.y * 2.0))
+	return out

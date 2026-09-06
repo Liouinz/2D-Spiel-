@@ -28,8 +28,11 @@ const TYPES := [
 
 var selected: int = 0
 
+signal slot_clicked(index: int)
+
 var _root: Control
 var _slots: Array[Panel] = []
+var _textures: Array[Texture2D] = []
 var _hint: Label
 var _flash: float = 0.0
 
@@ -78,11 +81,18 @@ func setup(art: TileArt) -> void:
 func _make_slot(art: TileArt, i: int, slot_w: int, slot_h: int) -> Panel:
 	var panel := Panel.new()
 	panel.custom_minimum_size = Vector2(slot_w, slot_h)
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Anklickbar: das Feld fängt den Klick ab, damit er nicht als Bauklick
+	# in der Welt landet.
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	panel.gui_input.connect(func(e: InputEvent) -> void:
+		if e is InputEventMouseButton and e.pressed \
+				and e.button_index == MOUSE_BUTTON_LEFT:
+			slot_clicked.emit(i))
 
 	# Mittlere Helligkeitsstufe, erste Variante — die neutralste Ansicht.
 	var tex := TextureRect.new()
 	tex.texture = Pixel.tex(art.base[TYPES[i]][TileArt.VARIANTS])
+	_textures.append(tex.texture)
 	tex.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	tex.stretch_mode = TextureRect.STRETCH_SCALE
@@ -126,6 +136,19 @@ func select(i: int) -> void:
 ## Der gewählte Bodentyp.
 func tile_type() -> int:
 	return TYPES[selected]
+
+## Die Kachel des gewählten Typs — die Bauvorschau zeichnet sie unter den Zeiger.
+func preview_texture() -> Texture2D:
+	if selected < _textures.size():
+		return _textures[selected]
+	return null
+
+## Liegt der Mauszeiger über der Leiste? Dann darf kein Block gesetzt werden.
+func covers(pos: Vector2) -> bool:
+	for s in _slots:
+		if s.get_global_rect().has_point(pos):
+			return true
+	return false
 
 ## Blendet für zwei Sekunden eine Meldung statt der Bedienhilfe ein.
 func flash(text: String) -> void:

@@ -21,20 +21,19 @@ var camera: GameCamera
 var prims: int = 0           ## gezeichnete Rechtecke im letzten Bild (nur Messung)
 
 var _map: MapData
-var _shore := PackedByteArray()
 var _time: float = 0.0
 var _accum: float = 0.0
 
 ## Muss vor dem ersten Zeichnen aufgerufen werden.
 func setup(map: MapData) -> void:
 	_map = map
-	_shore.resize(Config.MAP_W * Config.MAP_H)
-	for y in Config.MAP_H:
-		for x in Config.MAP_W:
-			_shore[y * Config.MAP_W + x] = _mask_at(x, y)
 
-## Ufermaske einer einzelnen Kachel. Einmal beim Aufbau über die ganze Karte,
-## danach nur noch punktuell, wenn die Bau-Leiste Wasser setzt oder entfernt.
+## Ufermaske einer einzelnen Kachel.
+##
+## Früher lag sie für die ganze Karte in einem Feld. Gezeichnet wird aber
+## ohnehin nur der sichtbare Ausschnitt — rund 400 Kacheln bei 24 Bildern je
+## Sekunde. Vier Nachbarabfragen je Kachel sind dafür billiger als 4,2 MB
+## Speicher plus Nachführen bei jedem gesetzten Block.
 func _mask_at(x: int, y: int) -> int:
 	if not _map.is_water(x, y):
 		return 0
@@ -49,15 +48,8 @@ func _mask_at(x: int, y: int) -> int:
 		mask |= RIGHT
 	return mask
 
-## Nach einer Änderung an einer Kachel: die Kachel selbst und ihre vier
-## Nachbarn können ein anderes Ufer bekommen haben.
-func refresh(cell: Vector2i) -> void:
-	if _map == null:
-		return
-	for o: Vector2i in [Vector2i.ZERO, Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
-		var c := cell + o
-		if _map.in_bounds(c.x, c.y):
-			_shore[c.y * Config.MAP_W + c.x] = _mask_at(c.x, c.y)
+## Nach einer Änderung an einer Kachel neu zeichnen.
+func refresh(_cell: Vector2i) -> void:
 	queue_redraw()
 
 func _process(delta: float) -> void:
@@ -82,12 +74,11 @@ func _draw() -> void:
 	var y1 := mini(int(rect.end.y / T) + 1, Config.MAP_H)
 
 	for y in range(y0, y1):
-		var row := y * Config.MAP_W
 		for x in range(x0, x1):
 			if not _map.is_water(x, y):
 				continue
 			_glint(x, y)
-			var mask := _shore[row + x]
+			var mask := _mask_at(x, y)
 			if mask != 0:
 				_foam(x, y, mask)
 

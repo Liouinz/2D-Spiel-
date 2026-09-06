@@ -4,26 +4,25 @@ extends RefCounted
 
 enum Tile { GRASS, MEADOW, FOREST, PATH, SAND, ROCK, WATER, DEEP_WATER, COBBLE, COUNT }
 
-const W := Config.MAP_W
-const H := Config.MAP_H
-
 var tiles := PackedByteArray()
-var solid := PackedByteArray()
 
 func _init() -> void:
-	tiles.resize(W * H)
-	solid.resize(W * H)
+	tiles.resize(Config.MAP_W * Config.MAP_H)
 
 func idx(x: int, y: int) -> int:
-	return y * W + x
+	return y * Config.MAP_W + x
 
 func in_bounds(x: int, y: int) -> bool:
-	return x >= 0 and y >= 0 and x < W and y < H
+	return x >= 0 and y >= 0 and x < Config.MAP_W and y < Config.MAP_H
 
 func get_tile(x: int, y: int) -> int:
 	if not in_bounds(x, y):
 		return Tile.DEEP_WATER
-	return tiles[idx(x, y)]
+	# Unbekannte Werte hier abfangen statt beim Laden: eine beschädigte Datei
+	# darf nicht in die Kachelsuche durchschlagen, aber 4,2 Millionen Bytes
+	# beim Start durchzugehen kostete 100 ms für nichts.
+	var t := tiles[idx(x, y)]
+	return t if t < Tile.COUNT else Tile.GRASS
 
 func set_tile(x: int, y: int, t: int) -> void:
 	if in_bounds(x, y):
@@ -33,14 +32,18 @@ func is_water(x: int, y: int) -> bool:
 	var t := get_tile(x, y)
 	return t == Tile.WATER or t == Tile.DEEP_WATER
 
+## Begehbarkeit wird gerechnet statt gespeichert.
+##
+## Früher lag daneben ein zweites ganzseitiges Feld; bei 2048 x 2048 Blöcken
+## wären das 4,2 MB gewesen, die nach jedem gesetzten Block hätten nachgeführt
+## werden müssen. Die Regel ist ohnehin kurz: der Weltrand und Wasser halten
+## auf, alles andere nicht.
 func is_solid(x: int, y: int) -> bool:
 	if not in_bounds(x, y):
 		return true
-	return solid[idx(x, y)] != 0
-
-func block(x: int, y: int) -> void:
-	if in_bounds(x, y):
-		solid[idx(x, y)] = 1
+	if x == 0 or y == 0 or x == Config.MAP_W - 1 or y == Config.MAP_H - 1:
+		return true
+	return is_water(x, y)
 
 ## Baut die Karte auf. Im Aufbaumodus entsteht eine leere Fläche, sonst die
 ## komplette Insel.
@@ -54,71 +57,98 @@ func generate(seed_value: int) -> void:
 ## rote Raster darauf gut lesbar ist. Liegt eine gespeicherte Karte vor, wird
 ## stattdessen sie geladen.
 func _generate_flat() -> void:
-	for y in H:
-		for x in W:
-			set_tile(x, y, Tile.GRASS)
+	# fill() statt einer Doppelschleife: bei 4,2 Millionen Kacheln wären das
+	# sonst mehrere Sekunden, so ist es ein Speicherbefehl.
+	tiles.fill(Tile.GRASS)
 	var saved := load_user()
 	if not saved.is_empty():
 		tiles = saved
-	rebuild_solid()
-
-## Begehbarkeit neu aus den Bodentypen ableiten: Wasser blockiert, der
-## Kartenrand immer. Wird nach dem Laden gebraucht, weil dort nur die
-## Bodentypen gespeichert sind.
-func rebuild_solid() -> void:
-	for y in H:
-		for x in W:
-			var edge := x == 0 or y == 0 or x == W - 1 or y == H - 1
-			solid[idx(x, y)] = 1 if (edge or is_water(x, y)) else 0
 
 # --- Gebaute Karte sichern ---------------------------------------------------
 
 const SAVE_PATH := "user://karte.dat"
 const SAVE_MAGIC := 0x484C4154   ## "TALH"
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2          ## 1 = unkomprimiert, 2 = Zstd
 
 ## Schreibt die gebaute Karte. Gespeichert werden nur die Bodentypen — die
 ## Begehbarkeit lässt sich daraus jederzeit wieder ableiten.
+##
+## Bei 2048 x 2048 Blöcken sind das roh 4,2 MB. Eine Karte, auf der erst ein
+## paar Häuser stehen, ist fast überall Gras und schrumpft mit Zstd auf wenige
+## Kilobyte — deshalb wird komprimiert, nicht roh geschrieben.
 func save_user() -> bool:
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f == null:
 		push_warning("Karte konnte nicht gespeichert werden: %s" % SAVE_PATH)
 		return false
+	var packed := tiles.compress(FileAccess.COMPRESSION_ZSTD)
 	f.store_32(SAVE_MAGIC)
 	f.store_32(SAVE_VERSION)
-	f.store_32(W)
-	f.store_32(H)
-	f.store_buffer(tiles)
+	f.store_32(Config.MAP_W)
+	f.store_32(Config.MAP_H)
+	f.store_32(tiles.size())
+	f.store_buffer(packed)
 	f.close()
 	return true
 
-## Liest die gespeicherte Karte. Passt Version oder Größe nicht, kommt ein
-## leeres Ergebnis zurück und die Datei wird schlicht ignoriert — ein
-## geänderter Kartenschnitt darf das Spiel nicht zum Absturz bringen.
+## Liest die gespeicherte Karte und passt sie notfalls auf die heutige
+## Weltgröße an.
+##
+## Wächst die Welt zwischen zwei Fassungen, wäre es das Einfachste, die alte
+## Datei zu verwerfen — aber dann ist die Arbeit weg. Stattdessen wird die alte
+## Karte MITTIG in die neue eingesetzt. Nur bei kaputten oder unbekannten
+## Dateien kommt ein leeres Ergebnis zurück.
 static func load_user() -> PackedByteArray:
 	if not FileAccess.file_exists(SAVE_PATH):
 		return PackedByteArray()
 	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
-	if f == null:
-		return PackedByteArray()
-	if f.get_length() < 16:
+	if f == null or f.get_length() < 16:
 		return PackedByteArray()
 	var magic := f.get_32()
 	var version := f.get_32()
-	var w := f.get_32()
-	var h := f.get_32()
-	if magic != SAVE_MAGIC or version != SAVE_VERSION or w != W or h != H:
-		print("Gespeicherte Karte passt nicht (%d × %d, Fassung %d) — sie wird übergangen." % [w, h, version])
+	var sw := f.get_32()
+	var sh := f.get_32()
+	if magic != SAVE_MAGIC or version > SAVE_VERSION or sw <= 0 or sh <= 0:
+		print("Gespeicherte Karte nicht lesbar (Fassung %d) — sie wird übergangen." % version)
 		return PackedByteArray()
-	var data := f.get_buffer(W * H)
+
+	var data := PackedByteArray()
+	if version == 1:
+		data = f.get_buffer(sw * sh)
+	else:
+		var raw := f.get_32()
+		data = f.get_buffer(f.get_length() - f.get_position()).decompress(
+			raw, FileAccess.COMPRESSION_ZSTD)
 	f.close()
-	if data.size() != W * H:
+	if data.size() != sw * sh:
+		print("Gespeicherte Karte unvollständig — sie wird übergangen.")
 		return PackedByteArray()
-	# Unbekannte Bodentypen abfangen, falls die Aufzählung später wächst.
-	for i in data.size():
-		if data[i] >= Tile.COUNT:
-			data[i] = Tile.GRASS
-	return data
+
+	if sw == Config.MAP_W and sh == Config.MAP_H:
+		return data
+	return _fit(data, sw, sh)
+
+## Setzt eine Karte anderer Größe mittig in die heutige ein.
+static func _fit(data: PackedByteArray, sw: int, sh: int) -> PackedByteArray:
+	var out := PackedByteArray()
+	out.resize(Config.MAP_W * Config.MAP_H)
+	out.fill(Tile.GRASS)
+	var ox := (Config.MAP_W - sw) / 2
+	var oy := (Config.MAP_H - sh) / 2
+	var copied := 0
+	for y in sh:
+		var ty := oy + y
+		if ty < 0 or ty >= Config.MAP_H:
+			continue
+		for x in sw:
+			var tx := ox + x
+			if tx < 0 or tx >= Config.MAP_W:
+				continue
+			out[ty * Config.MAP_W + tx] = data[y * sw + x]
+			copied += 1
+	print("Gespeicherte Karte war %d x %d — mittig in %d x %d übernommen (%d Blöcke)." % [
+		sw, sh, Config.MAP_W, Config.MAP_H, copied])
+	return out
 
 ## Löscht die gespeicherte Karte (der Selbsttest räumt damit hinter sich auf).
 static func clear_user() -> void:
@@ -133,13 +163,13 @@ func _generate_island(seed_value: int) -> void:
 	region.seed = seed_value + 17
 	region.frequency = 0.05
 
-	var cx := W * 0.5
-	var cy := H * 0.5
-	var rx := W * 0.47
-	var ry := H * 0.46
+	var cx := Config.MAP_W * 0.5
+	var cy := Config.MAP_H * 0.5
+	var rx := Config.MAP_W * 0.47
+	var ry := Config.MAP_H * 0.46
 
-	for y in H:
-		for x in W:
+	for y in Config.MAP_H:
+		for x in Config.MAP_W:
 			var dx := (x + 0.5 - cx) / rx
 			var dy := (y + 0.5 - cy) / ry
 			var d := sqrt(dx * dx + dy * dy) + shape.get_noise_2d(x, y) * 0.14
@@ -158,7 +188,6 @@ func _generate_island(seed_value: int) -> void:
 	_blur_regions()
 	_carve_roads()
 	_carve_plaza()
-	_mark_solid()
 
 ## Franst die Grenzen zwischen Gras, Wiese und Wald leicht aus. Früher musste
 ## das die harten Kachelkanten kaschieren; seit die Übergänge aus echten
@@ -169,8 +198,8 @@ func _blur_regions() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 4711
 	var copy := tiles.duplicate()
-	for y in H:
-		for x in W:
+	for y in Config.MAP_H:
+		for x in Config.MAP_W:
 			var t := copy[idx(x, y)]
 			if not FAMILY.has(t):
 				continue
@@ -247,12 +276,6 @@ func _carve_plaza() -> void:
 			var ey := absf(y - (r.position.y + r.size.y * 0.5 - 0.5)) / (r.size.y * 0.5)
 			if ex * ex + ey * ey <= 1.0 and not is_water(x, y):
 				set_tile(x, y, Tile.COBBLE)
-
-func _mark_solid() -> void:
-	for y in H:
-		for x in W:
-			if is_water(x, y):
-				block(x, y)
 
 ## Sucht ausgehend von `start` die nächste freie, begehbare Kachel.
 func find_free_near(start: Vector2i) -> Vector2i:

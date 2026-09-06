@@ -6,7 +6,7 @@ const SHOW_TIME := 7.0
 const FADE_TIME := 1.5
 
 var player: Node2D
-var grid: Node2D
+var grid: GridOverlay
 
 var _label: Label
 var _blocks: Label
@@ -63,7 +63,7 @@ func _process(delta: float) -> void:
 		var b := GridOverlay.block_at(player.global_position)
 		var c := GridOverlay.chunk_of(b)
 		var ic := GridOverlay.block_in_chunk(b)
-		var on := is_instance_valid(grid) and grid.visible
+		var on := is_instance_valid(grid) and grid.show_grid
 		_blocks.text = "Chunk  %d | %d      ·      Block  %d | %d      ·      im Chunk  %d | %d\n%d px je Block   ·   %d × %d Blöcke   =   %d × %d Chunks   ·   G – Raster %s" % [
 			c.x, c.y, b.x, b.y, ic.x, ic.y,
 			Config.TILE, Config.MAP_W, Config.MAP_H,
