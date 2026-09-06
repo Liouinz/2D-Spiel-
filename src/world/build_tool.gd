@@ -2,7 +2,7 @@ class_name BuildTool
 extends Node
 ## Setzt einzelne Bodenblöcke im laufenden Spiel.
 ##
-## 1–8 oder Mausrad wählt den Bodentyp, linke Maustaste setzt ihn auf den Block
+## 1–3 oder Mausrad wählt den Bodentyp, linke Maustaste setzt ihn auf den Block
 ## unter dem Zeiger, rechte Maustaste setzt zurück auf Gras. Gedrückt halten
 ## malt. Der Block unter dem Zeiger wird im Raster hell umrandet.
 ##
@@ -27,7 +27,6 @@ var camera: GameCamera
 var water: WaterFx              ## Brandung neu berechnen, wenn Wasser entsteht
 var minimap: Control            ## sofort nachziehen statt erst beim nächsten Takt
 var main: Node                  ## öffnet und schliesst das Inventar
-var player: Player              ## damit sich niemand selbst einmauert
 
 ## Weiter als so viele Felder wird beim Ziehen nicht aufgefüllt. Springt der
 ## Zeiger (Fenster verlassen, Menü zu), soll keine lange Linie entstehen.
@@ -63,18 +62,13 @@ func _process(_delta: float) -> void:
 		_stroke(_last, cell, _tile_for(_painting))
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("inventory"):
-		main.toggle_inventory()
-		get_viewport().set_input_as_handled()
-		return
 	if not _playing():
 		return
 	# Belegung über die InputMap, nicht über Tastencodes im Code. Die
 	# Steuerungsübersicht im Optionsmenü liest dieselben Aktionen.
-	for i in 8:
+	for i in bar.types.size():
 		if event.is_action_pressed("build_slot_%d" % (i + 1)):
 			bar.select(i)
-			Audio.play_ui("blip")
 			get_viewport().set_input_as_handled()
 			return
 	if event.is_action_pressed("save_map"):
@@ -153,44 +147,20 @@ func place(cell: Vector2i, tile: int) -> void:
 		return
 	if map.get_tile(cell.x, cell.y) == tile:
 		return
-	# Kein fester Block in die eigene Figur.
-	#
-	# Sonst entsteht eine Kollisionsform mitten im Körper, und move_and_slide()
-	# drückt ihn im nächsten Bild mit voller Kraft heraus — die Figur wird
-	# weggeschleudert, und in welche Richtung hängt vom Zufall der Überlappung
-	# ab. Deshalb gar nicht erst zulassen.
-	if _blocks_player(cell, tile):
-		if is_instance_valid(bar):
-			bar.flash("Da stehst Du selbst")
-		return
+	# Keiner der drei Böden hält auf: Gras, Sand und Wasser sind alle begehbar
+	# bzw. durchschwimmbar. Ein Block kann die Figur deshalb nicht einschliessen
+	# und muss auch nicht dagegen geprüft werden.
 	map.set_tile(cell.x, cell.y, tile)
 	streamer.refresh_cell(cell)
 	if is_instance_valid(water):
 		water.refresh(cell)
 	if is_instance_valid(minimap):
 		minimap.refresh()
-	Audio.play_step()
-
-## Würde dieser Block die Figur einschliessen? Geprüft wird der Fussabdruck,
-## nicht nur der Mittelpunkt.
-func _blocks_player(cell: Vector2i, tile: int) -> bool:
-	if not is_instance_valid(player):
-		return false
-	if tile != MapData.Tile.DEEP_WATER:
-		return false            # nur Tiefwasser hält auf
-	var base := player.global_position
-	for corner: Vector2 in [
-			Vector2(-Player.FOOT.x, 0.0), Vector2(Player.FOOT.x, 0.0),
-			Vector2(-Player.FOOT.x, -Player.FOOT.y), Vector2(Player.FOOT.x, -Player.FOOT.y)]:
-		if GridOverlay.block_at(base + corner) == cell:
-			return true
-	return false
 
 ## Sichert die gebaute Karte von Hand (F5). Automatisch passiert das ausserdem
 ## beim Zurück ins Hauptmenü und beim Beenden.
 func save() -> bool:
 	var ok := map.save_user()
-	Audio.play_ui("confirm" if ok else "close")
 	if is_instance_valid(bar):
 		bar.flash("Karte gespeichert" if ok else "Karte konnte nicht gespeichert werden")
 	return ok

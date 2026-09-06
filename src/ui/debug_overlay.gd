@@ -57,7 +57,6 @@ func _process(_delta: float) -> void:
 			streamer.loaded_count() if is_instance_valid(streamer) else 0],
 		"Feld         %d | %d" % [b.x, b.y],
 		"Boden        %s" % GroundTileSet.NAMES.get(t, "?"),
-		"Höhenstufe   %d   (Figur: %d)" % [map.level_at(b.x, b.y), player.level()],
 		"begehbar     %s%s" % ["nein" if map.is_solid(b.x, b.y) else "ja",
 			"   schwimmbar" if map.is_swimmable(b.x, b.y) else ""],
 		"Kollision    %d Formen geladen" % (

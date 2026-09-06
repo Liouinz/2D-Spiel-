@@ -12,7 +12,7 @@ const FMT := Image.FORMAT_RGBA8
 ## Körnung und Platten in einem Zug nahtlos — ohne dass eine einzige
 ## Kachelfunktion umgeschrieben werden muss.
 ##
-## Nur die Bodenkacheln setzen das. Requisiten, Figuren und Oberfläche dürfen
+## Nur die Bodenkacheln setzen das. Figuren und Oberfläche dürfen
 ## NICHT umlaufen, sonst klebte ein Baumwipfel unten am Bild.
 static var wrap: int = 0
 
@@ -96,7 +96,7 @@ static func triangle(img: Image, ax: float, ay: float, bx: float, by: float, cx:
 ## Ein Pixel-Outline rund um alles Sichtbare — der wichtigste Stil-Klebstoff.
 ##
 ## Liest den Alphakanal einmal als Rohpuffer statt über get_pixel(). Bei den
-## 32er-Grafiken hat jede Requisite die vierfache Pixelzahl; der Unterschied
+## 32er-Grafiken hat eine 64er-Grafik die vierfache Pixelzahl; der Unterschied
 ## macht bei rund 90 Bildern mehrere hundert Millisekunden aus.
 static func outline(img: Image, c: Color, threshold: float = 0.35) -> void:
 	var w := img.get_width()

@@ -1,20 +1,17 @@
 class_name EdgeArt
 extends RefCounted
-## Kanten, die Höhe zeigen: Felsklippen und Ufer.
+## Uferkanten zwischen Land und Wasser.
 ##
-## Das Eck-Autotiling des Bodens blendet Nachbarn weich ineinander. Für Wiese
-## und Waldboden ist das richtig — für Fels und Wasser nicht: dort soll man
-## sehen, dass es eine Stufe gibt, statt eines Farbverlaufs.
+## Das Eck-Autotiling des Bodens blendet Nachbarn weich ineinander. Für den
+## Übergang Gras → Sand ist das richtig. Für die Uferlinie nicht: dort soll man
+## sehen, wo das Land aufhört, statt eines Farbverlaufs.
 ##
-## Wie Pixel-Spiele Höhe erzeugen (Slynyrd, „Top Down Tiles"):
-##   * eine WANDFLÄCHE nach unten, weil man von schräg oben schaut
-##   * darunter ein SCHLAGSCHATTEN — höchstens eine Kachel lang, und immer
-##     gleich lang, egal wie hoch die Wand ist
-##   * eine LICHTKANTE oben, wo die Fläche vom Licht angeschnitten wird
-## Die Lichtrichtung ist dieselbe wie überall sonst im Spiel: von oben links.
+## Zwei Kachelsätze:
+##   * Uferkante auf dem LAND — das Land hört sichtbar auf
+##   * Tiefenband im WASSER — direkt am Ufer fällt der Grund weg
 ##
-## Angesprochen wird über eine 4-Bit-Nachbarmaske. Bit 1 = Norden, 2 = Osten,
-## 4 = Süden, 8 = Westen; gesetzt heißt „dort ist der Nachbar ANDERS".
+## Angesprochen über eine 4-Bit-Nachbarmaske. Bit 1 = Norden, 2 = Osten,
+## 4 = Süden, 8 = Westen; gesetzt heisst „dort ist der Nachbar anders".
 
 const T := Config.TILE
 
@@ -23,37 +20,15 @@ const E := 2
 const S := 4
 const W := 8
 
-## Die Wand bleibt VOLLSTÄNDIG auf der Felskachel.
-##
-## Früher lief sie über die Blockkante hinweg und belegte noch sieben Pixel der
-## Kachel darunter. Das war aus zwei Gründen falsch: die Wand stand dadurch in
-## fremden Feldern — bei Fels über Wasser mitten im Wasser — und die sichtbare
-## Kante lag 7 Pixel tiefer als die Stelle, an der die Figur tatsächlich
-## anhält. Beim Anlaufen von Süden sah es deshalb aus, als bliebe man in der
-## Wand stecken, von Norden dagegen richtig.
-##
-## Jetzt gilt: sichtbare Kante = Blockkante = Stelle, an der die Bewegung
-## anhält. Auf die Kachel darunter kommt nur noch der Schlagschatten, und ein
-## Schatten behauptet keine feste Fläche.
-##
-## Fels verläuft nicht (SHARP), die Kachel ist also bis zum Rand gefüllt — die
-## Wand steht damit nicht auf Gras.
-const WALL_TOP := 16         ## Wandhöhe, ganz auf der Felskachel
-const WALL_FOOT := 0         ## nichts mehr auf der Kachel darunter
-const SHADOW_H := 10         ## Schlagschatten darunter — immer gleich lang
-const SHADOW_DX := 2         ## Versatz nach rechts: Licht kommt von links
 const BANK_W := 5            ## Uferkante auf dem Land
 const DEPTH_W := 7           ## Tiefenband im Wasser
 
 var source: int = -1                    ## Quellen-ID im TileSet
 ## Drei Ausführungen je Maske. Ohne sie wiederholt sich dieselbe Wand an jeder
-## Kachel und die Klippe sieht gestempelt aus.
-const VARIANTS := 3
+## Kachel und das Ufer sieht gestempelt aus.
 
-var cliff: Array[Vector2i] = []         ## (Maske * VARIANTS + Ausführung)
 var bank: Array[Vector2i] = []          ## Maske -> Kachel (Land am Wasser)
 var depth: Array[Vector2i] = []         ## Maske -> Kachel (Wasser am Land)
-var foot: Array[Vector2i] = []          ## Wandfuss + Schlagschatten darunter
 
 ## Baut den Atlas und hängt ihn in das übergebene TileSet.
 static func build(ts: TileSet) -> EdgeArt:
@@ -61,14 +36,9 @@ static func build(ts: TileSet) -> EdgeArt:
 	var tiles: Array[Image] = []
 
 	for mask in 16:
-		for v in VARIANTS:
-			e.cliff.append(_slot(tiles, _cliff_tile(mask, v)))
-	for mask in 16:
 		e.bank.append(_slot(tiles, _bank_tile(mask)))
 	for mask in 16:
 		e.depth.append(_slot(tiles, _depth_tile(mask)))
-	for v in VARIANTS:
-		e.foot.append(_slot(tiles, _foot_tile(v)))
 
 	var cols := 8
 	var rows := int(ceil(float(tiles.size()) / cols))
@@ -91,116 +61,6 @@ static func _slot(tiles: Array[Image], img: Image) -> Vector2i:
 	var i := tiles.size()
 	tiles.append(img)
 	return Vector2i(i % 8, i / 8)
-
-# --- Fels ---------------------------------------------------------------
-
-## Die Klippe. Nach Süden hin eine Wand, nach Norden eine Lichtkante, seitlich
-## abgesetzte Ränder. Zusammen liest sich das als erhöhte Fläche.
-static func _cliff_tile(mask: int, v: int) -> Image:
-	var img := Pixel.make(T, T)
-
-	if mask & S:
-		_wall(img, T - WALL_TOP, WALL_TOP, true, v)
-
-	if mask & N:
-		# Oberkante: erst eine dunkle Trennlinie zum Nachbarn, dann die
-		# Lichtkante. Ohne die Trennlinie klebt der harte Felsrand am Gras.
-		for x in T:
-			var jag := 1 if _rough(x, 91 + v * 7) < 2 else 0
-			Pixel.px(img, x, jag, Palette.STONE_DARK.darkened(0.30))
-			Pixel.px(img, x, jag + 1, Palette.STONE_LIGHT)
-			Pixel.px(img, x, jag + 2, Palette.STONE_LIGHT.lerp(Palette.STONE, 0.45))
-			Pixel.px(img, x, jag + 3, Palette.STONE_LIGHT.lerp(Palette.STONE, 0.78))
-
-	if mask & W:
-		# Lichtseite: das Licht kommt von links oben.
-		for y in T:
-			var jag := 1 if _rough(y, 37 + v * 7) < 2 else 0
-			Pixel.px(img, jag, y, Palette.STONE_DARK.darkened(0.22))
-			Pixel.px(img, jag + 1, y, Palette.STONE_LIGHT.lerp(Palette.STONE, 0.25))
-			Pixel.px(img, jag + 2, y, Palette.STONE_LIGHT.lerp(Palette.STONE, 0.70))
-	if mask & E:
-		# Schattenseite
-		for y in T:
-			var jag := 1 if _rough(y, 53 + v * 7) < 2 else 0
-			Pixel.px(img, T - 1 - jag, y, Palette.STONE_DARK.darkened(0.35))
-			Pixel.px(img, T - 2 - jag, y, Palette.STONE_DARK)
-			Pixel.px(img, T - 3 - jag, y, Palette.STONE_DARK.lerp(Palette.STONE, 0.55))
-	return img
-
-## Der Schlagschatten auf der Kachel unter dem Fels — und NUR der Schatten.
-## Er ist immer gleich lang, egal wie hoch die Felsfläche ist; so machen es
-## Pixel-Spiele, sonst kippt die Perspektive.
-static func _foot_tile(_v: int) -> Image:
-	var img := Pixel.make(T, T)
-	for y in SHADOW_H:
-		var f := 1.0 - float(y) / SHADOW_H
-		var a := 0.46 * f * f
-		for x in range(SHADOW_DX, T):
-			if a < Pixel.bayer(x, y) * 0.22:
-				continue
-			Pixel.px(img, x, y, Color(0.05, 0.06, 0.11, a + 0.08))
-	return img
-
-## Eine Steinwand von `top` an, `height` Pixel hoch.
-##
-## Nicht einfach dunkel: oben am Bruch hell, nach unten in den Schatten, dazu
-## unregelmässige Risse. Gleichmässige Risse sähen aus wie ein Heizkörper.
-static func _wall(img: Image, top: int, height: int, lip: bool, v: int) -> void:
-	var total := float(WALL_TOP)
-	var offset := 0.0
-	for y in range(top, top + height):
-		var f := (offset + float(y - top)) / total
-		Pixel.hline(img, 0, y, T, Palette.STONE.lerp(Palette.STONE_DARK.darkened(0.35), f))
-
-	if lip:
-		# Bruchkante: helle Lippe, wo die Deckfläche abbricht.
-		for x in T:
-			var jag := _rough(x, 17 + v * 7) % 2
-			Pixel.px(img, x, top - jag, Palette.STONE_LIGHT)
-			Pixel.px(img, x, top - jag + 1, Palette.STONE_LIGHT.lerp(Palette.STONE, 0.55))
-
-	# Waagerechte Schichtung: Fels bricht in Lagen, das trägt mehr zur Wirkung
-	# bei als viele senkrechte Striche.
-	if lip:
-		var band := top + int(height * 0.55)
-		for x in T:
-			if _rough(x, 61 + v * 7) < 6:
-				Pixel.px(img, x, band, Palette.STONE_DARK.darkened(0.18))
-
-	# Risse: wenige und ungleich lang. Ein Riss je rund zwölf Pixel — bei
-	# jedem vierten sähe die Wand aus wie ein Lattenzaun.
-	for x in T:
-		if _hash(x + v * 101) % 12 != 0:
-			continue
-		var deep := Palette.STONE_DARK.darkened(0.40)
-		var lit := Palette.STONE.lerp(Palette.STONE_LIGHT, 0.25)
-		# Der Riss läuft IMMER bis zur Unterkante durch, nur sein Anfang wandert.
-		# Sonst brechen die Risse an der Kachelgrenze ab und der Wandfuss
-		# bekommt eine eigene Reihe Striche, die zu nichts gehört.
-		var start := top + (0 if not lip else 2 + _rough(x, 29 + v * 7))
-		var h := top + height - start
-		if h < 2:
-			continue
-		var wide := 1 + (_rough(x, 83 + v * 7) % 2)
-		for i in wide:
-			Pixel.vline(img, x + i, start, h, deep)
-		# Lichtkante rechts vom Riss — dort trifft das Licht von links wieder auf.
-		if x + wide < T:
-			Pixel.vline(img, x + wide, start, h, lit)
-
-	if not lip:
-		# Fuss der Wand: dunkle Abschlusslinie zum Boden hin.
-		Pixel.hline(img, 0, top + height - 1, T, Palette.STONE_DARK.darkened(0.55))
-
-## Kleiner Streuwert 0..7 — für unregelmässige Kanten.
-static func _rough(v: int, salt: int) -> int:
-	return _hash(v * 31 + salt) % 8
-
-static func _hash(v: int) -> int:
-	var h := v * 73856093
-	h = (h ^ (h >> 13)) * 1274126177
-	return absi(h ^ (h >> 16))
 
 # --- Wasser -------------------------------------------------------------
 

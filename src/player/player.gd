@@ -19,16 +19,10 @@ var _shadow: Sprite2D
 var _dir: int = ActorArt.Dir.DOWN
 var _flip: bool = false
 var _anim_time: float = 0.0
-var _step_accum: float = 0.0
 var _was_moving: bool = false
 var _jump_time: float = -1.0   ## < 0 = am Boden, sonst Fortschritt in Sekunden
 var _swimming: bool = false
-var _level: int = 0            ## Höhenstufe, auf der die Figur steht
 var map: MapData               ## um zu wissen, worauf die Figur steht
-
-## Auf welcher Höhenstufe steht die Figur? 0 = Boden, 1 = Fels.
-func level() -> int:
-	return _level
 
 ## Schwimmt die Figur gerade?
 func is_swimming() -> bool:
@@ -89,10 +83,8 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity = velocity.move_toward(input * top_speed, Config.PLAYER_ACCEL * delta)
 		_face(input)
-	_block_ledges(delta)
 	move_and_slide()
 	_jump(delta)
-	_update_level(delta)
 
 	var moving := velocity.length() > 6.0
 	_anim_time += delta * (WALK_FPS if moving else IDLE_FPS)
@@ -100,10 +92,9 @@ func _physics_process(delta: float) -> void:
 		_anim_time = 0.0
 	_was_moving = moving
 	_update_sprite(velocity.length())
-	_footsteps(delta, moving, top_speed)
 
 ## Im flachen Wasser wird geschwommen: langsamer, ohne Rennen und Springen.
-## Tiefwasser bleibt eine Wand, dorthin kommt man gar nicht erst.
+## Wasser hält niemanden auf — es wird durchschwommen.
 ##
 ## Während eines Sprungs wird NICHT geschwommen: sonst klappte die Figur mitten
 ## in der Luft ins Schwimmbild um. Der Sprung wird zu Ende geflogen, das
@@ -117,64 +108,12 @@ func _update_swimming() -> void:
 		return
 	_swimming = wet
 	if wet:
-		Audio.play_ui("splash")
 		splashed.emit(global_position)
-	else:
-		Audio.play_ui("surface")
-
-## Höhenstufen sind keine Wände — man muss ja hinaufkommen. Deshalb keine
-## Kollisionskörper, sondern eine Prüfung vor der Bewegung: bergauf geht nur im
-## Sprung und nur oberhalb der Kletterhöhe, bergab immer.
-func _block_ledges(delta: float) -> void:
-	if map == null:
-		return
-	# HIER lag der Fehler mit „aus dem Wasser auf den Felsen hochgeklatscht":
-	# beim Schwimmen wurde die ganze Prüfung übersprungen, die Figur lief
-	# ungehindert auf die Klippe und stand danach oben.
-	#
-	# Schwimmend erreicht man nur die eigene Stufe — aus dem Wasser kommt man
-	# dort heraus, wo Land auf gleicher Höhe liegt, nicht die Klippe hinauf.
-	# Gesprungen wird im Wasser ohnehin nicht.
-	var reach := _level
-	if not _swimming and jump_height() >= Config.CLIMB_HEIGHT:
-		reach += 1
-	# Geprüft wird der FUSSABDRUCK, nicht ein einzelner Punkt. Mit nur einem
-	# Punkt in der Mitte schob sich die Figur bis zur halben Breite in den Fels
-	# hinein, bevor sie anhielt — und weil die Klippenwand nur nach unten
-	# gezeichnet wird, sah das je nach Anlaufrichtung verschieden aus.
-	if velocity.x != 0.0 and _foot_blocked(Vector2(velocity.x * delta, 0.0), reach):
-		velocity.x = 0.0
-	if velocity.y != 0.0 and _foot_blocked(Vector2(0.0, velocity.y * delta), reach):
-		velocity.y = 0.0
-
-## Liegt in der Zielposition des Fussabdrucks ein Feld über `reach`?
-func _foot_blocked(step: Vector2, reach: int) -> bool:
-	var base := global_position + step
-	for corner: Vector2 in [
-			Vector2(-FOOT.x, 0.0), Vector2(FOOT.x, 0.0),
-			Vector2(-FOOT.x, -FOOT.y), Vector2(FOOT.x, -FOOT.y)]:
-		var b := GridOverlay.block_at(base + corner)
-		if map.level_at(b.x, b.y) > reach:
-			return true
-	return false
-
-## Nach der Bewegung: auf welcher Stufe steht die Figur jetzt? Geht es hinunter,
-## fällt sie kurz sichtbar, statt einfach eine Stufe tiefer zu erscheinen.
-func _update_level(_delta: float) -> void:
-	if map == null or is_jumping():
-		return
-	var b := GridOverlay.block_at(global_position)
-	var here := map.level_at(b.x, b.y)
-	if here == _level:
-		return
-	if here < _level:
-		Audio.play_ui("land")          # nur hörbar, kein Bildversatz
-	_level = here
 
 ## Wie hoch die Figur gerade über dem Boden schwebt. Das ist AUSSCHLIESSLICH
 ## der Sprung.
 ##
-## Hier lag der Fehler mit dem „Hochklatschen": beim Verlassen einer Felsstufe
+## Hier lag der Fehler mit dem „Hochklatschen“: beim Verlassen einer Stufe
 ## wurde dem Versatz schlagartig die volle Wandhöhe aufgeschlagen und dann
 ## weggeblendet — die Figur schoss also erst 16 Pixel nach OBEN und sank dann.
 ## Das war doppelt falsch: sie soll herunter, nicht hinauf, und die Höhe steckt
@@ -191,12 +130,10 @@ func _jump(delta: float) -> void:
 	if _jump_time < 0.0:
 		if Input.is_action_just_pressed("jump"):
 			_jump_time = 0.0
-			Audio.play_ui("jump")
 		return
 	_jump_time += delta
 	if _jump_time >= Config.JUMP_TIME:
 		_jump_time = -1.0
-		Audio.play_ui("land")
 
 func _face(input: Vector2) -> void:
 	if absf(input.x) > absf(input.y) + 0.15:
@@ -238,20 +175,3 @@ func _update_sprite(speed: float) -> void:
 	else:
 		_shadow.scale = Vector2.ONE
 		_shadow.modulate.a = 1.0
-
-func _footsteps(delta: float, moving: bool, top_speed: float) -> void:
-	if _swimming:
-		# Schwimmen klingt nicht nach Schritten, aber auch nicht nach nichts.
-		_step_accum += delta
-		if _step_accum >= 0.55:
-			_step_accum = 0.0
-			if moving:
-				Audio.play_step()
-		return
-	if not moving:
-		_step_accum = 0.35
-		return
-	_step_accum += delta * (top_speed / Config.PLAYER_SPEED)
-	if _step_accum >= 0.36:
-		_step_accum = 0.0
-		Audio.play_step()

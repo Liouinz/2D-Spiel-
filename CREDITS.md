@@ -1,15 +1,15 @@
 # Credits und Nutzungsrechte
 
 **Kurzfassung: Dieses Projekt enthält keine fremden Asset-Dateien.**
-Sämtliche Grafiken und Klänge werden zur Laufzeit im Spiel selbst berechnet.
+Sämtliche Grafiken und die Musik werden zur Laufzeit im Spiel selbst berechnet.
 Es gibt im Repository keine `.png`, `.wav`, `.ogg` oder `.ttf` als Spielinhalt.
 
 ## Grafik
 
 | Was | Herkunft | Autor | Lizenz |
 |---|---|---|---|
-| Bodenkacheln, Übergangskacheln, Dekoration | in diesem Projekt erzeugt (`src/gfx/tile_art.gd`, `src/gfx/terrain_atlas.gd`) | Projekt | frei verwendbar |
-| Bäume, Felsen, Gebäude, Dorfinventar | in diesem Projekt erzeugt (`src/gfx/prop_art.gd`) | Projekt | frei verwendbar |
+| Bodenkacheln (Gras, Sand, Wasser) und Übergangskacheln | in diesem Projekt erzeugt (`src/gfx/tile_art.gd`, `src/gfx/terrain_atlas.gd`) | Projekt | frei verwendbar |
+| Uferband und Tiefenband | in diesem Projekt erzeugt (`src/gfx/edge_art.gd`) | Projekt | frei verwendbar |
 | Spielerfigur und Animationen | in diesem Projekt erzeugt (`src/gfx/actor_art.gd`) | Projekt | frei verwendbar |
 | Menü-Hintergrund, Rahmen, Wolken | in diesem Projekt erzeugt (`src/ui/menu_art.gd`) | Projekt | frei verwendbar |
 
@@ -22,11 +22,10 @@ nichts kopiert, nachgezeichnet oder aus fremden Bilddateien abgeleitet.
 | Was | Herkunft | Autor | Lizenz |
 |---|---|---|---|
 | Menü- und Weltmusik | in diesem Projekt berechnet (`src/audio/audio.gd`) | Projekt | frei verwendbar |
-| Schritte, Menüklänge | in diesem Projekt berechnet (`src/audio/audio.gd`) | Projekt | frei verwendbar |
 
-Die Klänge werden als Sinus-, Rechteck- und Rauschsignale in eine
-`AudioStreamWAV` geschrieben. Es wurden keine Aufnahmen und keine Samples
-verwendet.
+Die Musik wird als Sinussignal in eine `AudioStreamWAV` geschrieben. Es wurden
+keine Aufnahmen und keine Samples verwendet. Klangeffekte gibt es keine mehr —
+sie wurden bewusst entfernt, die Musik ist geblieben.
 
 ## Fremde Bestandteile
 

@@ -1,11 +1,10 @@
 extends CanvasLayer
-## Bau-Leiste am unteren Bildrand: acht Felder mit den Bodentypen, die sich
-## in die Welt setzen lassen.
+## Bau-Leiste am unteren Bildrand: drei Felder mit den Bodentypen, die sich
+## in die Welt setzen lassen — Gras, Sand und Wasser.
 ##
 ## Jedes Feld zeigt die echte Bodenkachel als Vorschau — dieselben Bilder, die
 ## auch auf der Karte liegen. Dadurch stimmt die Leiste immer mit dem überein,
-## was ein Klick tatsächlich erzeugt, ohne eigene Symbolgrafiken. Darunter
-## steht der Name, weil sich Gras und Wiese als Bild allein kaum unterscheiden.
+## was ein Klick tatsächlich erzeugt, ohne eigene Symbolgrafiken.
 
 const SLOT := 48          ## Kantenlänge der Kachelvorschau
 const PAD := 8            ## Rand um die Vorschau
@@ -13,17 +12,12 @@ const NAME_H := 16        ## Zeile für den Namen
 const GAP := 8            ## Abstand zwischen den Feldern
 const MARGIN := 14        ## Abstand zum unteren Bildrand
 
-## Anfangsbelegung der acht Felder. Änderbar: im Inventar (E) lässt sich jedes
+## Anfangsbelegung der drei Felder. Änderbar: im Inventar (E) lässt sich jedes
 ## Feld mit einem beliebigen Bodentyp belegen, und die Belegung bleibt
 ## gespeichert.
 const DEFAULT_TYPES := [
 	MapData.Tile.GRASS,
-	MapData.Tile.MEADOW,
-	MapData.Tile.FOREST,
-	MapData.Tile.PATH,
-	MapData.Tile.COBBLE,
 	MapData.Tile.SAND,
-	MapData.Tile.ROCK,
 	MapData.Tile.WATER,
 ]
 
@@ -113,7 +107,7 @@ func _make_slot(art: TileArt, i: int, slot_w: int, slot_h: int) -> Panel:
 
 	panel.add_child(_slot_label(str(i + 1), 13, Vector2(PAD + 3, PAD - 2), Vector2(20, 18),
 		HORIZONTAL_ALIGNMENT_LEFT))
-	# 11 Punkt: der längste Name ("Waldboden") passt damit noch ins Feld.
+	# 11 Punkt: der längste Name ("Wasser") passt damit bequem ins Feld.
 	var nm := _slot_label(GroundTileSet.NAMES[types[i]], 11,
 		Vector2(0, SLOT + 2 * PAD - 3), Vector2(slot_w, NAME_H), HORIZONTAL_ALIGNMENT_CENTER)
 	_names.append(nm)
@@ -142,7 +136,7 @@ func select(i: int) -> void:
 		_slots[s].add_theme_stylebox_override("panel", _frame(s == selected))
 	_flash = 0.0
 	if _hint != null:
-		_hint.text = "%s  gewählt   ·   1–8 oder Mausrad wechseln   ·   links setzen   ·   rechts entfernen   ·   E – Inventar" % [
+		_hint.text = "%s  gewählt   ·   1–3 oder Mausrad wechseln   ·   links setzen   ·   rechts entfernen   ·   E – Inventar" % [
 			GroundTileSet.NAMES[types[selected]]]
 
 ## Der gewählte Bodentyp.

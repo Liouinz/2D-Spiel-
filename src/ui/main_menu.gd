@@ -38,7 +38,7 @@ func _ready() -> void:
 
 	box.add_child(UiTheme.title("TALHAIN"))
 	box.add_child(UiTheme.rule())
-	box.add_child(UiTheme.text_label("Ein kleines Abenteuer in Wiese, Wald und Dorf", 18))
+	box.add_child(UiTheme.text_label("Bauen in einer offenen Welt aus Gras, Sand und Wasser", 18))
 	box.add_child(_spacer(30))
 
 	var col_center := CenterContainer.new()
@@ -57,9 +57,6 @@ func _ready() -> void:
 	var b_quit := UiTheme.button("BEENDEN")
 	b_quit.pressed.connect(func() -> void: quit_pressed.emit())
 	col.add_child(b_quit)
-	for b: Button in [_first, b_opt, b_quit]:
-		b.mouse_entered.connect(func() -> void: Audio.play_ui("blip"))
-
 	box.add_child(_spacer(26))
 	box.add_child(UiTheme.text_label("WASD oder Pfeiltasten – Laufen    ·    Shift – Rennen    ·    ESC – Pause", 15))
 

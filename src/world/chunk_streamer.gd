@@ -2,7 +2,7 @@ class_name ChunkStreamer
 extends Node2D
 ## Lädt und entlädt die Welt chunkweise um die Spielfigur herum.
 ##
-## Bei 128 × 128 Chunks hat die Karte 4,2 Millionen Kacheln. Sie alle auf neun
+## Bei 128 × 128 Chunks hat die Karte 4,2 Millionen Kacheln. Sie alle auf drei
 ## Bodenschichten zu malen wäre nach der heutigen Messung (7680 Kacheln in
 ## 50 ms) rund eine halbe Minute — und Godot hat für TileMaps kein eigenes
 ## Chunk-Laden, das Thema wurde als „not planned" geschlossen. Also von Hand.
@@ -18,12 +18,10 @@ extends Node2D
 var map: MapData
 var ground: GroundTileSet
 var player: Node2D
-var decor_at: Callable          ## (x, y) -> Index einer Dekorationskachel oder -1
 
-## Neun Bodenschichten, danach Kanten und Schlagschatten
-## (siehe GroundTileSet.LAYER_EDGE / LAYER_SHADOW).
+## Drei Bodenschichten, danach die Kantenschicht
+## (siehe GroundTileSet.STACK / LAYER_EDGE).
 var layers: Array[TileMapLayer] = []
-var decor: TileMapLayer
 var body: StaticBody2D                 ## Sammelknoten aller Kollisionsformen
 
 var _loaded: Dictionary = {}           ## Vector2i -> Array[CollisionShape2D]
@@ -43,18 +41,10 @@ func setup(m: MapData, g: GroundTileSet, p: Node2D) -> void:
 		layers.append(_layer("L%d_%s" % [pos, GroundTileSet.NAMES[GroundTileSet.STACK[pos]]],
 			-40 + pos, g))
 
-	# Kanten und Schatten liegen über dem Boden, aber unter der Brandung:
-	# Klippenwände und Uferbänder gehören zum Untergrund, die Wellen darüber.
-	# Reihenfolge muss zu GroundTileSet.LAYER_EDGE / LAYER_SHADOW passen.
+	# Die Kantenschicht liegt über dem Boden, aber unter der Brandung:
+	# Uferbänder gehören zum Untergrund, die Wellen darüber.
+	# Der Index muss zu GroundTileSet.LAYER_EDGE passen.
 	layers.append(_layer("Kanten", -20, g))
-	layers.append(_layer("Schatten", -21, g))
-
-	decor = TileMapLayer.new()
-	decor.name = "Decoration"
-	decor.z_index = -25
-	decor.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	decor.tile_set = g.tileset
-	add_child(decor)
 
 	body = StaticBody2D.new()
 	body.name = "Collision"
@@ -121,17 +111,11 @@ func _load(chunk: Vector2i) -> void:
 	if _loaded.has(chunk):
 		return
 	ground.paint_chunk(layers, map, chunk)
-	if decor_at.is_valid():
-		ground.paint_decor_chunk(decor, chunk, decor_at)
 	_loaded[chunk] = _collision_for(chunk)
 	loads += 1
 
 func _unload(chunk: Vector2i) -> void:
 	ground.erase_chunk(layers, chunk)
-	var cs := Config.CHUNK
-	for oy in cs:
-		for ox in cs:
-			decor.erase_cell(Vector2i(chunk.x * cs + ox, chunk.y * cs + oy))
 	for shape: CollisionShape2D in _loaded[chunk]:
 		shape.queue_free()
 	_loaded.erase(chunk)

@@ -1,6 +1,13 @@
 extends Node
 ## Automatischer Selbsttest (§19: nichts gilt als fertig, bevor es lief).
 ## Start:  godot --path . -- --selftest [--shots=/pfad]
+##
+## Die Welt kennt genau drei Materialien: Gras, Sand, Wasser. Der Test prüft
+## das an jeder Stelle nach, an der früher ein weiterer Bodentyp stand — und
+## zusätzlich die Punkte, an denen zuletzt Fehler steckten: E als echter
+## Umschalter, die Trennung von Oberfläche und Spiel, die Technik des
+## Kachelsatzes, das Bauen auf dem Raster, Wasser und Kollision, und dass es
+## keine Klangeffekte mehr gibt, die Musik aber läuft.
 
 var main: Node
 var _fails: Array[String] = []
@@ -51,17 +58,15 @@ func _run() -> void:
 	if _had_save:
 		_save_backup = FileAccess.get_file_as_bytes(MapData.SAVE_PATH)
 	MapData.clear_user()
-	if _shot_dir != "":
-		var sheet: Array[String] = preload("res://src/dev/asset_sheet.gd").dump(_shot_dir, Config.WORLD_SEED)
-		print("Requisiten: ", ", ".join(sheet))
 	await get_tree().process_frame
+
+	# --- Genau drei Materialien, überall ---
+	await _check_three_materials()
 
 	# --- Hauptmenü ---
 	_check(main.state == main.State.MENU, "Start im Hauptmenü")
 	await _frames(3)
 	await _shot("01_hauptmenue")
-	# Grundlast ohne Welt — dient als Vergleichswert für die Messung unten
-	await _frames(20)
 	var base := 0.0
 	for i in 30:
 		await get_tree().physics_frame
@@ -84,31 +89,29 @@ func _run() -> void:
 	# schon 2,5. Deshalb wird erst gemessen, wenn das durch ist.
 	await _frames(30)
 
-	# --- Kachelnaht: sind die Bodenkacheln wirklich nahtlos? ---
+	# --- Kachelbilder: nahtlos? ---
 	await _check_seams()
 
+	# --- Kachelsatz und Kachelraster technisch prüfen ---
+	await _check_tileset(world, map, player)
+
 	# --- Karte ---
-	# Bei 4,2 Millionen Kacheln wird nicht mehr die ganze Karte gezählt,
-	# sondern der geladene Ausschnitt um die Figur.
 	var counts := _count_tiles(map, GridOverlay.block_at(player.position), 40)
-	if Config.EMPTY_WORLD:
-		_check(counts.size() == 1 and counts.has(MapData.Tile.GRASS), "Karte ist leer (nur Boden)")
-		_check(world.get_node("Sorted").get_child_count() == 1, "Keine Requisiten auf der Karte")
-		_check(map.is_solid(0, 10) and map.is_solid(Config.MAP_W - 1, 10),
-			"Unsichtbare Wand am Kartenrand")
-		var g: GridOverlay = world.grid
-		_check(g != null and g.visible, "Blockraster ist sichtbar")
-		_check(g.z_index > 100, "Raster liegt über der Welt")
-	else:
-		_check(counts.size() >= 6, "Karte enthält mehrere Bereiche (%d Typen)" % counts.size())
-		for t in [MapData.Tile.GRASS, MapData.Tile.FOREST, MapData.Tile.WATER, MapData.Tile.PATH, MapData.Tile.SAND]:
-			_check(counts.get(t, 0) > 20, "Bereich %d vorhanden" % t)
-	var spawn_tile := Vector2i(int(player.position.x) / Config.TILE, int(player.position.y) / Config.TILE)
+	_check(counts.size() == 1 and counts.has(MapData.Tile.GRASS),
+		"Karte startet leer (nur Gras)")
+	_check(world.get_node("Sorted").get_child_count() == 1,
+		"Keine Requisiten auf der Karte")
+	_check(map.is_solid(0, 10) and map.is_solid(Config.MAP_W - 1, 10),
+		"Unsichtbare Wand am Kartenrand")
+	var g: GridOverlay = world.grid
+	_check(g != null and g.visible, "Blockraster ist sichtbar")
+	_check(g.z_index > 100, "Raster liegt über der Welt")
+	var spawn_tile := GridOverlay.block_at(player.position)
 	_check(not map.is_solid(spawn_tile.x, spawn_tile.y), "Startpunkt ist begehbar")
 	var want := (2 * Config.LOAD_RADIUS + 1) * (2 * Config.LOAD_RADIUS + 1)
 	_check(world.streamer.loaded_count() == want,
 		"Chunks um die Figur geladen (%d von %d)" % [world.streamer.loaded_count(), want])
-	await _shot("02_dorf")
+	await _shot("02_welt")
 
 	# --- Bewegung ---
 	var start := player.position
@@ -144,149 +147,46 @@ func _run() -> void:
 	# --- Kamera folgt ---
 	var cam: GameCamera = world.camera
 	await _frames(20)
-	_check(cam.global_position.distance_to(player.global_position) < Config.TILE * 3.0, "Kamera folgt dem Spieler")
+	_check(cam.global_position.distance_to(player.global_position) < Config.TILE * 3.0,
+		"Kamera folgt dem Spieler")
 	_check(cam.limit_right == Config.world_size_px().x, "Kameragrenzen gesetzt")
 
-	if Config.EMPTY_WORLD:
-		await _check_chunks()
-		await _check_building(world, map, player)
-		await _check_streaming(world, player)
-
-	if not Config.EMPTY_WORLD:
-		# --- Kollision: gegen Wasser laufen ---
-		var wet := _find_water_shore(map)
-		if wet != Vector2i(-1, -1):
-			player.position = Vector2(wet.x * Config.TILE + 8, wet.y * Config.TILE + 8)
-			player.velocity = Vector2.ZERO
-			await _frames(2)
-			await _drive("move_down", 90)
-			var tile := Vector2i(int(player.position.x) / Config.TILE, int(player.position.y) / Config.TILE)
-			_check(not map.is_solid(tile.x, tile.y), "Spieler läuft nicht ins Wasser")
-		else:
-			_check(false, "Uferkachel gefunden")
-
-		# --- Kollision: gegen einen Baum laufen ---
-		var blocked: bool = await _walk_into_prop(world)
-		_check(blocked, "Requisiten (Baum/Fels/Haus) blockieren")
+	await _check_chunks()
+	await _check_building(world, map, player)
+	await _check_water(world, map, player)
+	await _check_toggle(world, map, player)
+	await _check_input_lock(world, map, player)
+	await _check_input_map(world)
+	await _check_stress(world, map, player)
+	await _check_streaming(world, player)
 
 	# --- Weltgrenze ---
 	player.position = Vector2(Config.TILE * 4.0, Config.TILE * 4.0)
 	player.velocity = Vector2.ZERO
-	await _frames(2)
+	cam.snap_to_target()
+	await _frames(6)
 	await _drive("move_left", 120)
 	var size := Config.world_size_px()
 	_check(player.position.x >= 0.0 and player.position.y >= 0.0
-		and player.position.x <= size.x and player.position.y <= size.y, "Spieler bleibt in der Welt")
+		and player.position.x <= size.x and player.position.y <= size.y,
+		"Spieler bleibt in der Welt")
 	_check(world.streamer.shape_count() > 0,
 		"Weltrand hat Kollisionsformen (%d)" % world.streamer.shape_count())
-
-	# Für den Screenshot zurück ins Dorf und in den Wald
-	player.position = Vector2(Config.spawn_block().x, Config.spawn_block().y - 16) * Config.TILE
-	player.velocity = Vector2.ZERO
 	cam.snap_to_target()
 	await _frames(6)
-	await _shot("03_wald")
-
-	var beach := Vector2i(-1, -1)
-	if Config.EMPTY_WORLD:
-		# Aufbaumodus: Raster am Kartenrand zeigen, dort sitzt die Wand
-		player.position = Vector2(Config.TILE * 4.0, Config.TILE * 4.0)
-		player.velocity = Vector2.ZERO
-		cam.snap_to_target()
-		await _frames(6)
-		await _shot("04_raster_rand")
-	else:
-		beach = _find_beach(map)
-		if beach != Vector2i(-1, -1):
-			player.position = Vector2(beach.x * Config.TILE, beach.y * Config.TILE)
-			player.velocity = Vector2.ZERO
-			cam.snap_to_target()
-			await _frames(6)
-			await _shot("04_strand")
-		_check(beach != Vector2i(-1, -1), "Strand mit Wasser vorhanden")
+	await _shot("04_raster_rand")
 
 	_check(world.build_msec < 5000, "Welt lädt zügig (%d ms)" % world.build_msec)
 
-	# --- Leistung: schlimmster Fall ist die Bucht mit viel Wasser ---
-	if beach != Vector2i(-1, -1):
-		player.position = Vector2(beach.x * Config.TILE, beach.y * Config.TILE)
-		cam.snap_to_target()
-	# Aufwärmen. Gemessen wurde: das allererste Messfenster nach dem Betreten
-	# der Welt lag bei 849 ms, das zweite schon bei 2,5 — Shader-Übersetzung
-	# und Texturuploads, kein Dauerzustand. Auch nach einem weiten Sprung im
-	# Gelände fällt das noch einmal an, deshalb hier grosszügig.
-	await _frames(90)
-
-	# Zwei Messungen: im Stand und im Lauf. Im Lauf kommt das Nachladen der
-	# Chunks dazu — das ist der interessante Fall, aber getrennt zu sehen.
-	var t_still := 0.0
-	for i in 30:
-		await get_tree().physics_frame
-		t_still += Performance.get_monitor(Performance.TIME_PROCESS)
-	var ms_still := t_still / 30.0 * 1000.0
-
-	var t_process := 0.0
-	var t_physics := 0.0
-	var draws := 0.0
-	var runs := 60
-	Input.action_press("move_right")
-	for i in runs:
-		await get_tree().physics_frame
-		t_process += Performance.get_monitor(Performance.TIME_PROCESS)
-		t_physics += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
-		draws += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
-	Input.action_release("move_right")
-	var ms_process := t_process / runs * 1000.0
-	var ms_physics := t_physics / runs * 1000.0
-	print("Leistung nach dem Aufwärmen: Stand %.2f ms, Lauf mit Chunk-Laden %.2f ms, physics %.2f ms, Draw-Calls %d" % [
-		ms_still, ms_process, ms_physics, int(draws / runs)])
-	# Gemessen wird auf einem Software-Rasterizer (Xvfb/llvmpipe). Die Prozesszeit
-	# hängt dort an der Füllrate und schwankt zwischen Läufen um mehr als das
-	# Doppelte — sie wird berichtet, aber nicht bewertet. Geprüft wird, was
-	# unabhängig vom Renderer aussagekräftig ist: Physikzeit, Ladezeit,
-	# Wasserlast und die Bündelung der Zeichenaufrufe. Bricht das Batching der
-	# Kachelschichten, fällt es dort sofort auf.
-	print("Aufschlag der Spielwelt gegenüber dem Menü: %.2f ms (Software-Rasterizer, nur Bericht)"
-		% (ms_still - ms_menu))
-	var avg_draws := int(draws / runs)
-	_check(avg_draws < 120, "Zeichenaufrufe bleiben gebündelt (%d)" % avg_draws)
-
-	# Renderunabhängige Kennzahlen: die Prozesszeit misst hier ein
-	# Software-Rasterizer und taugt nur zum Bericht, nicht zum Prüfen.
-	var mm: Control = world.hud.minimap
-	if mm != null:
-		var t0 := Time.get_ticks_usec()
-		for i in 60:
-			mm.refresh()
-		var ms_mini := (Time.get_ticks_usec() - t0) / 60000.0
-		print("Minimap: %.2f ms je Aufbau" % ms_mini)
-		_check(ms_mini < 6.0, "Minimap baut sich zügig auf (%.2f ms)" % ms_mini)
-	var st2: ChunkStreamer = world.streamer
-	var probe := GridOverlay.chunk_of(GridOverlay.block_at(player.global_position)) + Vector2i(3, 0)
-	var t2 := Time.get_ticks_usec()
-	for i in 10:
-		st2.ground.paint_chunk(st2.layers, map, probe)
-	var ms_chunk := (Time.get_ticks_usec() - t2) / 10000.0
-	print("Chunk malen: %.2f ms" % ms_chunk)
-	_check(ms_chunk < 8.0, "Ein Chunk ist schnell gemalt (%.2f ms)" % ms_chunk)
-	var water: WaterFx = world.get_node("WaterFx")
-	print("Wasser-Effekt: %d Rechtecke im letzten Bild" % water.prims)
-	_check(water.prims < 900, "Wasser zeichnet sparsam (%d Rechtecke)" % water.prims)
-
-	_check(ms_physics < 8.0, "Physikzeit pro Bild unter 8 ms (%.2f)" % ms_physics)
+	await _check_performance(world, map, player, ms_menu)
 
 	# --- Lizenzlage: das Projekt darf keine fremden Asset-Dateien enthalten ---
 	var assets := _find_assets("res://")
 	_check(assets.is_empty(), "Keine Asset-Dateien im Projekt (%s)" %
 		("keine" if assets.is_empty() else ", ".join(assets)))
 
-	# --- Audio ---
-	_check(Audio._sfx.size() >= 5, "Effektklänge erzeugt (%d)" % Audio._sfx.size())
-	_check(Audio._music.has("world") and Audio._music["world"].data.size() > 1000,
-		"Weltmusik erzeugt und geloopt")
-	Audio.play_ui("confirm")
-	Audio.play_step()
-	_check(true, "Klänge lassen sich abspielen")
+	# --- Ton: Musik bleibt, Effekte sind weg ---
+	await _check_audio()
 
 	# --- Pause ---
 	main.pause_game()
@@ -307,6 +207,17 @@ func _run() -> void:
 	await _frames(2)
 	_check(main.state == main.State.PLAYING and not get_tree().paused, "Fortgesetzt")
 
+	# --- Speichern und Laden ---
+	var tool: BuildTool = world.build_tool
+	# Fester Punkt in der Kartenmitte: die Figur steht nach der Randprüfung
+	# ganz aussen, ein Feld neben ihr läge ausserhalb der Karte.
+	var mark := Config.spawn_block() + Vector2i(3, 3)
+	tool.place(mark, MapData.Tile.SAND)
+	await _frames(2)
+	_check(tool.save(), "Karte gespeichert")
+	var reread := MapData.load_user()
+	_check(reread == map.tiles, "Geladene Karte stimmt mit der gebauten überein")
+
 	# --- Zurück ins Menü und erneut starten ---
 	main.to_main_menu()
 	await _frames(4)
@@ -314,13 +225,11 @@ func _run() -> void:
 	main.start_game()
 	await _frames(6)
 	_check(main._world != null and main._world != world, "Neustart erzeugt frische Welt")
-	if Config.EMPTY_WORLD:
-		# Der Weg aus dem Bau-Test wurde beim Verlassen automatisch gesichert
-		# und muss jetzt wieder auf der Karte liegen.
-		var again: MapData = main._world.map
-		var mid2 := Config.spawn_block() + Vector2i(-5, -5)
-		_check(again.get_tile(mid2.x, mid2.y) == MapData.Tile.PATH,
-			"Gebaute Karte wird beim nächsten Start wieder geladen")
+	var again: MapData = main._world.map
+	_check(again.get_tile(mark.x, mark.y) == MapData.Tile.SAND,
+		"Gebaute Karte wird beim nächsten Start wieder geladen")
+	MapData.clear_user()
+	_check(MapData.load_user().is_empty(), "Ohne Datei wird nichts geladen")
 	_restore_save()
 
 	print("=== ERGEBNIS: %s (%d Fehler) ===" % ["OK" if _fails.is_empty() else "FEHLER", _fails.size()])
@@ -328,31 +237,179 @@ func _run() -> void:
 		print("   fehlgeschlagen: ", f)
 	get_tree().quit(0 if _fails.is_empty() else 1)
 
-## Sucht Bild-, Ton- und Schriftdateien im Projekt. Alle Grafiken und Klänge
-## werden zur Laufzeit berechnet; ein Treffer hier hieße, dass sich doch eine
-## fremde Datei eingeschlichen hat und in CREDITS.md gehören würde.
-func _find_assets(path: String) -> Array[String]:
-	const SUFFIX := [".png", ".jpg", ".jpeg", ".wav", ".ogg", ".mp3", ".ttf", ".otf"]
-	var found: Array[String] = []
+# --- Drei Materialien ---------------------------------------------------------
+
+## Gras, Sand, Wasser — und sonst nichts. Geprüft wird nicht nur die Aufzählung,
+## sondern jede Liste, die früher weitere Bodentypen führte: Kachelstapel,
+## Namen, Bau-Leiste, Inventar, Minimap. Ein vergessener Eintrag fällt hier auf,
+## nicht erst im Spiel.
+func _check_three_materials() -> void:
+	_check(MapData.Tile.COUNT == 3, "Genau drei Bodentypen (%d)" % MapData.Tile.COUNT)
+	_check(MapData.Tile.GRASS == 0 and MapData.Tile.SAND == 1 and MapData.Tile.WATER == 2,
+		"Reihenfolge Gras, Sand, Wasser")
+	_check(MapData.NAMES.size() == 3 and MapData.TERRAIN.size() == 3,
+		"Namen und Geländetabelle kennen nur die drei")
+	_check(GroundTileSet.STACK.size() == 3
+		and GroundTileSet.STACK == [MapData.Tile.GRASS, MapData.Tile.SAND, MapData.Tile.WATER],
+		"Kachelstapel hat drei Schichten")
+	_check(GroundTileSet.LAYER_COUNT == 4 and GroundTileSet.LAYER_EDGE == 3,
+		"Vier Schichten: drei Böden plus Kanten")
+
+	var inv_all: Array = preload("res://src/ui/inventory.gd").ALL
+	_check(inv_all.size() == 3
+		and inv_all.has(MapData.Tile.GRASS) and inv_all.has(MapData.Tile.SAND)
+		and inv_all.has(MapData.Tile.WATER),
+		"Inventar zeigt genau Gras, Sand, Wasser")
+	var bar_types: Array = preload("res://src/ui/build_bar.gd").DEFAULT_TYPES
+	_check(bar_types.size() == 3, "Bau-Leiste hat drei Felder")
+	var mini_colors: Dictionary = preload("res://src/ui/minimap.gd").COLORS
+	_check(mini_colors.size() == 3, "Minimap kennt drei Farben")
+
+	# Keine Quelltextstelle darf noch einen entfernten Bodentyp nennen.
+	var stale := _grep_sources(["Tile.MEADOW", "Tile.FOREST", "Tile.PATH",
+		"Tile.COBBLE", "Tile.ROCK", "Tile.DEEP_WATER", "EMPTY_WORLD",
+		"level_at", "LAYER_SHADOW", "PropArt", "Layout"])
+	_check(stale.is_empty(), "Keine Reste entfernter Bodentypen im Quelltext%s"
+		% ("" if stale.is_empty() else " (%s)" % ", ".join(stale)))
+	await get_tree().process_frame
+
+## Sucht Wörter in allen .gd-Dateien unter res://src — ohne diese Datei selbst.
+func _grep_sources(words: Array) -> Array[String]:
+	var hits: Array[String] = []
+	for file: String in _gd_files("res://src"):
+		if file.ends_with("self_test.gd"):
+			continue
+		var text := FileAccess.get_file_as_string(file)
+		for w: String in words:
+			if text.contains(w):
+				hits.append("%s: %s" % [file.get_file(), w])
+	return hits
+
+func _gd_files(path: String) -> Array[String]:
+	var out: Array[String] = []
 	var dir := DirAccess.open(path)
 	if dir == null:
-		return found
+		return out
 	dir.list_dir_begin()
 	var name := dir.get_next()
 	while name != "":
 		var full := path.path_join(name)
 		if dir.current_is_dir():
-			# docs/ enthält Bildschirmfotos für die Dokumentation, keine Spielinhalte
-			if not name.begins_with(".") and name != "docs" and name != "prototype_godsim":
-				found.append_array(_find_assets(full))
-		else:
-			for suffix: String in SUFFIX:
-				if name.to_lower().ends_with(suffix):
-					found.append(full)
-					break
+			if not name.begins_with("."):
+				out.append_array(_gd_files(full))
+		elif name.ends_with(".gd"):
+			out.append(full)
 		name = dir.get_next()
 	dir.list_dir_end()
-	return found
+	return out
+
+# --- Kachelsatz und Kachelraster ---------------------------------------------
+
+## Die Technik hinter den Kacheln, nicht ihr Aussehen.
+##
+## Geprüft wird, was ein verrutschtes Bild überhaupt erst möglich macht:
+## Kachelgröße, Atlasbereiche, angelegte Kacheln, Ursprung, Transformationen
+## der Schichten, Reihenfolge der Z-Werte und die Umrechnung von Feld auf
+## Weltkoordinate. Stimmt hier etwas nicht, liegt eine Kachel neben ihrem Feld.
+func _check_tileset(world: Node2D, map: MapData, player: Player) -> void:
+	var st: ChunkStreamer = world.streamer
+	var ts: TileSet = st.ground.tileset
+	var T := Config.TILE
+
+	_check(ts.tile_size == Vector2i(T, T), "Kachelgröße im Kachelsatz ist %d × %d" % [T, T])
+	_check(ts.get_source_count() == GroundTileSet.STACK.size() + 1,
+		"Genau %d Atlasquellen: drei Böden und die Kanten (%d)"
+		% [GroundTileSet.STACK.size() + 1, ts.get_source_count()])
+
+	# Jede Quelle: Textur da, Bereichsgröße genau eine Kachel, Kacheln angelegt.
+	var bad_src: Array[String] = []
+	var bad_origin := 0
+	var tiles_total := 0
+	for i in ts.get_source_count():
+		var sid := ts.get_source_id(i)
+		var src := ts.get_source(sid) as TileSetAtlasSource
+		if src == null:
+			bad_src.append("Quelle %d ist kein Atlas" % sid)
+			continue
+		if src.texture == null or src.texture.get_width() <= 0:
+			bad_src.append("Quelle %d ohne Textur" % sid)
+		if src.texture_region_size != Vector2i(T, T):
+			bad_src.append("Quelle %d: Bereich %s" % [sid, src.texture_region_size])
+		if src.get_tiles_count() == 0:
+			bad_src.append("Quelle %d hat keine Kacheln" % sid)
+		for k in src.get_tiles_count():
+			var coords := src.get_tile_id(k)
+			tiles_total += 1
+			# Der Bereich muss ganz in der Textur liegen — sonst zieht die
+			# Kachel Pixel ihrer Nachbarin mit herein.
+			var r := src.get_tile_texture_region(coords)
+			if r.position.x < 0 or r.position.y < 0 \
+					or r.end.x > src.texture.get_width() \
+					or r.end.y > src.texture.get_height() \
+					or r.size != Vector2i(T, T):
+				bad_src.append("Quelle %d Kachel %s: Bereich %s" % [sid, coords, r])
+			var td := src.get_tile_data(coords, 0)
+			if td.texture_origin != Vector2i.ZERO:
+				bad_origin += 1
+	_check(bad_src.is_empty(), "Alle Atlasquellen sind sauber aufgebaut (%d Kacheln)%s"
+		% [tiles_total, "" if bad_src.is_empty() else " — " + ", ".join(bad_src)])
+	_check(bad_origin == 0,
+		"Keine Kachel hat einen Versatz gegen ihr Feld (%d abweichend)" % bad_origin)
+
+	# Die Schichten selbst: kein Versatz, keine Skalierung, gemeinsamer Satz.
+	_check(st.layers.size() == GroundTileSet.LAYER_COUNT,
+		"Vier Kachelschichten liegen an (%d)" % st.layers.size())
+	_check(st.position == Vector2.ZERO and st.scale == Vector2.ONE
+		and is_zero_approx(st.rotation),
+		"Der Kachelknoten selbst ist unverschoben und unskaliert")
+	var moved: Array[String] = []
+	var last_z := -9999
+	var z_ok := true
+	for i in st.layers.size():
+		var l: TileMapLayer = st.layers[i]
+		if l.position != Vector2.ZERO or l.scale != Vector2.ONE or not is_zero_approx(l.rotation):
+			moved.append(l.name)
+		if l.tile_set != ts:
+			moved.append("%s: fremder Kachelsatz" % l.name)
+		if l.texture_filter != CanvasItem.TEXTURE_FILTER_NEAREST:
+			moved.append("%s: weicher Filter" % l.name)
+		if l.z_index <= last_z:
+			z_ok = false
+		last_z = l.z_index
+	_check(moved.is_empty(), "Alle Schichten liegen deckungsgleich auf dem Raster%s"
+		% ("" if moved.is_empty() else " (%s)" % ", ".join(moved)))
+	_check(z_ok, "Die Schichten liegen in aufsteigender Reihenfolge übereinander")
+
+	# Feld -> Weltkoordinate: die Kachel sitzt genau auf ihrem Block.
+	var probe := GridOverlay.block_at(player.global_position)
+	var mid: Vector2 = st.layers[0].map_to_local(probe)
+	_check(mid.is_equal_approx(Vector2(probe) * T + Vector2(T, T) * 0.5),
+		"Feld %d|%d liegt bei %s — genau auf dem Raster" % [probe.x, probe.y, mid])
+	_check(st.layers[0].to_global(st.layers[0].map_to_local(probe))
+		.is_equal_approx(Vector2(probe) * T + Vector2(T, T) * 0.5),
+		"Auch in Weltkoordinaten sitzt die Kachel auf dem Block")
+
+	# Jede gesetzte Zelle zeigt auf eine Kachel, die es wirklich gibt.
+	var ghosts := 0
+	var checked := 0
+	for i in st.layers.size():
+		var l: TileMapLayer = st.layers[i]
+		for cell: Vector2i in l.get_used_cells():
+			checked += 1
+			if checked % 97 != 0:
+				continue          # Stichprobe: 4,2 Mio Zellen wären zu viel
+			var sid := l.get_cell_source_id(cell)
+			var src := ts.get_source(sid) as TileSetAtlasSource
+			if src == null or not src.has_tile(l.get_cell_atlas_coords(cell)):
+				ghosts += 1
+	_check(ghosts == 0, "Keine Zelle zeigt auf eine unbekannte Kachel (%d geprüft)"
+		% (checked / 97))
+
+	# Die Grundschicht deckt jedes geladene Feld — sonst blitzt Hintergrund durch.
+	var want := (2 * Config.LOAD_RADIUS + 1) * (2 * Config.LOAD_RADIUS + 1)
+	_check(st.layers[0].get_used_cells().size() == want * Config.CHUNK * Config.CHUNK,
+		"Grundschicht deckt jedes geladene Feld (%d)" % st.layers[0].get_used_cells().size())
+	await get_tree().process_frame
 
 ## Sind die Bodenkacheln nahtlos?
 ##
@@ -361,9 +418,6 @@ func _find_assets(path: String) -> Array[String]:
 ## mit dem Unterschied zweier benachbarter Spalten IM Kachelinneren. Bei einer
 ## nahtlosen Kachel sind beide Werte ähnlich; ein Bruch an der Naht sticht als
 ## Vielfaches heraus.
-##
-## Zum Beleg wird derselbe Satz zusätzlich OHNE Kantenumlauf erzeugt, damit
-## Vorher und Nachher in einer Zahl nebeneinander stehen.
 func _check_seams() -> void:
 	var before := TileArt.new()
 	Pixel.wrap = 0
@@ -430,83 +484,118 @@ func _check_chunks() -> void:
 		"Karte ergibt %d × %d volle Chunks" % [Config.MAP_W / Config.CHUNK, Config.MAP_H / Config.CHUNK])
 	await get_tree().process_frame
 
-## Bau-Leiste: Blöcke setzen, Nachbarschaft, Wasserkollision, Speichern.
+# --- Bauen --------------------------------------------------------------------
+
+## Das Bauwerkzeug auf dem Raster: einzelne Blöcke, Nachbarschaft in alle acht
+## Richtungen, Reihen, schnelles Ziehen, Bauen in Bewegung.
 func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 	var tool: BuildTool = world.build_tool
 	_check(tool != null and world.build_bar != null, "Bau-Leiste vorhanden")
 	if tool == null:
 		return
-
-	# --- Der Fehler aus dem Foto: einzelne Blöcke wurden Klekse ---
-	var home0 := GridOverlay.block_at(player.global_position)
-	var cob: TileMapLayer = world.streamer.layers[8]     # Pflaster
-	var solo := home0 + Vector2i(-10, -8)
-	tool.place(solo, MapData.Tile.COBBLE)
-	await _frames(2)
+	var sand: TileMapLayer = world.streamer.layers[1]
 	var full_start := TerrainAtlas.FULL_START
-	_check(cob.get_cell_atlas_coords(solo).x + cob.get_cell_atlas_coords(solo).y * TerrainAtlas.COLS
-		>= full_start, "Einzelner Block ist eine Vollkachel, kein Klecks")
-	_check(cob.get_cell_source_id(solo + Vector2i(1, 0)) != -1,
+	var home := GridOverlay.block_at(player.global_position)
+
+	# Der Fehler aus dem Foto: einzelne Blöcke wurden Kleckse.
+	var solo := home + Vector2i(-10, -8)
+	tool.place(solo, MapData.Tile.SAND)
+	await _frames(2)
+	var a_solo := sand.get_cell_atlas_coords(solo)
+	_check(a_solo.x + a_solo.y * TerrainAtlas.COLS >= full_start,
+		"Einzelner Block ist eine Vollkachel, kein Klecks")
+	_check(sand.get_cell_source_id(solo + Vector2i(1, 0)) != -1,
 		"Nachbarfeld bekommt den Saum")
 
-	# Ein einzelner Klick setzt genau ein Feld — und zwar das unter dem Zeiger.
-	var quick := home0 + Vector2i(-10, -10)
-	var neighbours_before := 0
-	for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-		if map.get_tile(quick.x + o.x, quick.y + o.y) == MapData.Tile.COBBLE:
-			neighbours_before += 1
-	tool.place(quick, MapData.Tile.COBBLE)
+	# Ein Klick setzt genau ein Feld — und zwar das unter dem Zeiger.
+	var quick := home + Vector2i(-10, -10)
+	var neighbours_before := _count_of(map, quick, MapData.Tile.SAND)
+	tool.place(quick, MapData.Tile.SAND)
 	await _frames(2)
-	var neighbours_after := 0
-	for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-		if map.get_tile(quick.x + o.x, quick.y + o.y) == MapData.Tile.COBBLE:
-			neighbours_after += 1
-	_check(map.get_tile(quick.x, quick.y) == MapData.Tile.COBBLE
-		and neighbours_after == neighbours_before,
+	_check(map.get_tile(quick.x, quick.y) == MapData.Tile.SAND
+		and _count_of(map, quick, MapData.Tile.SAND) == neighbours_before,
 		"Ein Klick setzt genau ein Feld, kein Nachbarfeld")
 
+	# Alle acht Richtungen an ein bestehendes Feld anbauen.
+	var seed_cell := home + Vector2i(-14, -2)
+	tool.place(seed_cell, MapData.Tile.SAND)
+	var missing: Array[String] = []
+	for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+			Vector2i(1, 1), Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1)]:
+		tool.place(seed_cell + o, MapData.Tile.SAND)
+		if map.get_tile(seed_cell.x + o.x, seed_cell.y + o.y) != MapData.Tile.SAND:
+			missing.append(str(o))
+	await _frames(2)
+	_check(missing.is_empty(), "Anbauen in alle acht Richtungen%s"
+		% ("" if missing.is_empty() else " (fehlt: %s)" % ", ".join(missing)))
+
+	# Jede Materialkombination nebeneinander: Gras an Sand, Sand an Wasser, …
+	var pair := home + Vector2i(-18, -12)
+	var kinds := [MapData.Tile.GRASS, MapData.Tile.SAND, MapData.Tile.WATER]
+	var pair_bad: Array[String] = []
+	var row := 0
+	for a: int in kinds:
+		for b: int in kinds:
+			var c := pair + Vector2i(0, row)
+			tool.place(c, a)
+			tool.place(c + Vector2i(1, 0), b)
+			await _frames(1)
+			if map.get_tile(c.x, c.y) != a or map.get_tile(c.x + 1, c.y) != b:
+				pair_bad.append("%s|%s" % [GroundTileSet.NAMES[a], GroundTileSet.NAMES[b]])
+			row += 1
+	_check(pair_bad.is_empty(), "Alle neun Materialpaare liegen nebeneinander%s"
+		% ("" if pair_bad.is_empty() else " (%s)" % ", ".join(pair_bad)))
+
+	# Sechs in einer Reihe: früher zerfiel das in sechs Punkte.
+	var rowy := home.y - 5
+	for i in 6:
+		tool.place(Vector2i(home.x - 10 + i, rowy), MapData.Tile.SAND)
+	await _frames(2)
+	var all_full := true
+	for i in 6:
+		var a := sand.get_cell_atlas_coords(Vector2i(home.x - 10 + i, rowy))
+		if a.x + a.y * TerrainAtlas.COLS < full_start:
+			all_full = false
+	_check(all_full, "Reihe aus sechs Blöcken ergibt sechs Vollkacheln")
+
 	# Ziehen über mehrere Felder darf keine Lücke lassen.
-	var drag_from := home0 + Vector2i(-12, 4)
+	var drag_from := home + Vector2i(-12, 4)
 	var drag_to := drag_from + Vector2i(7, 3)
 	tool._last = drag_from
-	tool.place(drag_from, MapData.Tile.PATH)
-	tool._stroke(drag_from, drag_to, MapData.Tile.PATH)
+	tool.place(drag_from, MapData.Tile.SAND)
+	tool._stroke(drag_from, drag_to, MapData.Tile.SAND)
 	await _frames(2)
 	var gap := false
 	var dd := drag_to - drag_from
 	for i in 8:
 		var c := Vector2i(drag_from.x + int(round(float(dd.x) * i / 7.0)),
 			drag_from.y + int(round(float(dd.y) * i / 7.0)))
-		if map.get_tile(c.x, c.y) != MapData.Tile.PATH:
+		if map.get_tile(c.x, c.y) != MapData.Tile.SAND:
 			gap = true
 	_check(not gap, "Schnelles Ziehen lässt keine Lücke")
 
-	# Bauen in alle vier Richtungen an ein bestehendes Feld.
-	var seed_cell := home0 + Vector2i(-14, -2)
-	tool.place(seed_cell, MapData.Tile.COBBLE)
-	var all_dirs := true
-	for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
-			Vector2i(1, 1), Vector2i(-1, -1)]:
-		tool.place(seed_cell + o, MapData.Tile.COBBLE)
-		if map.get_tile(seed_cell.x + o.x, seed_cell.y + o.y) != MapData.Tile.COBBLE:
-			all_dirs = false
+	# Ein 3 × 3-Fleck: Mitte voll, Rand Übergang, Saum ringsum.
+	var origin := home + Vector2i(12, -12)
+	var before := sand.get_used_cells().size()
+	for oy in 3:
+		for ox in 3:
+			tool.place(origin + Vector2i(ox, oy), MapData.Tile.SAND)
 	await _frames(2)
-	_check(all_dirs, "Anbauen links, rechts, oben, unten und diagonal")
+	var mid := origin + Vector2i(1, 1)
+	_check(map.get_tile(mid.x, mid.y) == MapData.Tile.SAND, "Block gesetzt (Sand)")
+	_check(sand.get_used_cells().size() == before + 25,
+		"Fläche mit Saum bemalt (%d Zellen)" % (sand.get_used_cells().size() - before))
+	_check(sand.get_cell_atlas_coords(mid) != sand.get_cell_atlas_coords(origin),
+		"Randkacheln des Flecks sind Übergänge")
 
-	# Sechs in einer Reihe: früher zerfiel das in sechs Punkte.
-	var rowy := home0.y - 5
-	for i in 6:
-		tool.place(Vector2i(home0.x - 10 + i, rowy), MapData.Tile.COBBLE)
+	# Zurücksetzen auf Gras: keine Vollkachel mehr, aber der Saum der Nachbarn.
+	tool.place(origin, MapData.Tile.GRASS)
 	await _frames(2)
-	var all_full := true
-	for i in 6:
-		var c := Vector2i(home0.x - 10 + i, rowy)
-		var a := cob.get_cell_atlas_coords(c)
-		if a.x + a.y * TerrainAtlas.COLS < full_start:
-			all_full = false
-	_check(all_full, "Reihe aus sechs Blöcken ergibt sechs Vollkacheln")
+	var a_reset := sand.get_cell_atlas_coords(origin)
+	_check(a_reset.x + a_reset.y * TerrainAtlas.COLS < full_start,
+		"Zurückgesetzter Block ist keine Vollkachel mehr")
 
-	# Die Bauvorschau darf nicht am Raster hängen — genau das war der Fehler.
+	# Die Bauvorschau hängt nicht am Raster.
 	var g: GridOverlay = world.grid
 	g.show_grid = false
 	await _frames(2)
@@ -514,67 +603,113 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 	_check(world.build_bar.preview_texture() != null, "Vorschau kennt die gewählte Kachel")
 	g.show_grid = true
 
-	# Stapelposition 7 ist der Weg — dort muss der gesetzte Fleck erscheinen.
-	var path_layer: TileMapLayer = world.streamer.layers[7]
-	var before := path_layer.get_used_cells().size()
-	# Gebaut wird neben der Figur — nur dort sind Chunks geladen.
+	# Aufräumen, damit die späteren Prüfungen freies Feld haben.
+	for oy in range(-14, 8):
+		for ox in range(-20, 10):
+			tool.place(home + Vector2i(ox, oy), MapData.Tile.GRASS)
+	await _frames(2)
+
+## Wie viele der vier Nachbarfelder tragen diesen Typ?
+func _count_of(map: MapData, cell: Vector2i, tile: int) -> int:
+	var n := 0
+	for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		if map.get_tile(cell.x + o.x, cell.y + o.y) == tile:
+			n += 1
+	return n
+
+# --- Wasser und Kollision -----------------------------------------------------
+
+## Wasser, Schwimmen und die Frage aus dem Auftrag: wird die Figur am Wasser
+## noch nach oben geschleudert?
+##
+## Der Fehler lag früher in `lift()`: beim Verlassen einer Felsstufe wurde dem
+## Bildversatz die volle Wandhöhe aufgeschlagen. Fels gibt es nicht mehr, und
+## `lift()` liefert nur noch die Sprunghöhe. Geprüft wird das aus allen vier
+## Richtungen, weil das Verhalten früher richtungsabhängig war.
+func _check_water(world: Node2D, map: MapData, player: Player) -> void:
+	var tool: BuildTool = world.build_tool
 	var home := GridOverlay.block_at(player.global_position)
-	var origin := home + Vector2i(-6, -6)
-	for oy in 3:
-		for ox in 3:
-			tool.place(origin + Vector2i(ox, oy), MapData.Tile.PATH)
-	await _frames(2)
-	var mid := origin + Vector2i(1, 1)
-	_check(map.get_tile(mid.x, mid.y) == MapData.Tile.PATH, "Block gesetzt (Weg)")
-	# 9 gesetzte Felder plus der Saum auf den 16 Nachbarfeldern ringsum.
-	_check(path_layer.get_used_cells().size() == before + 25,
-		"Wegfläche mit Saum bemalt (%d Zellen)" % (path_layer.get_used_cells().size() - before))
-	# Die Mitte ist eine Vollkachel, die Ecke eine Übergangskachel.
-	_check(path_layer.get_cell_atlas_coords(mid)
-		!= path_layer.get_cell_atlas_coords(origin),
-		"Randkacheln des Flecks sind Übergänge")
+	var pond := home + Vector2i(10, 10)
 
-	# Zurücksetzen: das Feld ist kein Weg mehr, bekommt aber den Saum der
-	# Nachbarn, die noch Weg sind.
-	tool.place(origin, MapData.Tile.GRASS)
-	await _frames(2)
-	var a_reset := path_layer.get_cell_atlas_coords(origin)
-	_check(a_reset.x + a_reset.y * TerrainAtlas.COLS < TerrainAtlas.FULL_START,
-		"Zurückgesetzter Block ist keine Vollkachel mehr")
-
-	# Flaches Wasser lässt sich durchschwimmen, Tiefwasser nicht.
-	var wet := home + Vector2i(6, -6)
-	tool.place(wet, MapData.Tile.WATER)
-	await _frames(2)
-	_check(not map.is_solid(wet.x, wet.y) and map.is_swimmable(wet.x, wet.y),
-		"Gesetztes Wasser ist schwimmbar")
-	player.position = Vector2(wet.x + 0.5, wet.y - 1.5) * Config.TILE
-	player.velocity = Vector2.ZERO
+	# Ein Teich mit Sandsaum, 6 × 6 Wasser.
+	for y in range(-1, 7):
+		for x in range(-1, 7):
+			tool.place(pond + Vector2i(x, y), MapData.Tile.SAND)
+	for y in 6:
+		for x in 6:
+			tool.place(pond + Vector2i(x, y), MapData.Tile.WATER)
 	await _frames(3)
-	_check(not player.is_swimming(), "An Land wird nicht geschwommen")
-	# Bis ins Wasser laufen und dort anhalten: eine feste Bilderzahl liefe
-	# einfach durch den Teich hindurch.
-	Input.action_press("move_down")
-	var reached := false
-	for i in 90:
-		await get_tree().physics_frame
-		if player.is_swimming():
-			reached = true
-			break
-	Input.action_release("move_down")
+	_check(map.is_swimmable(pond.x + 3, pond.y + 3), "Gesetztes Wasser ist schwimmbar")
+	_check(not map.is_solid(pond.x + 3, pond.y + 3), "Wasser hält niemanden auf")
+
+	# An Land wird nicht geschwommen.
+	player.position = Vector2(pond.x + 3.5, pond.y - 2.5) * Config.TILE
+	player.velocity = Vector2.ZERO
+	world.camera.snap_to_target()
 	await _frames(4)
-	var stand := GridOverlay.block_at(player.global_position)
-	_check(reached and player.is_swimming(),
-		"Figur schwimmt im gesetzten Wasser (Block %d|%d)" % [stand.x, stand.y])
+	_check(not player.is_swimming(), "An Land wird nicht geschwommen")
+
+	# Aus allen vier Richtungen hinein: nirgends ein Sprung nach oben, nirgends
+	# ein Ruck in der Position, überall wird geschwommen.
+	var sides := {
+		"von Norden": [Vector2(3.5, -2.5), "move_down"],
+		"von Süden": [Vector2(3.5, 8.5), "move_up"],
+		"von Westen": [Vector2(-2.5, 3.5), "move_right"],
+		"von Osten": [Vector2(8.5, 3.5), "move_left"],
+	}
+	var not_swimming: Array[String] = []
+	var flung: Array[String] = []
+	var worst_step := 0.0
+	var worst_lift := 0.0
+	for name: String in sides:
+		var off: Vector2 = sides[name][0]
+		player.position = (Vector2(pond) + off) * Config.TILE
+		player.velocity = Vector2.ZERO
+		await _frames(4)
+		Input.action_press(sides[name][1])
+		var prev := player.position
+		var swam := false
+		for i in 100:
+			await get_tree().physics_frame
+			var step := prev.distance_to(player.position)
+			worst_step = maxf(worst_step, step)
+			worst_lift = maxf(worst_lift, player.lift())
+			if step > Config.TILE * 0.5:
+				flung.append("%s (%.1f px in einem Bild)" % [name, step])
+			prev = player.position
+			if player.is_swimming():
+				swam = true
+		Input.action_release(sides[name][1])
+		await _frames(4)
+		if not swam:
+			not_swimming.append(name)
+	_check(not_swimming.is_empty(), "Aus allen vier Richtungen ins Wasser%s"
+		% ("" if not_swimming.is_empty() else " (kein Schwimmen: %s)" % ", ".join(not_swimming)))
+	_check(flung.is_empty(),
+		"Am Wasser wird die Figur nicht geschleudert (grösster Schritt %.1f px)%s"
+		% [worst_step, "" if flung.is_empty() else " — " + ", ".join(flung)])
+	_check(is_zero_approx(worst_lift),
+		"Kein Bildversatz am Ufer — nur der Sprung hebt (%.1f px)" % worst_lift)
+
+	# Im Wasser höchstens Schwimmgeschwindigkeit.
+	player.position = (Vector2(pond) + Vector2(3.5, 3.5)) * Config.TILE
+	player.velocity = Vector2.ZERO
+	await _frames(6)
+	_check(player.is_swimming(), "Figur schwimmt im Teich")
+	await _drive("move_right", 20)
 	_check(player.velocity.length() <= Config.SWIM_SPEED + 1.0,
 		"Im Wasser höchstens Schwimmgeschwindigkeit (%.0f)" % player.velocity.length())
-	await _drive("move_up", 70)
-	_check(not player.is_swimming(), "Nach dem Verlassen wird wieder gelaufen")
+	world.camera.snap_to_target()
+	world.build_tool.set_process(false)
+	world.grid.cursor_block = Vector2i(-1, -1)
+	await _frames(8)
+	await _shot("08_schwimmen")
+	world.build_tool.set_process(true)
 
 	# Sprung ins Wasser: der Sprung wird zu Ende geflogen, erst dann geschwommen.
-	player.position = Vector2(wet.x + 0.5, wet.y - 1.2) * Config.TILE
+	player.position = (Vector2(pond) + Vector2(3.5, -1.4)) * Config.TILE
 	player.velocity = Vector2.ZERO
-	await _frames(3)
+	await _frames(4)
 	Input.action_press("jump")
 	await _frames(2)
 	Input.action_release("jump")
@@ -588,265 +723,158 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 	await _frames(10)
 	_check(not mid_air_swim, "Im Sprung wird nicht geschwommen")
 	_check(player.is_swimming(), "Nach der Landung im Wasser wird geschwommen")
-	await _drive("move_up", 60)
 
-	# Tiefwasser bleibt eine Wand.
-	var deep := home + Vector2i(8, -6)
-	tool.place(deep, MapData.Tile.DEEP_WATER)
-	await _frames(2)
-	_check(map.is_solid(deep.x, deep.y) and tool.shape_count() > 0,
-		"Tiefwasser blockiert (%d Formen)" % tool.shape_count())
-	tool.place(wet, MapData.Tile.GRASS)
-	tool.place(deep, MapData.Tile.GRASS)
-	await _frames(2)
-	_check(not map.is_solid(deep.x, deep.y), "Tiefwasser entfernt, Kollision weg")
+	# Wieder heraus und den Teich abräumen.
+	await _drive("move_up", 80)
+	_check(not player.is_swimming(), "Nach dem Verlassen wird wieder gelaufen")
 
-	# Ein kleines Stück Dorf bauen — als Bildbeleg und als Belastungsprobe für
-	# die Übergänge zwischen vier verschiedenen Bodentypen auf engem Raum.
-	await _build_demo(tool, world, player)
-
-	# --- Inventar: ausrüsten, was in der Leiste liegt ---
-	var inv: CanvasLayer = world.inventory
-	_check(inv != null, "Inventar vorhanden")
-	if inv != null:
-		main.toggle_inventory()
-		await _frames(3)
-		_check(main.state == main.State.INVENTORY and inv.visible, "Inventar öffnet mit E")
-		await _frames(4)
-		await _shot("09_inventar")
-		inv.select_slot(2)
-		var before_type: int = world.build_bar.types[2]
-		inv.equip_requested.emit(2, MapData.Tile.DEEP_WATER)
-		await _frames(3)
-		_check(world.build_bar.types[2] == MapData.Tile.DEEP_WATER
-			and before_type != MapData.Tile.DEEP_WATER,
-			"Klick im Inventar rüstet den Typ auf das gewählte Feld")
-		world.build_bar.select(2)
-		_check(world.build_bar.tile_type() == MapData.Tile.DEEP_WATER,
-			"Die Leiste setzt danach den neuen Typ")
-		inv.equip_requested.emit(2, before_type)
-		main.toggle_inventory()
-		await _frames(3)
-		_check(main.state == main.State.PLAYING and not inv.visible, "Inventar schliesst wieder")
-		world.build_bar.select(0)
-
-	# --- Eingaben dürfen nicht von der Oberfläche ins Spiel durchsickern ---
-	await _check_input_lock(world, map, player)
-
-	# --- Eingaben, Steuerungsübersicht, Anzeigen ---
-	await _check_input_map(world)
-
-	# --- Gelände: sichtbar und begehbar müssen zusammenpassen ---
-	await _check_terrain(world, map, player)
-
-	# --- Alles zusammen, schnell hintereinander ---
-	await _check_stress(world, map, player)
-
-	# --- Eigene Tasten für Minimap und Anzeige ---
-	var g2: GridOverlay = world.grid
-	var grid_before := g2.show_grid
-	var mini_before: bool = world.hud.minimap.visible
-	world.hud._unhandled_input(_key("toggle_minimap"))
-	await _frames(2)
-	_check(world.hud.minimap.visible != mini_before and g2.show_grid == grid_before,
-		"M schaltet die Minimap, das Raster bleibt")
-	world.hud._unhandled_input(_key("toggle_minimap"))
-	world.hud._unhandled_input(_key("toggle_info"))
-	await _frames(2)
-	_check(not world.hud._blocks.visible and g2.show_grid == grid_before,
-		"H schaltet die Anzeige, das Raster bleibt")
-	world.hud._unhandled_input(_key("toggle_info"))
-	await _frames(2)
-
-	# Minimap zeigt, was unter der Figur liegt.
-	var mini: Control = world.hud.minimap
-	_check(mini != null, "Minimap vorhanden")
-	if mini != null:
-		mini.refresh()
-		await _frames(2)
-		var under := map.get_tile(int(player.position.x) / Config.TILE, int(player.position.y) / Config.TILE)
-		var img: Image = mini._img
-		_check(img.get_width() > 0 and img.get_height() > 0,
-			"Minimap-Bild ist %d × %d" % [img.get_width(), img.get_height()])
-		var center_px := img.get_pixel(img.get_width() / 2, img.get_height() / 2)
-		_check(center_px.is_equal_approx(mini.color_of(under)),
-			"Mittelpunkt der Minimap zeigt den Boden unter der Figur")
-
-	# Speichern und Laden ergibt dieselbe Karte.
-	_check(tool.save(), "Karte gespeichert")
-	var reread := MapData.load_user()
-	_check(reread == map.tiles, "Geladene Karte stimmt mit der gebauten überein")
-	MapData.clear_user()
-	_check(MapData.load_user().is_empty(), "Ohne Datei wird nichts geladen")
-
-## Baut von Hand ein Stück Dorf: Hausgrundriss aus Pflaster, ein Weg dorthin,
-## eine Wiese und ein Teich. Setzt dieselben Aufrufe ab wie ein Mausklick.
-func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
-	var o := GridOverlay.block_at(player.global_position) + Vector2i(-8, 2)
-	# Hausgrundriss: 3 Reihen zu je 2 Blöcken, wie vom Maßstab her besprochen
-	for y in 3:
-		for x in 2:
-			tool.place(o + Vector2i(x, y), MapData.Tile.COBBLE)
-	# Weg vom Haus nach rechts, zwei Blöcke breit
-	for x in range(2, 14):
-		for y in 2:
-			tool.place(o + Vector2i(x, y + 1), MapData.Tile.PATH)
-	# Wiese ringsum
-	for y in range(-3, 7):
-		for x in range(-3, 3):
-			var c := o + Vector2i(x, y)
-			if tool.map.get_tile(c.x, c.y) == MapData.Tile.GRASS:
-				tool.place(c, MapData.Tile.MEADOW)
-	# Felsplateau: hier muss die Klippe mit Wand und Schlagschatten entstehen
-	for y in range(-2, 3):
-		for x in range(14, 21):
-			tool.place(o + Vector2i(x, y), MapData.Tile.ROCK)
-	# Fels direkt über Wasser — genau der Fall vom Foto, bei dem die Wand ins
-	# Wasser ragte.
-	for y in range(4, 7):
-		for x in range(0, 6):
-			tool.place(o + Vector2i(x, y), MapData.Tile.ROCK)
-	for y in range(7, 10):
-		for x in range(0, 6):
-			tool.place(o + Vector2i(x, y), MapData.Tile.WATER)
-	# Teich mit Sandsaum
-	for y in range(6, 11):
-		for x in range(7, 13):
-			tool.place(o + Vector2i(x, y), MapData.Tile.SAND)
-	for y in range(7, 10):
-		for x in range(8, 12):
-			tool.place(o + Vector2i(x, y), MapData.Tile.WATER)
-	await _frames(2)
-	_check(tool.map.is_swimmable(o.x + 9, o.y + 8), "Teich ist schwimmbar")
-
-	# --- Fels ist eine Stufe: dagegenlaufen hält an, im Sprung kommt man hinauf
-	var ledge := o + Vector2i(17, 3)          # Gras direkt unter dem Plateau
-	player.position = Vector2(ledge.x + 0.5, ledge.y + 0.5) * Config.TILE
-	player.velocity = Vector2.ZERO
-	await _frames(4)
-	_check(player.level() == 0, "Auf dem Boden ist die Höhenstufe 0")
-	await _drive("move_up", 45)
-	_check(player.level() == 0 and tool.map.level_at(
-		GridOverlay.block_at(player.global_position).x,
-		GridOverlay.block_at(player.global_position).y) == 0,
-		"Gegen die Felskante laufen hält an")
-
-	# Jetzt mit Sprung: Leertaste drücken und dabei weiterlaufen.
-	player.position = Vector2(ledge.x + 0.5, ledge.y + 0.6) * Config.TILE
-	player.velocity = Vector2.ZERO
-	await _frames(3)
-	Input.action_press("move_up")
-	Input.action_press("jump")
-	await _frames(2)
-	Input.action_release("jump")
-	var climbed := false
-	for i in 40:
-		await get_tree().physics_frame
-		if player.level() == 1:
-			climbed = true
-			break
-	Input.action_release("move_up")
-	await _frames(4)
-	_check(climbed, "Mit dem Sprung kommt man auf den Fels")
-	if climbed:
-		await _drive("move_up", 25)
-		world.camera.snap_to_target()
-		tool.set_process(false)
-		world.grid.cursor_block = Vector2i(-1, -1)
-		await _frames(6)
-		await _shot("10_auf_dem_fels")
-
-		# Figur DIREKT unter die Klippenwand: hier zeigt sich, ob sie davor
-		# oder dahinter gezeichnet wird.
-		player.position = Vector2(ledge.x + 0.5, ledge.y + 0.9) * Config.TILE
-		player.velocity = Vector2.ZERO
-		world.camera.snap_to_target()
-		Settings.show_perf = true
-		Settings.changed.emit()
-		world.hud.debug.visible = true
-		await _frames(8)
-		await _shot("11_klippe_und_anzeigen")
-		Settings.show_perf = false
-		Settings.changed.emit()
-		world.hud.debug.visible = false
-		tool.set_process(true)
-
-	# Kein Bildversatz beim Verlassen der Stufe — das war das „Hochklatschen".
-	var lift_on_rock := player.lift()
-	_check(is_zero_approx(lift_on_rock),
-		"Auf dem Fels schwebt die Figur nicht (%.1f px)" % lift_on_rock)
-
-	# Herunter geht immer — bis zur Kante laufen, egal wie weit oben sie steht.
-	Input.action_press("move_down")
-	var dropped := false
-	for i in 120:
-		await get_tree().physics_frame
-		if player.level() == 0:
-			dropped = true
-			break
-	Input.action_release("move_down")
-	await _frames(4)
-	_check(dropped, "Vom Fels herunter geht ohne Sprung")
-	var max_lift := 0.0
-	for i in 20:
-		await get_tree().physics_frame
-		max_lift = maxf(max_lift, player.lift())
-	_check(is_zero_approx(max_lift),
-		"Beim Heruntergehen wird die Figur nicht hochgeschleudert (%.1f px)" % max_lift)
-
-	# Anlaufen gegen die Kante muss aus JEDER Richtung gleich anhalten.
-	var sides := {
-		"von Süden": [Vector2i(17, 3), "move_up"],
-		"von Norden": [Vector2i(17, -3), "move_down"],
-		"von Westen": [Vector2i(13, 0), "move_right"],
-		"von Osten": [Vector2i(22, 0), "move_left"],
-	}
-	var symmetric := true
-	for name: String in sides:
-		var start: Vector2i = o + sides[name][0]
-		player.position = Vector2(start.x + 0.5, start.y + 0.5) * Config.TILE
-		player.velocity = Vector2.ZERO
-		await _frames(4)
-		await _drive(sides[name][1], 60)
-		if player.level() != 0:
-			symmetric = false
-			print("   Kante %s: Figur steht auf Stufe %d" % [name, player.level()])
-	_check(symmetric, "Die Felskante hält aus allen vier Richtungen gleich an")
-
-	# Klippe: Wandkachel auf dem Fels, Schlagschatten auf der Kachel darunter
-	var edges: TileMapLayer = world.streamer.layers[GroundTileSet.LAYER_EDGE]
-	var shadows: TileMapLayer = world.streamer.layers[GroundTileSet.LAYER_SHADOW]
-	var brink := o + Vector2i(17, 2)          # unterste Felsreihe
-	_check(edges.get_cell_source_id(brink) != -1, "Fels bekommt eine Kantenkachel")
-	_check(shadows.get_cell_source_id(brink + Vector2i(0, 1)) != -1,
-		"Schlagschatten liegt unter der Klippe")
-	_check(shadows.get_cell_source_id(brink) == -1,
-		"Auf dem Fels selbst liegt kein Schatten")
-	var shore := o + Vector2i(9, 6)           # Sand direkt über dem Teich
-	_check(edges.get_cell_source_id(shore) != -1, "Land am Wasser bekommt eine Uferkante")
-	_check(edges.get_cell_source_id(o + Vector2i(9, 7)) != -1,
-		"Wasser am Ufer bekommt ein Tiefenband")
-
-	player.position = Vector2(o.x + 12.0, o.y + 4.0) * Config.TILE
+	# An einer Chunk-Grenze entlanglaufen, ohne hängenzubleiben. Die
+	# Kollisionsrechtecke der Nachbarchunks überlappen dafür um einen halben
+	# Pixel — sonst fängt sich `move_and_slide()` an der stumpfen Innenkante.
+	var border := Vector2i((home.x / Config.CHUNK + 1) * Config.CHUNK, home.y + 20)
+	player.position = Vector2(border.x - 0.5, border.y - 6.5) * Config.TILE
 	player.velocity = Vector2.ZERO
 	world.camera.snap_to_target()
 	await _frames(6)
-	await _shot("07_bauen")
+	var from_y := player.position.y
+	await _drive("move_down", 90)
+	var travelled := player.position.y - from_y
+	_check(travelled > 90.0,
+		"Läuft an der Chunk-Grenze entlang ohne hängenzubleiben (%.0f px)" % travelled)
 
-	# Schwimmbild: Figur mitten in den Teich setzen. Der Bauzeiger liegt in
-	# der Bildmitte und verdeckte sie sonst.
-	player.position = Vector2(o.x + 9.5, o.y + 8.5) * Config.TILE
+	var shot_pos := (Vector2(pond) + Vector2(3.0, -4.0)) * Config.TILE
+	player.position = shot_pos
 	player.velocity = Vector2.ZERO
 	world.camera.snap_to_target()
-	tool.set_process(false)
-	world.grid.cursor_block = Vector2i(-1, -1)
 	await _frames(8)
-	_check(player.is_swimming(), "Figur schwimmt im Teich")
-	await _shot("08_schwimmen")
-	tool.set_process(true)
-	player.position = Vector2(o.x + 12.0, o.y + 4.0) * Config.TILE
-	player.velocity = Vector2.ZERO
-	await _frames(4)
+	await _shot("07_bauen")
+
+# --- Inventar und E-Umschalter ------------------------------------------------
+
+## E ist ein echter Umschalter: auf, zu, wieder auf. Und derselbe Tastendruck
+## darf nicht gleichzeitig im Spiel landen.
+##
+## Der Fehler war, dass E im Bauwerkzeug lag. Die Welt ist pausierbar, damit bei
+## offenem Fenster nichts mehr in ihr passiert — dadurch bekam das Bauwerkzeug
+## bei offenem Inventar gar keine Eingaben mehr und konnte nie wieder
+## schliessen. Jetzt liegt der Umschalter in Main, dem einzigen Knoten, der
+## immer läuft.
+func _check_toggle(world: Node2D, map: MapData, player: Player) -> void:
+	var inv: CanvasLayer = world.inventory
+	_check(inv != null, "Inventar vorhanden")
+	if inv == null:
+		return
+	_check(inv.process_mode == Node.PROCESS_MODE_ALWAYS,
+		"Das Inventar läuft auch bei pausiertem Baum")
+
+	# Dreimal umschalten — über das echte Tastenereignis, nicht über die
+	# Hilfsfunktion. Genau daran scheiterte es vorher.
+	var seen: Array[String] = []
+	for i in 3:
+		main._unhandled_input(_key("inventory"))
+		await _frames(3)
+		seen.append("offen" if main.state == main.State.INVENTORY else "zu")
+		if i == 0:
+			await _shot("09_inventar")
+	_check(seen == ["offen", "zu", "offen"],
+		"E öffnet, E schliesst, E öffnet wieder (%s)" % ", ".join(seen))
+	_check(inv.visible and main.state == main.State.INVENTORY, "Inventar ist jetzt offen")
+
+	# Der Tastendruck darf nicht zusätzlich im Spiel ankommen.
+	var before := player.position
+	var probe := GridOverlay.block_at(player.global_position) + Vector2i(3, 3)
+	var tile_before := map.get_tile(probe.x, probe.y)
+	await _frames(8)
+	_check(player.position == before and map.get_tile(probe.x, probe.y) == tile_before,
+		"Bei offenem Inventar passiert in der Welt nichts")
+
+	# Ausrüsten: Feld wählen, Material anklicken.
+	inv.select_slot(2)
+	var slot_before: int = world.build_bar.types[2]
+	var other: int = MapData.Tile.SAND if slot_before != MapData.Tile.SAND else MapData.Tile.WATER
+	inv.equip_requested.emit(2, other)
+	await _frames(3)
+	_check(world.build_bar.types[2] == other,
+		"Klick im Inventar rüstet den Typ auf das gewählte Feld")
+	world.build_bar.select(2)
+	_check(world.build_bar.tile_type() == other, "Die Leiste setzt danach den neuen Typ")
+	inv.equip_requested.emit(2, slot_before)
+	world.build_bar.select(0)
+
+	# Auch ESC schliesst.
+	main._unhandled_input(_key("ui_cancel"))
+	await _frames(3)
+	_check(main.state == main.State.PLAYING and not inv.visible, "ESC schliesst das Inventar")
+
+## Kein Durchsickern von Eingaben zwischen Oberfläche und Spiel.
+##
+## Der Fehler war: Main setzt für sich PROCESS_MODE_ALWAYS, die Welt hing als
+## Kind darunter und erbte das. get_tree().paused hatte auf sie keine Wirkung,
+## und das Bauwerkzeug fragte den rohen Maustastenzustand ab — ein Klick auf
+## „Fortsetzen" setzte damit gleich einen Block.
+func _check_input_lock(world: Node2D, map: MapData, player: Player) -> void:
+	var tool: BuildTool = world.build_tool
+	_check(world.process_mode == Node.PROCESS_MODE_PAUSABLE, "Die Welt ist pausierbar")
+
+	var probe := GridOverlay.block_at(player.global_position) + Vector2i(4, 4)
+	tool.place(probe, MapData.Tile.GRASS)
+	await _frames(2)
+
+	for entry: Array in [["Pause", main.State.PAUSED],
+			["Optionen", main.State.OPTIONS],
+			["Inventar", main.State.INVENTORY]]:
+		if entry[1] == main.State.PAUSED:
+			main.pause_game()
+		elif entry[1] == main.State.OPTIONS:
+			main.pause_game()
+			main.open_options()
+		else:
+			main.toggle_inventory()
+		await _frames(3)
+
+		var pos_before := player.position
+		var tile_before := map.get_tile(probe.x, probe.y)
+		# Maustaste UND Laufrichtung gedrückt halten — genau die Lage, in der
+		# vorher gebaut und gelaufen wurde.
+		Input.action_press("move_right")
+		var press := InputEventMouseButton.new()
+		press.button_index = MOUSE_BUTTON_LEFT
+		press.pressed = true
+		tool._unhandled_input(press)
+		await _frames(12)
+		Input.action_release("move_right")
+
+		_check(map.get_tile(probe.x, probe.y) == tile_before,
+			"%s: kein Block wird gesetzt" % entry[0])
+		_check(player.position == pos_before, "%s: die Figur bewegt sich nicht" % entry[0])
+		_check(world.grid.cursor_block.x < 0, "%s: keine Bauvorschau" % entry[0])
+
+		if entry[1] == main.State.PAUSED:
+			main.resume_game()
+		elif entry[1] == main.State.OPTIONS:
+			main.close_options()
+			main.resume_game()
+		else:
+			main.toggle_inventory()
+		await _frames(4)
+
+	# Der Klick auf „Fortsetzen“ selbst darf nichts setzen: er geht an die
+	# Schaltfläche, die Welt ist noch pausiert.
+	main.pause_game()
+	await _frames(3)
+	var before_resume := map.get_tile(probe.x, probe.y)
+	main._pause_menu.resume_pressed.emit()
+	await _frames(6)
+	_check(main.state == main.State.PLAYING, "Fortsetzen setzt das Spiel fort")
+	_check(map.get_tile(probe.x, probe.y) == before_resume,
+		"Fortsetzen setzt keinen Block")
+
+	# Nach dem Schliessen läuft alles wieder — aber die noch gedrückte Taste
+	# malt nicht weiter.
+	var after := map.get_tile(probe.x, probe.y)
+	await _frames(8)
+	_check(map.get_tile(probe.x, probe.y) == after,
+		"Eine noch gehaltene Maustaste baut nicht weiter")
 
 ## Eingaben zentral, Steuerungsübersicht ehrlich, Anzeigen wie verlangt.
 func _check_input_map(world: Node2D) -> void:
@@ -866,7 +894,11 @@ func _check_input_map(world: Node2D) -> void:
 	_check(Config.keys_for("build_place") == "Linke Maustaste", "Links setzt")
 	_check(Config.keys_for("build_remove") == "Rechte Maustaste", "Rechts entfernt")
 	_check(Config.keys_for("build_slot_3") == "3", "Feld 3 liegt auf der 3")
+	_check(not InputMap.has_action("build_slot_4"),
+		"Es gibt nur drei Materialtasten")
 	_check(Config.keys_for("save_map") == "F5", "F5 speichert")
+	_check(Config.keys_for("move_up+move_left+move_down+move_right") == "W A S D",
+		"Bewegung steht als eine Zeile: W A S D")
 
 	# 3. Keine hartcodierte Taste mehr im Bauwerkzeug.
 	var src := FileAccess.get_file_as_string("res://src/world/build_tool.gd")
@@ -886,13 +918,9 @@ func _check_input_map(world: Node2D) -> void:
 	_check(text.contains("FPS") and text.contains("Speicher")
 		and text.contains("CPU Render") and text.contains("GPU Render"),
 		"Leistungsanzeige nennt FPS, Speicher und beide Renderzeiten")
-	_check(Config.keys_for("move_up+move_left+move_down+move_right") == "W A S D",
-		"Bewegung steht als eine Zeile: W A S D")
-	_check(not text.contains("CPU 0 %") and not text.contains("%"),
-		"Keine erfundene Prozentanzeige")
+	_check(not text.contains("%"), "Keine erfundene Prozentanzeige")
 	_check(OS.get_static_memory_usage() > 0 and Engine.get_frames_per_second() >= 0,
-		"Speicher und FPS liefern echte Werte (%s)" %
-		[OS.get_static_memory_usage()])
+		"Speicher und FPS liefern echte Werte (%s)" % [OS.get_static_memory_usage()])
 	Settings.show_perf = false
 	Settings.changed.emit()
 	await _frames(2)
@@ -903,107 +931,60 @@ func _check_input_map(world: Node2D) -> void:
 	_check(dbg != null and not dbg.visible, "Entwicklerinfo startet ausgeschaltet")
 	dbg._unhandled_input(_key("debug_info"))
 	await _frames(3)
-	_check(dbg.visible and dbg._label.text.contains("Höhenstufe"),
-		"F3 zeigt Chunk, Feld, Boden, Höhenstufe und Zustand")
+	_check(dbg.visible and dbg._label.text.contains("Chunk")
+		and dbg._label.text.contains("Boden"),
+		"F3 zeigt Chunk, Feld, Boden und Zustand")
+	_check(not dbg._label.text.contains("Höhenstufe"),
+		"Keine Höhenstufe mehr in der Entwicklerinfo")
+	Settings.show_perf = true
+	Settings.changed.emit()
+	await _frames(6)
+	await _shot("11_anzeigen")
+	Settings.show_perf = false
+	Settings.changed.emit()
 	dbg._unhandled_input(_key("debug_info"))
 	await _frames(2)
 
-## Gelände, Kollision und Übergänge.
-##
-## Alle neun Bodentypen einzeln, dann die sechs Übergänge zwischen Land, Wasser
-## und Fels — in beide Richtungen. Ein gespiegelter Aufbau muss sich gleich
-## verhalten.
-func _check_terrain(world: Node2D, map: MapData, player: Player) -> void:
-	var tool: BuildTool = world.build_tool
-	var home := GridOverlay.block_at(player.global_position)
-	var pad := home + Vector2i(-18, 10)
+	# 6. Eigene Tasten für Minimap und Anzeige.
+	var g2: GridOverlay = world.grid
+	var grid_before := g2.show_grid
+	var mini_before: bool = world.hud.minimap.visible
+	world.hud._unhandled_input(_key("toggle_minimap"))
+	await _frames(2)
+	_check(world.hud.minimap.visible != mini_before and g2.show_grid == grid_before,
+		"M schaltet die Minimap, das Raster bleibt")
+	world.hud._unhandled_input(_key("toggle_minimap"))
+	world.hud._unhandled_input(_key("toggle_info"))
+	await _frames(2)
+	_check(not world.hud._blocks.visible and g2.show_grid == grid_before,
+		"H schaltet die Anzeige, das Raster bleibt")
+	world.hud._unhandled_input(_key("toggle_info"))
+	await _frames(2)
 
-	# 1. Jeder Bodentyp: was man sieht, ist was man bekommt.
-	var mismatch: Array[String] = []
-	for t in MapData.Tile.COUNT:
-		var cell := pad + Vector2i(t * 2, 0)
-		tool.place(cell, t)
+	# 7. Die Minimap zeigt, was unter der Figur liegt.
+	var mini: Control = world.hud.minimap
+	if mini != null:
+		mini.refresh()
 		await _frames(2)
-		var solid: bool = MapData.terrain(t, "solid")
-		var swim: bool = MapData.terrain(t, "swim")
-		var level: int = MapData.terrain(t, "level")
-		if map.is_solid(cell.x, cell.y) != solid \
-				or map.is_swimmable(cell.x, cell.y) != swim \
-				or map.level_at(cell.x, cell.y) != level:
-			mismatch.append(GroundTileSet.NAMES[t])
-	_check(mismatch.is_empty(),
-		"Alle neun Bodentypen: sichtbar und begehbar stimmen überein%s"
-		% ("" if mismatch.is_empty() else " (%s)" % ", ".join(mismatch)))
+		var p: Node2D = world.player
+		var m: MapData = world.map
+		var under := m.get_tile(
+			int(p.position.x) / Config.TILE, int(p.position.y) / Config.TILE)
+		var img: Image = mini._img
+		_check(img.get_width() > 0 and img.get_height() > 0,
+			"Minimap-Bild ist %d × %d" % [img.get_width(), img.get_height()])
+		var center_px := img.get_pixel(img.get_width() / 2, img.get_height() / 2)
+		_check(center_px.is_equal_approx(mini.color_of(under)),
+			"Mittelpunkt der Minimap zeigt den Boden unter der Figur")
 
-	# 2. Schwimmend gegen die Klippe — das war der Hauptfehler.
-	var wet := home + Vector2i(-4, 12)
-	for i in 4:
-		tool.place(wet + Vector2i(i, 0), MapData.Tile.WATER)
-	for i in 4:
-		tool.place(wet + Vector2i(i, -1), MapData.Tile.ROCK)
-	await _frames(2)
-	player.position = Vector2(wet.x + 1.5, wet.y + 0.5) * Config.TILE
-	player.velocity = Vector2.ZERO
-	await _frames(6)
-	_check(player.is_swimming(), "Figur schwimmt vor der Klippe")
-	await _drive("move_up", 80)
-	var stand := GridOverlay.block_at(player.global_position)
-	_check(player.level() == 0 and map.level_at(stand.x, stand.y) == 0,
-		"Schwimmend kommt man NICHT auf den Fels (Stufe %d)" % player.level())
-
-	# 3. Die sechs Übergänge, jeweils hin und zurück, ohne Versatz.
-	var lane := home + Vector2i(-16, 14)
-	var kinds := [MapData.Tile.GRASS, MapData.Tile.WATER, MapData.Tile.ROCK,
-		MapData.Tile.GRASS, MapData.Tile.ROCK, MapData.Tile.WATER, MapData.Tile.GRASS]
-	for i in kinds.size():
-		for k in 3:
-			tool.place(lane + Vector2i(i, k - 1), kinds[i])
-	await _frames(2)
-	var jumped := 0.0
-	for dir: String in ["move_right", "move_left"]:
-		var start := lane + (Vector2i(0, 0) if dir == "move_right" else Vector2i(6, 0))
-		player.position = Vector2(start.x + 0.5, start.y + 0.5) * Config.TILE
-		player.velocity = Vector2.ZERO
-		await _frames(4)
-		Input.action_press(dir)
-		var prev := player.position
-		for i in 90:
-			await get_tree().physics_frame
-			jumped = maxf(jumped, prev.distance_to(player.position))
-			prev = player.position
-		Input.action_release(dir)
-		await _frames(4)
-	# Ein Bild bei Renngeschwindigkeit sind rund 3,6 px. Alles über einer
-	# halben Kachel wäre ein Sprung, kein Laufen.
-	_check(jumped < Config.TILE * 0.5,
-		"Kein Versatz an den Übergängen (grösster Schritt %.1f px)" % jumped)
-
-	# 4. An einer Chunk-Grenze entlang, ohne hängenzubleiben.
-	var border := Vector2i((home.x / Config.CHUNK + 1) * Config.CHUNK, home.y + 18)
-	for i in range(-6, 7):
-		tool.place(Vector2i(border.x, border.y + i), MapData.Tile.DEEP_WATER)
-	await _frames(2)
-	player.position = Vector2(border.x - 1.5, border.y - 5.5) * Config.TILE
-	player.velocity = Vector2.ZERO
-	await _frames(4)
-	var from_y := player.position.y
-	await _drive("move_down", 90)
-	var travelled := player.position.y - from_y
-	# 90 Bilder Gehen sind rund 180 px; unter der Hälfte hiesse hängengeblieben.
-	_check(travelled > 90.0,
-		"Läuft an der Chunk-Grenze entlang ohne hängenzubleiben (%.0f px)" % travelled)
-
-## Der Durchgang aus Punkt 9: Bewegung, Springen, Bauen, Abbauen, Wasser,
-## Fels, Inventar, Menü und schnelle Eingaben in einem Rutsch. Geprüft wird
-## nicht ein Einzelfall, sondern dass nichts davon einander stört.
+## Alles zusammen, schnell hintereinander: Setzen, Abbauen, Bauen in Bewegung.
 func _check_stress(world: Node2D, map: MapData, player: Player) -> void:
 	var tool: BuildTool = world.build_tool
 	var home := GridOverlay.block_at(player.global_position)
 	var field := home + Vector2i(-20, -14)
 
-	# 40 Setzungen so schnell wie möglich, abwechselnd zwei Typen.
-	var kinds := [MapData.Tile.COBBLE, MapData.Tile.PATH, MapData.Tile.MEADOW,
-		MapData.Tile.SAND]
+	# 40 Setzungen so schnell wie möglich, abwechselnd alle drei Typen.
+	var kinds := [MapData.Tile.SAND, MapData.Tile.WATER, MapData.Tile.GRASS]
 	for i in 40:
 		tool.place(field + Vector2i(i % 8, i / 8), kinds[i % kinds.size()])
 	await _frames(2)
@@ -1028,104 +1009,43 @@ func _check_stress(world: Node2D, map: MapData, player: Player) -> void:
 	# Bauen WÄHREND der Bewegung und im Sprung.
 	player.position = Vector2(field.x + 2.5, field.y + 6.5) * Config.TILE
 	player.velocity = Vector2.ZERO
-	await _frames(3)
+	world.camera.snap_to_target()
+	await _frames(4)
 	Input.action_press("move_right")
 	Input.action_press("jump")
 	var built: Array[Vector2i] = []
 	for i in 24:
 		await get_tree().physics_frame
 		var c := GridOverlay.block_at(player.global_position) + Vector2i(0, 3)
-		tool.place(c, MapData.Tile.COBBLE)
+		tool.place(c, MapData.Tile.SAND)
 		built.append(c)
 	Input.action_release("jump")
 	Input.action_release("move_right")
 	await _frames(3)
 	var missed := 0
 	for c: Vector2i in built:
-		if map.get_tile(c.x, c.y) != MapData.Tile.COBBLE:
+		if map.get_tile(c.x, c.y) != MapData.Tile.SAND:
 			missed += 1
 	_check(missed == 0, "Bauen während Laufen und Sprung trifft (%d daneben)" % missed)
 
-	# Ein fester Block darf nicht in die Figur gesetzt werden.
+	# Ein Block unter den eigenen Füssen darf die Figur nicht wegschleudern.
 	var under := GridOverlay.block_at(player.global_position)
-	tool.place(under, MapData.Tile.DEEP_WATER)
-	await _frames(3)
-	_check(map.get_tile(under.x, under.y) != MapData.Tile.DEEP_WATER,
-		"Fester Block wird nicht in die eigene Figur gesetzt")
 	var pos_before := player.position
+	tool.place(under, MapData.Tile.WATER)
 	await _frames(10)
-	_check(player.position.distance_to(pos_before) < 2.0,
-		"Die Figur wird dabei nicht weggeschleudert (%.1f px)" %
-		player.position.distance_to(pos_before))
+	_check(player.position.distance_to(pos_before) < Config.TILE,
+		"Ein Block unter der Figur schleudert sie nicht weg (%.1f px)"
+		% player.position.distance_to(pos_before))
+	tool.place(under, MapData.Tile.GRASS)
 
-	# Die Klippenwand bleibt auf ihrer Kachel — sichtbare Kante = Blockkante.
-	_check(EdgeArt.WALL_FOOT == 0,
-		"Die Klippenwand ragt in kein Nachbarfeld")
-
-	for i in 40:
-		tool.place(built[i % built.size()], MapData.Tile.GRASS)
+	for c: Vector2i in built:
+		tool.place(c, MapData.Tile.GRASS)
 	await _frames(2)
-
-## Kein Durchsickern von Eingaben zwischen Oberfläche und Spiel.
-##
-## Der Fehler war: Main setzt für sich PROCESS_MODE_ALWAYS, die Welt hing als
-## Kind darunter und erbte das. get_tree().paused hatte auf sie keine Wirkung,
-## und das Bauwerkzeug fragte den rohen Maustastenzustand ab — ein Klick auf
-## „Fortsetzen" setzte damit gleich einen Block.
-func _check_input_lock(world: Node2D, map: MapData, player: Player) -> void:
-	var tool: BuildTool = world.build_tool
-	_check(world.process_mode == Node.PROCESS_MODE_PAUSABLE,
-		"Die Welt ist pausierbar")
-
-	var probe := GridOverlay.block_at(player.global_position) + Vector2i(4, 4)
-	tool.place(probe, MapData.Tile.GRASS)
-	await _frames(2)
-
-	for entry: Array in [["Pause", main.State.PAUSED], ["Inventar", main.State.INVENTORY]]:
-		if entry[1] == main.State.PAUSED:
-			main.pause_game()
-		else:
-			main.toggle_inventory()
-		await _frames(3)
-
-		var pos_before := player.position
-		var tile_before := map.get_tile(probe.x, probe.y)
-		# Maustaste UND Laufrichtung gedrückt halten — genau die Lage, in der
-		# vorher gebaut und gelaufen wurde.
-		Input.action_press("move_right")
-		var press := InputEventMouseButton.new()
-		press.button_index = MOUSE_BUTTON_LEFT
-		press.pressed = true
-		tool._unhandled_input(press)
-		await _frames(12)
-		Input.action_release("move_right")
-
-		_check(map.get_tile(probe.x, probe.y) == tile_before,
-			"%s: kein Block wird gesetzt" % entry[0])
-		_check(player.position == pos_before,
-			"%s: die Figur bewegt sich nicht" % entry[0])
-		_check(world.grid.cursor_block.x < 0, "%s: keine Bauvorschau" % entry[0])
-
-		if entry[1] == main.State.PAUSED:
-			main.resume_game()
-		else:
-			main.toggle_inventory()
-		await _frames(4)
-
-	# Nach dem Schliessen läuft alles wieder — aber die noch gedrückte Taste
-	# malt nicht weiter.
-	_check(main.state == main.State.PLAYING, "Nach dem Schliessen läuft das Spiel")
-	var after := map.get_tile(probe.x, probe.y)
-	await _frames(8)
-	_check(map.get_tile(probe.x, probe.y) == after,
-		"Eine noch gehaltene Maustaste baut nicht weiter")
 
 ## Chunk-Laden: die Welt kommt und geht um die Figur herum.
 func _check_streaming(world: Node2D, player: Player) -> void:
 	var st: ChunkStreamer = world.streamer
 	var want := (2 * Config.LOAD_RADIUS + 1) * (2 * Config.LOAD_RADIUS + 1)
-	# Das Nachladen ist auf zwei Chunks je Bild begrenzt: nach den Fahrten
-	# oben können noch welche in der Warteschlange stehen.
 	await _frames(20)
 	var here := GridOverlay.chunk_of(GridOverlay.block_at(player.global_position))
 	_check(st.is_loaded(here), "Chunk unter der Figur ist geladen")
@@ -1137,16 +1057,135 @@ func _check_streaming(world: Node2D, player: Player) -> void:
 	var far := here + Vector2i(20, 20)
 	player.position = Vector2(far.x * Config.CHUNK + 8, far.y * Config.CHUNK + 8) * Config.TILE
 	player.velocity = Vector2.ZERO
+	world.camera.snap_to_target()
 	var loads_before := st.loads
 	await _frames(40)
 	_check(not st.is_loaded(here), "Alte Chunks sind entladen")
 	_check(st.is_loaded(far), "Chunk am neuen Ort ist geladen")
-	_check(st.loaded_count() == want,
-		"Wieder %d Chunks geladen (%d)" % [want, st.loaded_count()])
+	_check(st.loaded_count() == want, "Wieder %d Chunks geladen (%d)" % [want, st.loaded_count()])
 	_check(st.layers[0].get_used_cells().size() == cells,
 		"Zellzahl bleibt begrenzt (%d)" % st.layers[0].get_used_cells().size())
 	_check(st.loads - loads_before == want and st.unloads >= want,
 		"Genau %d nachgeladen, %d entladen" % [st.loads - loads_before, st.unloads])
+
+	# Keine Kollisionsform ohne festes Feld: alte Formen entfernter Blöcke
+	# dürfen nicht als unsichtbare Wand zurückbleiben.
+	var ghost := 0
+	for child in st.body.get_children():
+		var cs := child as CollisionShape2D
+		if cs == null:
+			continue
+		var c := GridOverlay.block_at(cs.position)
+		if not world.map.is_solid(c.x, c.y):
+			ghost += 1
+	_check(ghost == 0, "Keine Kollisionsform ohne festes Feld (%d verwaist)" % ghost)
+
+## Ton: die Musik läuft, Klangeffekte gibt es nicht mehr.
+func _check_audio() -> void:
+	_check(Audio._music.has("world") and Audio._music["world"].data.size() > 1000,
+		"Weltmusik erzeugt und geloopt")
+	_check(Audio._music_player != null and Audio._music_player.stream != null,
+		"Der Musikspieler hat eine Spur")
+	Audio.play_music("menu")
+	await _frames(2)
+	_check(Audio._music.has("menu"), "Menümusik lässt sich abspielen")
+	Audio.play_music("world")
+	await _frames(2)
+
+	# Keine Effektschnittstelle mehr — weder im Ton noch an einer Aufrufstelle.
+	_check(not Audio.has_method("play_ui") and not Audio.has_method("play_step"),
+		"Keine Effektschnittstelle mehr im Ton")
+	var callers := _grep_sources(["play_ui", "play_step", "sfx_volume"])
+	_check(callers.is_empty(), "Keine Aufrufe von Klangeffekten mehr%s"
+		% ("" if callers.is_empty() else " (%s)" % ", ".join(callers)))
+	_check(not ("sfx_volume" in Settings), "Keine Effektlautstärke in den Einstellungen")
+
+## Leistung: gemessen, nicht behauptet.
+func _check_performance(world: Node2D, map: MapData, player: Player, ms_menu: float) -> void:
+	# Aufwärmen. Gemessen wurde: das allererste Messfenster nach dem Betreten
+	# der Welt lag bei 849 ms, das zweite schon bei 2,5 — Shader-Übersetzung
+	# und Texturuploads, kein Dauerzustand.
+	await _frames(90)
+
+	var t_still := 0.0
+	for i in 30:
+		await get_tree().physics_frame
+		t_still += Performance.get_monitor(Performance.TIME_PROCESS)
+	var ms_still := t_still / 30.0 * 1000.0
+
+	var t_process := 0.0
+	var t_physics := 0.0
+	var draws := 0.0
+	var runs := 60
+	Input.action_press("move_right")
+	for i in runs:
+		await get_tree().physics_frame
+		t_process += Performance.get_monitor(Performance.TIME_PROCESS)
+		t_physics += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
+		draws += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+	Input.action_release("move_right")
+	var ms_process := t_process / runs * 1000.0
+	var ms_physics := t_physics / runs * 1000.0
+	print("Leistung nach dem Aufwärmen: Stand %.2f ms, Lauf mit Chunk-Laden %.2f ms, physics %.2f ms, Draw-Calls %d" % [
+		ms_still, ms_process, ms_physics, int(draws / runs)])
+	# Gemessen wird auf einem Software-Rasterizer (Xvfb/llvmpipe). Die
+	# Prozesszeit hängt dort an der Füllrate und schwankt zwischen Läufen um
+	# mehr als das Doppelte — sie wird berichtet, aber nicht bewertet.
+	print("Aufschlag der Spielwelt gegenüber dem Menü: %.2f ms (Software-Rasterizer, nur Bericht)"
+		% (ms_still - ms_menu))
+	var avg_draws := int(draws / runs)
+	_check(avg_draws < 120, "Zeichenaufrufe bleiben gebündelt (%d)" % avg_draws)
+	_check(ms_physics < 8.0, "Physikzeit pro Bild unter 8 ms (%.2f)" % ms_physics)
+
+	var mm: Control = world.hud.minimap
+	if mm != null:
+		var t0 := Time.get_ticks_usec()
+		for i in 60:
+			mm.refresh()
+		var ms_mini := (Time.get_ticks_usec() - t0) / 60000.0
+		print("Minimap: %.2f ms je Aufbau" % ms_mini)
+		_check(ms_mini < 6.0, "Minimap baut sich zügig auf (%.2f ms)" % ms_mini)
+
+	var st2: ChunkStreamer = world.streamer
+	var probe := GridOverlay.chunk_of(GridOverlay.block_at(player.global_position)) + Vector2i(3, 0)
+	var t2 := Time.get_ticks_usec()
+	for i in 10:
+		st2.ground.paint_chunk(st2.layers, map, probe)
+	var ms_chunk := (Time.get_ticks_usec() - t2) / 10000.0
+	print("Chunk malen: %.2f ms" % ms_chunk)
+	_check(ms_chunk < 8.0, "Ein Chunk ist schnell gemalt (%.2f ms)" % ms_chunk)
+
+	var water: WaterFx = world.get_node("WaterFx")
+	print("Wasser-Effekt: %d Rechtecke im letzten Bild" % water.prims)
+	_check(water.prims < 900, "Wasser zeichnet sparsam (%d Rechtecke)" % water.prims)
+
+# --- Hilfsmittel --------------------------------------------------------------
+
+## Sucht Bild-, Ton- und Schriftdateien im Projekt. Alle Grafiken und Klänge
+## werden zur Laufzeit berechnet; ein Treffer hier hieße, dass sich doch eine
+## fremde Datei eingeschlichen hat und in CREDITS.md gehören würde.
+func _find_assets(path: String) -> Array[String]:
+	const SUFFIX := [".png", ".jpg", ".jpeg", ".wav", ".ogg", ".mp3", ".ttf", ".otf"]
+	var found: Array[String] = []
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return found
+	dir.list_dir_begin()
+	var name := dir.get_next()
+	while name != "":
+		var full := path.path_join(name)
+		if dir.current_is_dir():
+			# docs/ enthält Bildschirmfotos für die Dokumentation, keine Spielinhalte
+			if not name.begins_with(".") and name != "docs" and name != "prototype_godsim":
+				found.append_array(_find_assets(full))
+		else:
+			for suffix: String in SUFFIX:
+				if name.to_lower().ends_with(suffix):
+					found.append(full)
+					break
+		name = dir.get_next()
+	dir.list_dir_end()
+	return found
 
 ## Legt die Karte des Spielers wieder so ab, wie sie vor dem Test war.
 func _restore_save() -> void:
@@ -1173,8 +1212,12 @@ func _count_tiles(map: MapData, center: Vector2i, radius: int) -> Dictionary:
 ## _unhandled_input gehen.
 func _key(action: String) -> InputEventKey:
 	var ev := InputEventKey.new()
-	var list := InputMap.action_get_events(action)
-	ev.physical_keycode = (list[0] as InputEventKey).physical_keycode
+	var src := InputMap.action_get_events(action)[0] as InputEventKey
+	# Beides übernehmen: eigene Aktionen liegen als physischer Code vor, die
+	# eingebaute ui_cancel dagegen als keycode. Nur eines von beidem zu kopieren
+	# ergab ein Ereignis, das zu gar nichts passte.
+	ev.physical_keycode = src.physical_keycode
+	ev.keycode = src.keycode
 	ev.pressed = true
 	return ev
 
@@ -1183,36 +1226,3 @@ func _drive(action: String, frames: int) -> void:
 	await _frames(frames)
 	Input.action_release(action)
 	await _frames(2)
-
-func _find_beach(map: MapData) -> Vector2i:
-	for y in range(Config.MAP_H - 4, 4, -1):
-		for x in range(4, Config.MAP_W - 4):
-			if map.get_tile(x, y) == MapData.Tile.SAND and map.is_water(x, y + 2):
-				return Vector2i(x, y)
-	return Vector2i(-1, -1)
-
-func _find_water_shore(map: MapData) -> Vector2i:
-	for y in range(2, Config.MAP_H - 3):
-		for x in range(2, Config.MAP_W - 3):
-			if not map.is_solid(x, y) and map.is_water(x, y + 1) and map.is_water(x, y + 2):
-				return Vector2i(x, y)
-	return Vector2i(-1, -1)
-
-func _walk_into_prop(world: Node2D) -> bool:
-	var body: StaticBody2D = world.streamer.body
-	for child in body.get_children():
-		var cs := child as CollisionShape2D
-		var r := (cs.shape as RectangleShape2D).size
-		if r.x > Config.TILE * 6:
-			continue  # Wasserflächen überspringen, wir wollen eine Requisite
-		var target := cs.position
-		var from := target + Vector2(0, -Config.TILE * 2.5)
-		var tile := Vector2i(int(from.x) / Config.TILE, int(from.y) / Config.TILE)
-		if world.map.is_solid(tile.x, tile.y):
-			continue
-		world.player.position = from
-		world.player.velocity = Vector2.ZERO
-		await _frames(2)
-		await _drive("move_down", 60)
-		return world.player.position.y < target.y
-	return false

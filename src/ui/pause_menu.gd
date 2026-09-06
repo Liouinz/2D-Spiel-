@@ -44,9 +44,6 @@ func _ready() -> void:
 	var b_menu := UiTheme.button("ZUM HAUPTMENÜ")
 	b_menu.pressed.connect(func() -> void: menu_pressed.emit())
 	col.add_child(b_menu)
-	for b: Button in [_first, b_opt, b_menu]:
-		b.mouse_entered.connect(func() -> void: Audio.play_ui("blip"))
-
 	col.add_child(UiTheme.text_label("ESC schließt die Pause wieder", 15))
 
 func focus_first() -> void:

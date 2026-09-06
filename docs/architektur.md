@@ -1,5 +1,13 @@
 # Architekturentscheidung
 
+> **Hinweis zum Lesen.** Dieses Dokument ist ein Entscheidungstagebuch: die
+> Abschnitte stehen in der Reihenfolge, in der sie entstanden sind, und
+> beschreiben jeweils den Stand ihrer Runde. Der **letzte** Nachtrag
+> („Rückbau auf drei Materialien“) gilt. Alles, was davor über Wiese,
+> Waldboden, Weg, Pflaster, Fels, Tiefwasser, Requisiten, Dorf, Insel,
+> Höhenstufen, Klippen oder Klangeffekte steht, ist Geschichte — diese Teile
+> sind seither vollständig entfernt.
+
 ## Ausgangslage (Phase 0)
 
 Im Projekt lag bereits ein Godot-4.3-Prototyp — allerdings ein **anderes Spiel**: eine
@@ -424,6 +432,87 @@ Wand — und beide werden richtig gezeichnet. Die Wand ist 16 Pixel hoch und
 sitzt am unteren Rand ihrer eigenen Kachel; eine Lage, in der sie die Figur
 verdecken müsste, gibt es dadurch nicht. Ich habe deshalb keine zusätzliche
 Sortierung eingebaut, die nichts zu tun hätte.
+
+## Nachtrag: Rückbau auf drei Materialien
+
+Der Auftrag war diesmal Abriss, nicht Ausbau: *„Reduziere das Spiel auf genau
+drei Materialien: Gras, Sand, Wasser."* Dazu Inventar als sauber getrennter
+UI-Zustand, E als echter Umschalter, Kachelsatz und Texturen technisch prüfen,
+Wasser und Kollision reparieren, Klangeffekte raus und Musik behalten.
+
+**Warum das die richtige Richtung war.** Neun Bodentypen brachten neun mal so
+viele Kombinationen an Übergängen, drei Sonderregeln im Gelände (Höhenstufe,
+Klippenwand, Tiefwasser als Wand) und eine Handvoll Fehler, die alle an den
+Rändern zwischen diesen Regeln sassen: das Hochschleudern am Fels, die
+unsichtbare Kollision entfernter Felskacheln, das richtungsabhängige Anhalten
+an der Kante. Keiner davon war ein Bug in einer Zeile — sie waren die
+Wechselwirkung von Regeln, die es nun nicht mehr gibt.
+
+**Was ersatzlos entfernt wurde.** Die Bodentypen Wiese, Waldboden, Weg,
+Pflaster, Fels, Tiefwasser. Damit auch: das Höhenstufen-System
+(`MapData.level_at`, `Player._level`, `_block_ledges`, `_foot_blocked`,
+`_update_level`), die Klippengrafik in `EdgeArt`, die Schattenschicht, die
+Dekorationsschicht, `PropArt` mit allen Requisiten, `Layout` mit Dorf und
+Wegenetz, `asset_sheet.gd`, der Schalter `Config.EMPTY_WORLD` samt der
+Insel-Erzeugung, und 52 ungenutzt gewordene Farben aus der Palette. `MapData`
+schrumpfte von 333 auf 197 Zeilen, `WorldBuilder` von über 300 auf 26.
+
+**Speicherstände bleiben lesbar.** Die Speicherfassung steht auf 3. Ein Stand
+der Fassung 2 wird beim Laden über eine feste Tabelle umgesetzt: Wiese,
+Waldboden, Weg und Pflaster werden Gras, Fels wird Gras, Tiefwasser wird
+Wasser. Nichts geht verloren ausser der Unterscheidung, die es nicht mehr gibt.
+
+**E schloss nie.** Der Umschalter lag im Bauwerkzeug, einem Kind der Welt. Die
+Welt ist `PROCESS_MODE_PAUSABLE`, damit bei offenem Fenster nichts mehr in ihr
+passiert — genau dadurch bekam das Bauwerkzeug bei offenem Inventar keine
+Eingaben mehr und konnte es nie wieder schliessen. E öffnete, E schloss nicht.
+Der Umschalter liegt jetzt in `Main._unhandled_input`, dem einzigen Knoten, der
+immer läuft. Der Selbsttest drückt E dreimal hintereinander und prüft die Folge
+„offen, zu, offen".
+
+**`TileSetAtlasSource` legte keine Kacheln an.** `create_tile()` stand vor
+`texture` und `texture_region_size`. Ohne Textur hält die Quelle jede Kachel
+für ausserhalb liegend und legt schweigend keine an — 49 Fehlermeldungen je
+Weltaufbau. Reihenfolge umgedreht, in `EdgeArt` steht jetzt ein Kommentar
+darüber.
+
+**Der Kachelsatz wird geprüft, nicht behauptet.** Neu im Selbsttest: Kachelgröße
+im `TileSet`, Zahl der Atlasquellen, Textur und Bereichsgröße je Quelle, dass
+jeder Kachelbereich vollständig innerhalb der Textur liegt, dass kein
+`texture_origin` von null abweicht, dass keine Schicht verschoben, gedreht oder
+skaliert ist, dass alle Schichten denselben Kachelsatz und Nearest-Filter
+benutzen, dass die Z-Werte aufsteigen, dass keine gesetzte Zelle auf eine
+unbekannte Kachel zeigt und dass `map_to_local()` für ein Feld genau dessen
+Mittelpunkt in Weltkoordinaten liefert. Ein verrutschtes Bild wäre damit keine
+Geschmacksfrage mehr, sondern ein fehlgeschlagener Test.
+
+**Wasser und Kollision.** Keiner der drei Böden hält auf; die einzige feste
+Fläche ist der Kartenrand. Damit kann kein gesetzter Block die Figur mehr
+einschliessen, und die Prüfung dagegen (`_blocks_player`) entfiel. `lift()`
+liefert nur noch die Sprunghöhe. Der Selbsttest läuft aus allen vier Richtungen
+ins Wasser und misst dabei den grössten Positionssprung je Bild und den
+grössten Bildversatz — beide müssen null bzw. unter einer halben Kachel
+bleiben. Zusätzlich prüft er, dass keine Kollisionsform ohne festes Feld
+zurückbleibt: alte Formen entfernter Blöcke als unsichtbare Wand waren ein
+ausdrücklicher Punkt des Auftrags.
+
+**Klangeffekte raus, Musik bleibt.** `Audio` hat keine `play_ui()` und keine
+`play_step()` mehr, keine Stimmen, keine Tongeneratoren. Der „Effekte"-Regler
+und `Settings.sfx_volume` sind weg. Der Musikpfad ist unangetastet. Der
+Selbsttest prüft beides: dass Menü- und Weltmusik erzeugt werden und der
+Musikspieler eine Spur hat — und dass weder die Schnittstelle noch irgendeine
+Aufrufstelle im Quelltext übrig ist.
+
+**Keine Leichen im Quelltext.** Eine Prüfung durchsucht alle `.gd`-Dateien nach
+`Tile.MEADOW`, `Tile.FOREST`, `Tile.PATH`, `Tile.COBBLE`, `Tile.ROCK`,
+`Tile.DEEP_WATER`, `EMPTY_WORLD`, `level_at`, `LAYER_SHADOW`, `PropArt` und
+`Layout`. Ein einziger Treffer lässt den Test fehlschlagen. Sie hat beim ersten
+Lauf zwei vergessene Kommentare gefunden.
+
+**Stand:** 154 Prüfungen, alle grün, Godot-Konsole beim Import und beim Lauf
+ohne Fehler. Kachelnähte: Gras 1,16, Sand 0,66, Wasser 0,82 (1,0 = so glatt wie
+das Kachelinnere). Weltaufbau 260 ms, ein Chunk in 1,5 ms, Physik 0,5 ms je
+Bild.
 
 ## Lizenzlage
 

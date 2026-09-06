@@ -1,7 +1,7 @@
 extends CanvasLayer
 ## Inventar: hier wird ausgerüstet, was in der Bau-Leiste liegt.
 ##
-## Oben alle Bodentypen als anklickbare Karten, unten die acht Felder der
+## Oben alle drei Bodentypen als anklickbare Karten, unten die Felder der
 ## Leiste. Erst unten ein Feld wählen, dann oben einen Typ anklicken — er wird
 ## darauf gelegt. Damit stellt man sich die Leiste selbst zusammen, statt mit
 ## einer festen Reihenfolge zu leben.
@@ -11,27 +11,21 @@ extends CanvasLayer
 
 const CARD := 72
 const PAD := 10
-const COLS := 5
+const COLS := 3
 
-## Alles, was sich setzen lässt — auch Tiefwasser, das in der Leiste anfangs
-## fehlt. Es blockiert, im Gegensatz zu flachem Wasser.
+## Alles, was sich setzen lässt. Genau drei Materialien — mehr gibt es nicht,
+## weder hier noch auf der Karte.
 const ALL := [
 	MapData.Tile.GRASS,
-	MapData.Tile.MEADOW,
-	MapData.Tile.FOREST,
-	MapData.Tile.PATH,
-	MapData.Tile.COBBLE,
 	MapData.Tile.SAND,
-	MapData.Tile.ROCK,
 	MapData.Tile.WATER,
-	MapData.Tile.DEEP_WATER,
 ]
 
 ## Kurze Erklärung je Typ — sonst rät man, was ein Block tut.
 const HINTS := {
-	MapData.Tile.ROCK: "eine Stufe höher · hinaufspringen",
+	MapData.Tile.GRASS: "fester Boden",
+	MapData.Tile.SAND: "fester Boden",
 	MapData.Tile.WATER: "durchschwimmbar",
-	MapData.Tile.DEEP_WATER: "hält auf",
 }
 
 signal equip_requested(slot: int, tile: int)
@@ -64,7 +58,7 @@ func setup(art: TileArt, build_bar: CanvasLayer) -> void:
 	var w: int = COLS * (CARD + PAD) + PAD + 40
 	# Höhe reicht für Titel, zwei Reihen Karten, die Bau-Leiste UND die
 	# Hinweiszeile darunter — sonst lag der Hinweis über den Feldern.
-	var h: int = 2 * (CARD + PAD) + 254
+	var h: int = CARD + PAD + 254
 	panel.offset_left = -w * 0.5
 	panel.offset_right = w * 0.5
 	panel.offset_top = -h * 0.5
@@ -87,12 +81,12 @@ func setup(art: TileArt, build_bar: CanvasLayer) -> void:
 	for t: int in ALL:
 		grid.add_child(_card(art, t))
 
-	# --- Die acht Felder der Leiste ---
-	panel.add_child(_text("Bau-Leiste", 18, 84 + 2 * (CARD + PAD) + 16,
+	# --- Die Felder der Leiste ---
+	panel.add_child(_text("Bau-Leiste", 18, 84 + CARD + PAD + 16,
 		HORIZONTAL_ALIGNMENT_CENTER, w))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
-	row.position = Vector2(20, 84 + 2 * (CARD + PAD) + 46)
+	row.position = Vector2(20, 84 + CARD + PAD + 46)
 	panel.add_child(row)
 	for i in bar.types.size():
 		row.add_child(_slot_card(i, w))
@@ -165,7 +159,7 @@ func refresh() -> void:
 func _describe(tile: int) -> void:
 	if _hint == null:
 		return
-	var extra: String = HINTS.get(tile, "begehbar")
+	var extra: String = HINTS.get(tile, "fester Boden")
 	_hint.text = "%s — %s        (Feld %d wird belegt)" % [
 		GroundTileSet.NAMES[tile], extra, target_slot + 1]
 

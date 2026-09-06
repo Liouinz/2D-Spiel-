@@ -2,73 +2,43 @@ class_name GroundTileSet
 extends RefCounted
 ## Baut das TileSet für den Boden und bemalt die TileMapLayer.
 ##
-## Aufbau: eine Grundfüllung (Tiefwasser) und darüber gestapelte Schichten, die
-## sich per Terrain-Autotiling in die jeweils darunterliegende einblenden.
-## Dadurch entstehen echte Übergangskacheln mit runden Ecken statt harter
-## Kachelkanten — Wasser→Sand→Gras→Wiese/Wald→Fels→Weg→Pflaster.
-##
-## Die Terrains sind im TileSet benannt und mit Eck-Bits versehen, das Raster
-## lässt sich also im Godot-Editor auch von Hand mit dem Terrain-Pinsel malen.
+## Drei Schichten, von unten nach oben: Gras füllt die ganze Karte, darüber
+## liegen Sand und Wasser als Auflage. Sand liegt auch unter dem Wasser, damit
+## die Brandung auf Sand trifft statt auf Gras.
 
 ## Zeichenreihenfolge von unten nach oben. Index 0 ist die Grundfüllung.
-##
-## Gras füllt die ganze Karte, alles andere liegt als Auflage darüber. So muss
-## nur die tatsächlich sichtbare Fläche gesetzt werden statt jede Schicht über
-## die ganze Insel zu ziehen.
 const STACK := [
 	MapData.Tile.GRASS,
-	MapData.Tile.MEADOW,
-	MapData.Tile.FOREST,
-	MapData.Tile.ROCK,
 	MapData.Tile.SAND,
 	MapData.Tile.WATER,
-	MapData.Tile.DEEP_WATER,
-	MapData.Tile.PATH,
-	MapData.Tile.COBBLE,
 ]
 
-const NAMES := {
-	MapData.Tile.DEEP_WATER: "Tiefwasser",
-	MapData.Tile.WATER: "Wasser",
-	MapData.Tile.SAND: "Sand",
-	MapData.Tile.GRASS: "Gras",
-	MapData.Tile.MEADOW: "Wiese",
-	MapData.Tile.FOREST: "Waldboden",
-	MapData.Tile.ROCK: "Fels",
-	MapData.Tile.PATH: "Weg",
-	MapData.Tile.COBBLE: "Pflaster",
-}
+const NAMES := MapData.NAMES
 
-## Gebaute Flächen bekommen eckige Übergänge statt runder.
-const HARD := [MapData.Tile.PATH, MapData.Tile.COBBLE]
+## Gebaute Flächen bekämen eckige Übergänge — davon gibt es zurzeit keine.
+const HARD := []
 
-## Fels und Wasser verlaufen überhaupt nicht: sie belegen genau ihre Blöcke.
+## Wasser verläuft nicht, es belegt genau seine Felder.
 ##
 ## Das Eck-Autotiling legt die Geländegrenze auf das Eckraster — eine halbe
-## Kachel versetzt zum Blockraster. Für Wiese, Waldboden und Sand ist das
-## richtig, die sollen ineinander übergehen. Für eine Klippe und für eine
-## Uferlinie nicht: Wand, Uferband und Brandung sitzen am Block, der weiche
-## Auslauf aber darüber hinaus — die Brandung landete dadurch auf dem Sand
-## statt im Wasser. Diese beiden Übergänge machen die Kantenkacheln.
-##
-## Tiefwasser bleibt weich: dort geht es nicht um eine Kante, sondern um Tiefe.
-const SHARP := [MapData.Tile.ROCK, MapData.Tile.WATER]
+## Kachel versetzt zum Blockraster. Für Sand ist das richtig, der soll weich in
+## Gras übergehen. Für die Uferlinie nicht: Uferband und Brandung sitzen am
+## Block, der weiche Auslauf aber darüber hinaus, und die Brandung landete auf
+## dem Sand statt im Wasser.
+const SHARP := [MapData.Tile.WATER]
 
 ## Gehört ein Bodentyp zu einer Schicht des Stapels?
 ##
-## Diese Regel ist die einzige Wahrheit darüber, welche Schicht wo liegt —
-## der Weltaufbau und die Bau-Leiste benutzen beide sie, damit ein von Hand
-## gesetzter Block genauso aussieht wie ein erzeugter.
+## Diese Regel ist die einzige Wahrheit darüber, welche Schicht wo liegt.
 static func in_layer(pos: int, t: int) -> bool:
-	if pos == 0:
-		return true                                       # Gras füllt alles
-	if pos == 4:
-		# Sand liegt auch unter dem flachen Wasser, damit die Brandung auf Sand
-		# trifft. Unter Tiefwasser wäre er nie zu sehen.
-		return t == MapData.Tile.SAND or t == MapData.Tile.WATER
-	if pos == 5:
-		return t == MapData.Tile.WATER or t == MapData.Tile.DEEP_WATER
-	return t == STACK[pos]
+	match pos:
+		0:
+			return true                                  # Gras füllt alles
+		1:
+			# Sand liegt auch unter dem Wasser: so trifft die Brandung auf Sand.
+			return t == MapData.Tile.SAND or t == MapData.Tile.WATER
+		_:
+			return t == MapData.Tile.WATER
 
 ## Reihenfolge muss zur Bitfolge in TerrainAtlas passen.
 const CORNERS := [
@@ -78,31 +48,19 @@ const CORNERS := [
 	TileSet.CELL_NEIGHBOR_BOTTOM_LEFT_CORNER,
 ]
 
-## Wie viele fertig bestückte Dekorationskacheln je Sorte erzeugt werden.
-## Bei 32 Pixeln je Kachel und zufälligen Positionen darin fällt die
-## Wiederholung nicht auf.
-const DECOR_VARIANTS := 12
-
 var tileset: TileSet
-var decor_source: int = -1
-var decor_slots: Array[Vector2i] = []   ## flache Liste aller Dekorationskacheln
-var decor_ranges: Dictionary = {}       ## sorte -> Vector2i(start, anzahl)
 var _sources: Array[int] = []          ## Quellen-ID je Stapelposition
 var _slots: Array = []                 ## Array[Vector2i] je Stapelposition
 var _full_count: int = 0               ## Vollkacheln je Bodentyp
-## Nachschlagtabelle Schicht x Bodentyp -> gehoert dazu (0/1). Ersetzt neun
-## ganzseitige Zugehoerigkeitsraster: bei 2048 x 2048 Bloecken waeren das 37 MB
-## gewesen, hier sind es 81 Bytes.
 var _table := PackedByteArray()
 var _shade: FastNoiseLite               ## grossflaechige Bodenhelligkeit
-var edges: EdgeArt                      ## Klippen und Ufer
+var edges: EdgeArt                      ## Uferkanten
 var _sharp: Array[bool] = []            ## Schichten ohne weichen Übergang
 
-## Die Schichtenliste enthält hinter den neun Bodenschichten noch zwei:
-## die Kanten (Klippenwand, Uferband) und die Schlagschatten darunter.
-const LAYER_EDGE := 9
-const LAYER_SHADOW := 10
-const LAYER_COUNT := 11
+## Hinter den drei Bodenschichten liegt die Kantenschicht (Uferband und
+## Tiefenband). Die Reihenfolge muss zu ChunkStreamer.setup() passen.
+const LAYER_EDGE := 3
+const LAYER_COUNT := 4
 
 static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 	var g := GroundTileSet.new()
@@ -152,7 +110,6 @@ static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 	g._shade = FastNoiseLite.new()
 	g._shade.seed = seed_value + 809
 	g._shade.frequency = 0.030
-	g._build_decor(ts, art, rng)
 	g.tileset = ts
 	return g
 
@@ -181,58 +138,6 @@ func variant_at(x: int, y: int) -> int:
 	# dieselbe Variante kehrte diagonal alle sechs Felder wieder, und das sah
 	# man der Fläche als Muster an.
 	return shade * TileArt.VARIANTS + Config.hash2(x, y) % TileArt.VARIANTS
-
-## Baut aus den Streuobjekten fertige, durchsichtige Dekorationskacheln. Sie
-## kommen in eine eigene TileMapLayer über dem Boden — dadurch entfällt die
-## große gebackene Auflagetextur vollständig.
-func _build_decor(ts: TileSet, art: TileArt, rng: RandomNumberGenerator) -> void:
-	var sets := {
-		"grass": art.decor_grass,
-		"forest": art.decor_forest,
-		"sand": art.decor_sand,
-		"path": art.decor_path,
-		"water": art.decor_water,
-		"edge": art.decor_edge,
-	}
-	var tiles: Array[Image] = []
-	for name: String in sets:
-		var pool: Array[Image] = sets[name]
-		decor_ranges[name] = Vector2i(tiles.size(), DECOR_VARIANTS)
-		for v in DECOR_VARIANTS:
-			var img := Pixel.make(Config.TILE, Config.TILE)
-			if not pool.is_empty():
-				for i in rng.randi_range(1, 3):
-					var dec: Image = pool[rng.randi() % pool.size()]
-					var dx := rng.randi_range(0, maxi(Config.TILE - dec.get_width(), 0))
-					var dy := rng.randi_range(0, maxi(Config.TILE - dec.get_height(), 0))
-					img.blend_rect(dec, Rect2i(Vector2i.ZERO, dec.get_size()), Vector2i(dx, dy))
-			tiles.append(img)
-
-	var cols := 8
-	var rows := int(ceil(float(tiles.size()) / cols))
-	var atlas := Pixel.make(cols * Config.TILE, rows * Config.TILE)
-	var src := TileSetAtlasSource.new()
-	for i in tiles.size():
-		var pos := Vector2i(i % cols, i / cols)
-		atlas.blit_rect(tiles[i], Rect2i(Vector2i.ZERO, tiles[i].get_size()), pos * Config.TILE)
-		decor_slots.append(pos)
-	src.texture = Pixel.tex(atlas)
-	src.texture_region_size = Vector2i(Config.TILE, Config.TILE)
-	for pos: Vector2i in decor_slots:
-		src.create_tile(pos)
-	decor_source = ts.add_source(src)
-## Setzt die Dekorationsschicht eines Chunks. `at` liefert je Kachel den
-## flachen Index einer Dekorationskachel oder -1.
-func paint_decor_chunk(layer: TileMapLayer, chunk: Vector2i, at: Callable) -> void:
-	layer.tile_set = tileset
-	var cs := Config.CHUNK
-	for oy in cs:
-		for ox in cs:
-			var x := chunk.x * cs + ox
-			var y := chunk.y * cs + oy
-			var i: int = at.call(x, y)
-			if i >= 0:
-				layer.set_cell(Vector2i(x, y), decor_source, decor_slots[i])
 
 ## Malt einen Chunk auf alle neun Bodenschichten.
 ##
@@ -322,7 +227,6 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 				layers[pos].set_cell(cell, _sources[pos], full[pos])
 		if erase:
 			layers[LAYER_EDGE].erase_cell(cell)
-			layers[LAYER_SHADOW].erase_cell(cell)
 		return
 
 	var variant := -1
@@ -337,7 +241,7 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 			layer.set_cell(cell, _sources[pos], _full(pos, variant))
 			continue
 
-		# Fels und Wasser bekommen keinen Saum, ihre Kante sitzt hart am Block.
+		# Wasser bekommt keinen Saum, seine Kante sitzt hart am Block.
 		if _sharp[pos]:
 			if erase:
 				layer.erase_cell(cell)
@@ -362,26 +266,13 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 
 	_paint_edges(layers, cell, t1, t3, t4, t5, t7, erase)
 
-## Klippen und Ufer: alles, was Höhe zeigen soll.
-##
-## Der Schatten wird bewusst auf der Kachel UNTER der Wand gesetzt, aber von
-## dieser Kachel aus nach oben geschaut — sonst würde eine Kachel in den
-## Nachbarchunk schreiben, und beim Entladen bliebe der Schatten stehen.
+## Uferkanten: das Land hört sichtbar auf, im Wasser fällt der Grund weg.
 func _paint_edges(layers: Array[TileMapLayer], cell: Vector2i,
 		north: int, west: int, here: int, east: int, south: int, erase: bool) -> void:
 	var edge_layer := layers[LAYER_EDGE]
-	var shadow_layer := layers[LAYER_SHADOW]
-
 	var mask := 0
 	var slots: Array[Vector2i] = []
-	if here == MapData.Tile.ROCK:
-		# Klippe: gezählt wird, wo KEIN Fels liegt.
-		if north != here: mask |= EdgeArt.N
-		if east != here: mask |= EdgeArt.E
-		if south != here: mask |= EdgeArt.S
-		if west != here: mask |= EdgeArt.W
-		slots = edges.cliff
-	elif _is_water(here):
+	if _is_water(here):
 		# Tiefenband: gezählt wird, wo Land liegt.
 		if not _is_water(north): mask |= EdgeArt.N
 		if not _is_water(east): mask |= EdgeArt.E
@@ -396,27 +287,14 @@ func _paint_edges(layers: Array[TileMapLayer], cell: Vector2i,
 		if _is_water(west): mask |= EdgeArt.W
 		slots = edges.bank
 
-	# Ausführung nach Position streuen: sonst wiederholt sich dieselbe Wand an
-	# jeder Kachel und die Klippe sieht gestempelt aus.
-	var v := posmod(cell.x * 7 + cell.y * 13, EdgeArt.VARIANTS)
 	if mask == 0:
 		if erase:
 			edge_layer.erase_cell(cell)
-	elif here == MapData.Tile.ROCK:
-		edge_layer.set_cell(cell, edges.source, slots[mask * EdgeArt.VARIANTS + v])
 	else:
 		edge_layer.set_cell(cell, edges.source, slots[mask])
 
-	# Schlagschatten der Klippe auf dem Feld darunter. Nur ein Schatten — die
-	# Wand selbst bleibt vollständig auf der Felskachel, damit sichtbare Kante
-	# und Kollisionskante zusammenfallen.
-	if north == MapData.Tile.ROCK and here != MapData.Tile.ROCK:
-		shadow_layer.set_cell(cell, edges.source, edges.foot[v])
-	elif erase:
-		shadow_layer.erase_cell(cell)
-
 static func _is_water(t: int) -> bool:
-	return t == MapData.Tile.WATER or t == MapData.Tile.DEEP_WATER
+	return t == MapData.Tile.WATER
 
 ## Die Vollkacheln aller Schichten für eine Kachel ohne abweichende Nachbarn.
 func _full_for(tile: int, x: int, y: int) -> Array:

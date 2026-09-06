@@ -68,8 +68,18 @@ func _ready() -> void:
 		test.main = self
 		add_child(test)
 
-## ESC steuert Pause/Zurück. Läuft auch, während der Baum pausiert ist.
+## ESC und E. Läuft auch, während der Baum pausiert ist.
+##
+## Das Inventar MUSS hier liegen, nicht im Bauwerkzeug. Die Welt ist
+## pausierbar, damit bei offenem Fenster nichts mehr in ihr passiert — dadurch
+## bekommt das Bauwerkzeug bei offenem Inventar aber gar keine Eingaben mehr
+## und konnte es nie wieder schliessen. E öffnete, E schloss nicht. Main läuft
+## als einziger Knoten immer, hier gehört der Umschalter hin.
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("inventory"):
+		toggle_inventory()
+		get_viewport().set_input_as_handled()
+		return
 	if not event.is_action_pressed("ui_cancel"):
 		return
 	match state:
@@ -94,12 +104,10 @@ func toggle_inventory() -> void:
 func open_inventory() -> void:
 	if not is_instance_valid(_world) or not is_instance_valid(_world.inventory):
 		return
-	Audio.play_ui("open")
 	_world.inventory.refresh()
 	_set_state(State.INVENTORY)
 
 func close_inventory() -> void:
-	Audio.play_ui("close")
 	_set_state(State.PLAYING)
 
 # --- Zustandswechsel ---------------------------------------------------------
@@ -112,7 +120,6 @@ func start_game() -> void:
 	if _busy:
 		return
 	_busy = true
-	Audio.play_ui("confirm")
 	if is_instance_valid(_world):
 		_world.queue_free()
 		_world = null
@@ -153,28 +160,23 @@ func _make_loading() -> Label:
 func pause_game() -> void:
 	if state != State.PLAYING:
 		return
-	Audio.play_ui("open")
 	_set_state(State.PAUSED)
 
 func resume_game() -> void:
 	if state != State.PAUSED:
 		return
-	Audio.play_ui("close")
 	_set_state(State.PLAYING)
 
 func open_options() -> void:
-	Audio.play_ui("open")
 	_return_state = state
 	_options_menu.refresh()
 	_set_state(State.OPTIONS)
 
 func close_options() -> void:
-	Audio.play_ui("close")
 	Settings.save_settings()
 	_set_state(_return_state)
 
 func to_main_menu() -> void:
-	Audio.play_ui("close")
 	_save_world()
 	if is_instance_valid(_world):
 		_world.queue_free()
@@ -189,7 +191,7 @@ func quit_game() -> void:
 
 ## Die im Aufbaumodus gebaute Karte darf beim Verlassen nicht verloren gehen.
 func _save_world() -> void:
-	if not Config.EMPTY_WORLD or not is_instance_valid(_world):
+	if not is_instance_valid(_world):
 		return
 	if _world.map != null:
 		_world.map.save_user()

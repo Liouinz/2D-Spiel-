@@ -18,8 +18,8 @@ const PARTIAL := 15          ## Masken 0..14 belegen die Plaetze 0..14
 const FULL_START := PARTIAL  ## ab hier liegen die Vollkacheln (Maske 15)
 
 ## `variants` ist TileArt.base[typ]: SHADES * VARIANTS Vollkacheln.
-## `hard` = gebaute Fläche (Weg, Pflaster): eckige Quadranten statt runder
-## Formen — ein gepflasterter Platz hat gerade Kanten, eine Wiese nicht.
+## `hard` = gebaute Fläche: eckige Quadranten statt runder Formen. Für die
+## drei Naturböden wird das nicht gebraucht, die Möglichkeit bleibt.
 ## -> {"texture", "slots": Array[Vector2i], "full_start": int}
 static func build(variants: Array, rng: RandomNumberGenerator, hard: bool = false) -> Dictionary:
 	var full_count := variants.size()

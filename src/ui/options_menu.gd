@@ -1,10 +1,9 @@
 extends Control
-## Optionen: Lautstärken, Vollbild, Hinweise — plus Steuerungsübersicht.
+## Optionen: Musiklautstärke, Vollbild, Hinweise — plus Steuerungsübersicht.
 
 signal back_pressed
 
 var _music: HSlider
-var _sfx: HSlider
 var _fullscreen: CheckBox
 var _hints: CheckBox
 var _perf: CheckBox
@@ -41,7 +40,6 @@ func _ready() -> void:
 	col.add_child(grid)
 
 	_music = _add_slider(grid, "Musik")
-	_sfx = _add_slider(grid, "Effekte")
 
 	grid.add_child(_label("Vollbild"))
 	_fullscreen = CheckBox.new()
@@ -64,7 +62,6 @@ func _ready() -> void:
 
 	_back = UiTheme.button("ZURÜCK")
 	_back.pressed.connect(func() -> void: back_pressed.emit())
-	_back.mouse_entered.connect(func() -> void: Audio.play_ui("blip"))
 	col.add_child(_back)
 
 	refresh()
@@ -118,20 +115,14 @@ func _on_fullscreen(v: bool) -> void:
 
 func refresh() -> void:
 	_music.set_value_no_signal(Settings.music_volume)
-	_sfx.set_value_no_signal(Settings.sfx_volume)
 	_fullscreen.set_pressed_no_signal(Settings.fullscreen)
 	_hints.set_pressed_no_signal(Settings.show_hints)
 	_perf.set_pressed_no_signal(Settings.show_perf)
 	if not _music.value_changed.is_connected(_on_music):
 		_music.value_changed.connect(_on_music)
-		_sfx.value_changed.connect(_on_sfx)
 
 func _on_music(v: float) -> void:
 	Settings.set_music_volume(v)
-
-func _on_sfx(v: float) -> void:
-	Settings.set_sfx_volume(v)
-	Audio.play_ui("blip")
 
 func focus_first() -> void:
 	if is_instance_valid(_back):

@@ -20,14 +20,8 @@ const REFRESH_HZ := 6.0
 ## 80 × 80 Punkten nichts zu unterscheiden.
 const COLORS := {
 	MapData.Tile.GRASS: Color8(96, 152, 78),
-	MapData.Tile.MEADOW: Color8(132, 186, 98),
-	MapData.Tile.FOREST: Color8(48, 96, 58),
-	MapData.Tile.PATH: Color8(158, 122, 84),
 	MapData.Tile.SAND: Color8(226, 206, 148),
-	MapData.Tile.ROCK: Color8(132, 136, 150),
 	MapData.Tile.WATER: Color8(64, 118, 172),
-	MapData.Tile.DEEP_WATER: Color8(40, 82, 128),
-	MapData.Tile.COBBLE: Color8(112, 100, 92),
 }
 
 var map: MapData

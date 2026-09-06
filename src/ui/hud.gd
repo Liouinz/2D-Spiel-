@@ -1,6 +1,6 @@
 extends CanvasLayer
-## Steuerungshilfe beim Betreten der Welt und — im Aufbaumodus — eine
-## Anzeige, auf welchem Block die Figur gerade steht.
+## Steuerungshilfe beim Betreten der Welt und eine Anzeige, auf welchem
+## Block die Figur gerade steht.
 
 const SHOW_TIME := 7.0
 const FADE_TIME := 1.5
@@ -22,21 +22,19 @@ func _ready() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
 
-	# Blockanzeige: nur im Aufbaumodus sinnvoll
-	if Config.EMPTY_WORLD:
-		_blocks = _make_label(20)
-		_blocks.set_anchors_preset(Control.PRESET_TOP_LEFT)
-		_blocks.offset_left = 24
-		_blocks.offset_top = 18
-		_blocks.offset_right = 900
-		_blocks.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		root.add_child(_blocks)
+	# Blockanzeige: Chunk, Block und Position der Figur.
+	_blocks = _make_label(20)
+	_blocks.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_blocks.offset_left = 24
+	_blocks.offset_top = 18
+	_blocks.offset_right = 900
+	_blocks.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	root.add_child(_blocks)
 
 	# Minimap: zeigt das Gebaute auch dann, wenn das Raster aus ist.
-	if Config.EMPTY_WORLD:
-		minimap = preload("res://src/ui/minimap.gd").new()
-		minimap.name = "Minimap"
-		root.add_child(minimap)
+	minimap = preload("res://src/ui/minimap.gd").new()
+	minimap.name = "Minimap"
+	root.add_child(minimap)
 
 	# Leistungsanzeige: immer vorhanden, beim Start immer unsichtbar.
 	perf = preload("res://src/ui/perf_overlay.gd").new()
@@ -52,24 +50,17 @@ func _ready() -> void:
 	root.add_child(debug)
 
 	if Settings.show_hints:
+		# Unten ist kein Platz — dort liegt die Bau-Leiste. Die Steuerungshilfe
+		# kommt deshalb unter die Blockanzeige.
 		_label = _make_label(17)
-		if Config.EMPTY_WORLD:
-			# Unten ist im Aufbaumodus kein Platz — dort liegt die Bau-Leiste.
-			# Die Steuerungshilfe kommt deshalb unter die Blockanzeige.
-			_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
-			_label.offset_left = 24
-			_label.offset_top = 78
-			_label.offset_right = 900
-			_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-			_label.text = "WASD / Pfeiltasten – Laufen   ·   Shift – Rennen   ·   Leertaste – Springen"
-			_label.text += "\nE – Inventar   ·   G – Raster   ·   M – Minimap   ·   H – diese Anzeige"
-			_label.text += "\nF5 – Karte speichern   ·   ESC – Pause"
-		else:
-			_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-			_label.offset_top = -64
-			_label.offset_bottom = -28
-			_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			_label.text = "WASD / Pfeiltasten – Laufen   ·   Shift – Rennen   ·   Leertaste – Springen   ·   ESC – Pause"
+		_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		_label.offset_left = 24
+		_label.offset_top = 78
+		_label.offset_right = 900
+		_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		_label.text = "WASD / Pfeiltasten – Laufen   ·   Shift – Rennen   ·   Leertaste – Springen"
+		_label.text += "\nE – Inventar   ·   G – Raster   ·   M – Minimap   ·   H – diese Anzeige"
+		_label.text += "\nF5 – Karte speichern   ·   ESC – Pause"
 		root.add_child(_label)
 
 func _make_label(size: int) -> Label:

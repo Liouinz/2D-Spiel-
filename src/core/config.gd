@@ -14,17 +14,7 @@ const WORLD_SEED := 20260904          ## fester Seed -> reproduzierbare Welt
 ## Das geht nur, weil chunkweise geladen wird; im Speicher liegt davon allein
 ## die Karte selbst (4,2 MB).
 ##
-## Insel: bleibt bei 96 x 80. src/world/layout.gd setzt Dorf, Brunnen und Zäune
-## auf feste Koordinaten — auf einer 2048er Karte stünde das Dorf in der Ecke,
-## und die Inselerzeugung über 4,2 Millionen Zellen wäre unbrauchbar langsam.
 const BUILD_CHUNKS := Vector2i(128, 128)
-const ISLAND_BLOCKS := Vector2i(96, 80)
-
-## Aufbaumodus. true = leere Karte mit sichtbarem Blockraster; damit lässt sich
-## planen, welches Objekt später wie viele Blöcke belegt. Auf false entsteht
-## wieder die komplette Insel mit Dorf, Wald, Wegen und Küste — der Code dafür
-## bleibt vollständig erhalten.
-const EMPTY_WORLD := true
 
 ## Blockraster beim Start sichtbar. Im Spiel mit G umschaltbar.
 const SHOW_BLOCK_GRID := true
@@ -32,8 +22,8 @@ const SHOW_BLOCK_GRID := true
 ## Kantenlänge eines Chunks in Blöcken — dieselbe Größe wie in Minecraft.
 const CHUNK := 16
 
-static var MAP_W: int = (BUILD_CHUNKS.x * CHUNK) if EMPTY_WORLD else ISLAND_BLOCKS.x
-static var MAP_H: int = (BUILD_CHUNKS.y * CHUNK) if EMPTY_WORLD else ISLAND_BLOCKS.y
+static var MAP_W: int = BUILD_CHUNKS.x * CHUNK
+static var MAP_H: int = BUILD_CHUNKS.y * CHUNK
 
 ## Wie viele Chunks ringsum geladen bleiben. Der Bildausschnitt ist bei Zoom 1,5
 ## nur rund 27 x 15 Blöcke groß; Radius 2 lässt also ringsum mindestens einen
@@ -60,10 +50,6 @@ const JUMP_HEIGHT := 14.0             ## Scheitelhöhe in Bildpunkten
 ## rund 55 % der Gehgeschwindigkeit. Gerannt und gesprungen wird nicht.
 const SWIM_SPEED := 68.0
 
-## Ab dieser Sprunghöhe kommt man eine Stufe hinauf. Knapp die halbe
-## Scheitelhöhe: man muss den Sprung wirklich treffen, aber nicht auf den Punkt.
-const CLIMB_HEIGHT := 7.0
-const FALL_TIME := 0.20               ## kurzes Fallen beim Heruntergehen
 
 ## Halber Zoom bei doppelter Kachelgröße = unverändertes Sichtfeld,
 ## aber doppelt so feine Grafik.
@@ -83,10 +69,9 @@ static func hash2(x: int, y: int) -> int:
 static func world_size_px() -> Vector2i:
 	return Vector2i(MAP_W * TILE, MAP_H * TILE)
 
-## Wo die Figur startet. Im Aufbaumodus die Kartenmitte — dort ist ringsum
-## gleich viel Platz. Auf der Insel der von Hand gesetzte Dorfrand.
+## Wo die Figur startet: die Kartenmitte, dort ist ringsum gleich viel Platz.
 static func spawn_block() -> Vector2i:
-	return Vector2i(MAP_W / 2, MAP_H / 2) if EMPTY_WORLD else Layout.SPAWN
+	return Vector2i(MAP_W / 2, MAP_H / 2)
 
 ## Legt die Tastenbelegung zur Laufzeit an (hält project.godot schlank).
 static func setup_input() -> void:
@@ -106,11 +91,6 @@ static func setup_input() -> void:
 		"build_slot_1": [KEY_1],
 		"build_slot_2": [KEY_2],
 		"build_slot_3": [KEY_3],
-		"build_slot_4": [KEY_4],
-		"build_slot_5": [KEY_5],
-		"build_slot_6": [KEY_6],
-		"build_slot_7": [KEY_7],
-		"build_slot_8": [KEY_8],
 	}
 	for action: String in actions:
 		if not InputMap.has_action(action):
@@ -141,10 +121,10 @@ static func setup_input() -> void:
 const CONTROL_ROWS := [
 	["move_up+move_left+move_down+move_right", "Laufen (auch Pfeiltasten)"],
 	["run", "Rennen"],
-	["jump", "Springen — und auf Fels hinauf"],
+	["jump", "Springen"],
 	["build_place", "Block setzen"],
 	["build_remove", "Block entfernen"],
-	["build_slot_1", "Bau-Leiste Feld 1 (bis Feld 8 mit 2–8)"],
+	["build_slot_1", "Material wählen (1 Gras, 2 Sand, 3 Wasser)"],
 	["inventory", "Inventar öffnen und schliessen"],
 	["toggle_grid", "Blockraster ein und aus"],
 	["toggle_minimap", "Minimap ein und aus"],
