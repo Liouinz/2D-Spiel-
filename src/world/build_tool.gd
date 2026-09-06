@@ -21,7 +21,7 @@ extends Node
 
 var map: MapData
 var streamer: ChunkStreamer     ## setzt Kacheln und Kollision des Chunks neu
-var bar: CanvasLayer            ## BuildBar
+var bar: BuildBar               ## die Schnellauswahl unten am Bildrand
 var grid: GridOverlay
 var camera: GameCamera
 var water: WaterFx              ## Brandung neu berechnen, wenn Wasser entsteht

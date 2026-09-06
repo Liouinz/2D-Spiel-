@@ -8,14 +8,12 @@ var player: Player
 var camera: GameCamera
 var hud: CanvasLayer
 var grid: GridOverlay
-var build_bar: CanvasLayer
+var build_bar: BuildBar
 var build_tool: BuildTool
-var inventory: CanvasLayer
+var inventory: Inventory
 var streamer: ChunkStreamer
 
 const HudScene := preload("res://src/ui/hud.gd")
-const BuildBarScene := preload("res://src/ui/build_bar.gd")
-const InventoryScene := preload("res://src/ui/inventory.gd")
 
 var build_msec: int = 0
 
@@ -95,7 +93,8 @@ func _ready() -> void:
 		hud.debug.player = player
 		hud.debug.streamer = streamer
 
-	build_bar = BuildBarScene.new()
+	build_bar = BuildBar.new()
+	build_bar.name = "BuildBar"
 	add_child(build_bar)
 	build_bar.setup(builder.art)
 
@@ -117,11 +116,15 @@ func _ready() -> void:
 		Settings.build_loadout = build_bar.loadout()
 		Settings.save_settings())
 
-	inventory = InventoryScene.new()
+	inventory = Inventory.new()
+	inventory.name = "Inventory"
 	# Das Inventar ist UI und muss bei pausiertem Baum bedienbar bleiben.
 	inventory.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(inventory)
-	inventory.setup(builder.art, build_bar)
+	inventory.setup(build_bar)
+	# Genau ein Weg vom Klick zur Belegung: das Inventar bittet, die Leiste
+	# führt aus, das Inventar zieht seine Anzeige nach. Kein zweiter Pfad,
+	# keine doppelten Meldungen.
 	inventory.equip_requested.connect(func(slot: int, tile: int) -> void:
 		build_bar.equip(slot, tile)
 		inventory.refresh())

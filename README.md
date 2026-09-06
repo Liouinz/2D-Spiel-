@@ -84,8 +84,12 @@ gezeigt, damit sich planen lässt, wie viele Blöcke etwas belegt.
 
 ## Bauen
 
-Unten steht eine Leiste mit drei Feldern. Jedes zeigt die echte Bodenkachel,
-nicht ein Ersatzsymbol.
+Unten steht die Bauleiste: drei Felder in einer zusammenhängenden Leiste, jedes
+mit Nummer, Materialbild und Namen. Das Bild ist kein Ersatzsymbol, sondern ein
+Stück echter Boden — vier der Kacheln, die auch auf der Karte liegen, in
+ganzzahliger Vergrößerung und deshalb ohne Verzerrung. Das gewählte Feld hat
+einen kräftigen Rahmen in der Akzentfarbe und einen weichen Schein, es ist also
+auch aus dem Augenwinkel zu erkennen.
 
 - **1 – 3**, **Mausrad** oder ein **Klick auf das Feld** wählt den Bodentyp.
 - **Linke Maustaste** setzt ihn auf den Block unter dem Zeiger, **rechte
@@ -111,12 +115,27 @@ ein echter Umschalter. **ESC** schliesst ebenfalls.
 
 Das Inventar ist ein eigener Spielzustand: solange es offen ist, **passiert in
 der Welt nichts**. Keine Bewegung, kein Bauen, kein Abbauen, keine Bauvorschau,
-keine Mausaktion. Dasselbe gilt für Pause und Optionen — ein Klick auf
-„Fortsetzen“ setzt keinen Block mehr.
+keine Mausaktion. Ein Klick auf ein Feld im Inventar setzt niemals gleichzeitig
+einen Block. Dasselbe gilt für Pause und Optionen — ein Klick auf „Fortsetzen“
+setzt keinen Block mehr.
 
-Oben stehen die drei Materialien, unten die drei Felder der Leiste. Erst unten
-ein Feld wählen, dann oben ein Material anklicken — es wird darauf gelegt. Die
-Belegung bleibt gespeichert.
+Oben stehen die drei Materialien, unten die Bauleiste — dieselbe Leiste, die im
+Spiel unten am Bildrand steht, mit denselben Feldern. Ein Klick auf ein Feld
+wählt es, ein Klick auf ein Material legt es darauf. Die Belegung bleibt
+gespeichert.
+
+Erklärt wird das nicht mehr mit einem Satz, sondern mit der Anzeige selbst: das
+gewählte Feld **und** das Material, das darauf liegt, sind gleichzeitig
+hervorgehoben. Jedes Feld hat vier klar unterscheidbare Zustände — ruhig, beim
+Überfahren aufgehellt, gewählt mit Rahmen und Schein, und abgeblendet. Die
+Übergänge dazwischen sind kurz und ruhig.
+
+Inventar und Bauleiste bleiben getrennte Ansichten mit getrennten Aufgaben: das
+Inventar bestückt, die Leiste wählt im Spiel schnell aus. Sie teilen sich genau
+einen Zustand — das gewählte Feld — und werden nie gleichzeitig angezeigt.
+
+Im Bild unten sieht man alle drei Zustände auf einmal: **Gras** gewählt,
+**Sand** überfahren, **Wasser** ruhig.
 
 ![Inventar](docs/bilder/inventar.png)
 
@@ -217,6 +236,7 @@ src/core/main.gd           Zustandsautomat MENÜ / SPIEL / PAUSE / OPTIONEN / IN
 
 src/gfx/pixel.gd           Zeichen-Werkzeuge auf Images, mit umlaufendem Kachelrand
 src/gfx/tile_art.gd        Die drei Bodenkacheln in Varianten und Helligkeitsstufen
+src/gfx/tile_icon.gd       Materialbild der Oberfläche aus echten Bodenkacheln
 src/gfx/terrain_atlas.gd   Übergangskacheln für das Eck-Autotiling
 src/gfx/edge_art.gd        Uferband auf dem Land, Tiefenband im Wasser
 src/gfx/actor_art.gd       Spielerfigur (Idle, Laufzyklus, Schwimmen)
@@ -239,7 +259,8 @@ src/ui/main_menu.gd        Startmenü
 src/ui/pause_menu.gd       Pause-Menü
 src/ui/options_menu.gd     Optionen samt Steuerungsübersicht aus der InputMap
 src/ui/hud.gd              Chunk- und Blockanzeige, Steuerungshinweis
-src/ui/build_bar.gd        Bau-Leiste mit drei Feldern
+src/ui/item_slot.gd        Ein Feld — für Inventar UND Bauleiste, ein Aussehen
+src/ui/build_bar.gd        Bauleiste mit drei Feldern
 src/ui/inventory.gd        Inventar: Material auf ein Feld der Leiste legen
 src/ui/minimap.gd          Übersichtskarte oben rechts
 src/ui/perf_overlay.gd     Leistungsanzeige (nur gemessene Werte)
@@ -262,7 +283,7 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **154 Prüfungen**.
+Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **181 Prüfungen**.
 Darunter unter anderem:
 
 - genau drei Bodentypen in Aufzählung, Kachelstapel, Leiste, Inventar und Minimap
@@ -272,8 +293,13 @@ Darunter unter anderem:
 - Bauen in alle acht Richtungen, alle neun Materialpaare nebeneinander,
   Reihen, schnelles Ziehen, 40 Setzungen am Stück, Bauen in Bewegung
 - ins Wasser aus allen vier Richtungen: kein Ruck, kein Bildversatz nach oben
-- E öffnet, E schliesst, E öffnet wieder
+- E öffnet, E schliesst, E öffnet wieder — und tut in der Pause nichts
 - bei Pause, Optionen und Inventar: kein Block, keine Bewegung, keine Vorschau
+- Inventar: gleich große Felder, gleichmäßige Abstände, unverzerrte Materialbilder
+- Auswahl heißt kräftigerer Rahmen UND Schein, nicht nur eine dünne Linie
+- Überfahren hebt ein Feld ab und lässt es wieder los
+- höchstens drei kurze Texte im ganzen Inventar
+- kein Feld nimmt den Tastaturfokus, jedes fängt seinen Mausklick selbst ab
 - Musik vorhanden, Klangeffekte weder im Ton noch an einer Aufrufstelle
 - keine fremde Asset-Datei im Projekt (siehe [`CREDITS.md`](CREDITS.md))
 

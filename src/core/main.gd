@@ -76,9 +76,12 @@ func _ready() -> void:
 ## und konnte es nie wieder schliessen. E öffnete, E schloss nicht. Main läuft
 ## als einziger Knoten immer, hier gehört der Umschalter hin.
 func _unhandled_input(event: InputEvent) -> void:
+	# Verbraucht wird ein Tastendruck nur, wenn er hier auch wirklich etwas
+	# bewirkt hat. Vorher schluckte E die Taste in jedem Zustand — auch im
+	# Hauptmenü, wo sie nichts zu suchen hatte.
 	if event.is_action_pressed("inventory"):
-		toggle_inventory()
-		get_viewport().set_input_as_handled()
+		if toggle_inventory():
+			get_viewport().set_input_as_handled()
 		return
 	if not event.is_action_pressed("ui_cancel"):
 		return
@@ -91,24 +94,38 @@ func _unhandled_input(event: InputEvent) -> void:
 			close_options()
 		State.INVENTORY:
 			close_inventory()
+		_:
+			return
 	get_viewport().set_input_as_handled()
 
 ## E öffnet und schliesst das Inventar. Der Baum pausiert dabei, damit sich in
 ## Ruhe klicken lässt.
-func toggle_inventory() -> void:
+##
+## Gibt zurück, ob der Zustand tatsächlich gewechselt hat. Nur dann gilt die
+## Taste als verbraucht.
+func toggle_inventory() -> bool:
 	if state == State.INVENTORY:
-		close_inventory()
-	elif state == State.PLAYING:
-		open_inventory()
+		return close_inventory()
+	if state == State.PLAYING:
+		return open_inventory()
+	return false
 
-func open_inventory() -> void:
+## Beide Wege prüfen den Zustand, bevor sie ihn setzen. Dadurch kann das
+## Inventar nicht doppelt geöffnet oder doppelt geschlossen werden, egal ob
+## der Anstoss von der Taste, von ESC oder aus dem Selbsttest kommt.
+func open_inventory() -> bool:
+	if state != State.PLAYING:
+		return false
 	if not is_instance_valid(_world) or not is_instance_valid(_world.inventory):
-		return
-	_world.inventory.refresh()
+		return false
 	_set_state(State.INVENTORY)
+	return true
 
-func close_inventory() -> void:
+func close_inventory() -> bool:
+	if state != State.INVENTORY:
+		return false
 	_set_state(State.PLAYING)
+	return true
 
 # --- Zustandswechsel ---------------------------------------------------------
 
@@ -209,10 +226,15 @@ func _set_state(next: State) -> void:
 		# Sichtbarkeit der Welt nicht — sie werden einzeln geschaltet.
 		if is_instance_valid(_world.hud):
 			_world.hud.visible = next == State.PLAYING
+		# Die Leiste ist nur im Spiel zu sehen. Bei offenem Inventar zeigt das
+		# Inventar sie selbst — zweimal dieselbe Leiste auf einem Bild wäre
+		# genau die Doppelung, die es hier nicht mehr geben soll.
 		if is_instance_valid(_world.build_bar):
-			_world.build_bar.visible = next == State.PLAYING or next == State.INVENTORY
+			_world.build_bar.visible = next == State.PLAYING
+		# Ein Weg auf, ein Weg zu: das Inventar schaltet sich selbst und
+		# blendet sich dabei weich ein.
 		if is_instance_valid(_world.inventory):
-			_world.inventory.visible = next == State.INVENTORY
+			_world.inventory.set_open(next == State.INVENTORY)
 		# Die Bauvorschau hier löschen, nicht im Bauwerkzeug: das läuft bei
 		# pausiertem Baum zu Recht nicht mehr und käme gar nicht mehr dazu.
 		# Sonst bliebe der Zeigerkasten während des Menüs stehen.

@@ -509,10 +509,87 @@ Aufrufstelle im Quelltext übrig ist.
 `Layout`. Ein einziger Treffer lässt den Test fehlschlagen. Sie hat beim ersten
 Lauf zwei vergessene Kommentare gefunden.
 
-**Stand:** 154 Prüfungen, alle grün, Godot-Konsole beim Import und beim Lauf
+**Stand dieses Nachtrags:** 154 Prüfungen, alle grün, Godot-Konsole beim Import und beim Lauf
 ohne Fehler. Kachelnähte: Gras 1,16, Sand 0,66, Wasser 0,82 (1,0 = so glatt wie
 das Kachelinnere). Weltaufbau 260 ms, ein Chunk in 1,5 ms, Physik 0,5 ms je
 Bild.
+
+## Nachtrag: Inventar und Bauleiste als ein Oberflächensystem
+
+Das Inventar funktionierte, sah aber aus wie ein Entwicklerfenster: zwei
+Erklärsätze übereinander, eine dünne gelbe Linie als einzige Auswahlmarkierung,
+in ein Rechteck gestreckte Vorschaubilder und darunter eine zweite Leiste, die
+anders aussah als die echte. Der Umbau war deshalb keine Farbkorrektur, sondern
+eine Umstellung der Struktur.
+
+**Ein Feld, zwei Ansichten.** Vorher hatte jede Ansicht ihre eigenen Rahmen,
+Abstände und Beschriftungen — `Inventory._card()`, `Inventory._slot_card()` und
+`BuildBar._make_slot()` bauten dreimal ungefähr dasselbe, aber nie ganz gleich.
+Genau daher kam der Eindruck von „mehreren einzelnen Schaltflächen nebeneinander"
+statt von einem System. Das ist jetzt eine Klasse: `ItemSlot`, ein `Control`,
+das alles in `_draw()` zeichnet — Rahmen, Kachelbild, Nummer, Name. Zwei
+Ausprägungen (`Kind.CARD` für die Materialkarten, `Kind.SLOT` für die
+Leistenfelder) unterscheiden sich in Grösse und Beschriftung, nicht im
+Aussehen. Damit gibt es auch keine verschachtelten Knoten und keine NodePaths
+mehr, die brechen können; das alte `get_node("Name")` im Inventar ist weg.
+
+**Vier Zustände statt einer Linie.** `NORMAL`, `HOVER`, `SELECTED`, `DISABLED`
+liegen an einer Stelle und werden über zwei Werte (`_hover`, `_sel`)
+ineinander überblendet. Gewählt heisst jetzt: kräftigerer Rahmen in der
+Akzentfarbe, wärmere Fläche, weicher Schein (`StyleBoxFlat.shadow_size`) und
+zwei Bildpunkte Wachstum. Der Selbsttest prüft das nicht am Bild, sondern an
+den Werten: `frame_style()` des gewählten Feldes muss einen breiteren Rahmen,
+einen Schein und eine andere Fläche haben als das eines ungewählten. Das
+Überfahren wird mit einem echten `InputEventMouseMotion` durch den Viewport
+ausgelöst und muss wieder abfallen.
+
+**Bilder, die nicht verzerren können.** Die alte Vorschau zog eine 32er-Kachel
+in ein 56 × 42 grosses Rechteck — nicht quadratisch und kein ganzzahliger
+Faktor, also genau die ungleich breiten Bildpunkte, die das Projekt sonst
+vermeidet. `TileIcon` baut stattdessen aus vier echten Bodenkacheln ein
+64 × 64 grosses Stück Fläche und die Oberfläche zeichnet es 1:1. Weil die
+Kacheln nahtlos sind, ist zwischen ihnen keine Naht zu sehen. Der Test hält
+fest, dass die Kantenlänge ein ganzes Vielfaches von `Config.TILE` ist und
+jedes Bild quadratisch bleibt.
+
+**Eine Auswahl statt zweier.** Das Inventar hatte ein eigenes `target_slot`
+neben `BuildBar.selected`. Zwei Auswahlen, die dasselbe meinten — deshalb war
+der Satz „Feld unten wählen, dann oben einen Boden anklicken" überhaupt nötig.
+`target_slot` ist jetzt eine reine Ableitung von `bar.selected`. Dadurch lassen
+sich das gewählte Feld **und** das Material darauf gleichzeitig hervorheben,
+und die Beziehung ist zu sehen statt zu lesen. Übrig sind drei kurze Texte:
+`INVENTAR`, `Bauleiste`, `E – Schließen`. Der Test zählt sie und misst ihre
+Länge.
+
+**Getrennt bleiben sie trotzdem.** Das Inventar bestückt, die Leiste wählt im
+Spiel schnell aus. Sie werden nie gleichzeitig angezeigt — bei offenem Inventar
+zeigt das Inventar die Leiste selbst, `BuildBar` wird ausgeblendet. Vorher
+standen beide übereinander auf dem Bild.
+
+**Ein Weg auf, ein Weg zu.** `toggle_inventory()` gibt jetzt zurück, ob der
+Zustand wirklich gewechselt hat, und nur dann gilt der Tastendruck als
+verbraucht — vorher schluckte E die Taste in jedem Zustand, auch im Hauptmenü,
+wo sie nichts bewirkte. `open_inventory()` und `close_inventory()` prüfen beide
+ihren Ausgangszustand, bevor sie ihn setzen; doppeltes Öffnen oder Schliessen
+ist damit unmöglich, egal ob der Anstoss von E, von ESC oder aus dem Selbsttest
+kommt. Die Sichtbarkeit läuft über `Inventory.set_open()`, das ebenfalls
+abbricht, wenn sich nichts ändert, und die kurze Einblendung anstösst.
+
+**Keine durchsickernden Eingaben.** Jedes Feld ist `MOUSE_FILTER_STOP` und
+`FOCUS_NONE`: der Klick endet im Feld, und die Tastatur landet nie darin, wo
+Leertaste oder Eingabe es unabsichtlich auslösen könnten. Die Abdunkelung
+hinter der Tafel ist ebenfalls `STOP` und fängt jeden Klick daneben ab.
+Zusätzlich baut `BuildTool` weiterhin nur im Zustand `PLAYING` — zwei
+unabhängige Sperren für dieselbe Sache, weil eine davon still ausfallen kann.
+`BuildBar.covers()` meldet jetzt `false`, solange die Leiste unsichtbar ist.
+
+**Weniger Dauertext im Spiel.** Unter der Leiste stand eine Zeile mit vier
+Bedienhinweisen („Gras gewählt · 1–3 oder Mausrad wechseln · links setzen ·
+rechts entfernen · E – Inventar"). Sie ist weg; das Label bleibt nur für kurze
+Rückmeldungen wie „Karte gespeichert". Die Steuerung steht in der HUD und
+vollständig im Optionsmenü.
+
+**Stand:** 181 Prüfungen, alle grün.
 
 ## Lizenzlage
 

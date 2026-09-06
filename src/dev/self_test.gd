@@ -155,6 +155,7 @@ func _run() -> void:
 	await _check_building(world, map, player)
 	await _check_water(world, map, player)
 	await _check_toggle(world, map, player)
+	await _check_inventory_ui(world)
 	await _check_input_lock(world, map, player)
 	await _check_input_map(world)
 	await _check_stress(world, map, player)
@@ -255,12 +256,12 @@ func _check_three_materials() -> void:
 	_check(GroundTileSet.LAYER_COUNT == 4 and GroundTileSet.LAYER_EDGE == 3,
 		"Vier Schichten: drei Böden plus Kanten")
 
-	var inv_all: Array = preload("res://src/ui/inventory.gd").ALL
+	var inv_all: Array = Inventory.ALL
 	_check(inv_all.size() == 3
 		and inv_all.has(MapData.Tile.GRASS) and inv_all.has(MapData.Tile.SAND)
 		and inv_all.has(MapData.Tile.WATER),
 		"Inventar zeigt genau Gras, Sand, Wasser")
-	var bar_types: Array = preload("res://src/ui/build_bar.gd").DEFAULT_TYPES
+	var bar_types: Array = BuildBar.DEFAULT_TYPES
 	_check(bar_types.size() == 3, "Bau-Leiste hat drei Felder")
 	var mini_colors: Dictionary = preload("res://src/ui/minimap.gd").COLORS
 	_check(mini_colors.size() == 3, "Minimap kennt drei Farben")
@@ -772,10 +773,10 @@ func _check_toggle(world: Node2D, map: MapData, player: Player) -> void:
 	var seen: Array[String] = []
 	for i in 3:
 		main._unhandled_input(_key("inventory"))
-		await _frames(3)
+		# Reichlich Bilder abwarten: das Inventar blendet sich weich ein, und
+		# ein Bild mitten in der Einblendung wäre als Beleg wertlos.
+		await _frames(14)
 		seen.append("offen" if main.state == main.State.INVENTORY else "zu")
-		if i == 0:
-			await _shot("09_inventar")
 	_check(seen == ["offen", "zu", "offen"],
 		"E öffnet, E schliesst, E öffnet wieder (%s)" % ", ".join(seen))
 	_check(inv.visible and main.state == main.State.INVENTORY, "Inventar ist jetzt offen")
@@ -805,6 +806,196 @@ func _check_toggle(world: Node2D, map: MapData, player: Player) -> void:
 	main._unhandled_input(_key("ui_cancel"))
 	await _frames(3)
 	_check(main.state == main.State.PLAYING and not inv.visible, "ESC schliesst das Inventar")
+
+# --- Inventar als Oberfläche ---------------------------------------------------
+
+## Das Inventar als Oberfläche, nicht als Entwicklerfenster.
+##
+## Vorher standen hier zwei Erklärsätze, die Auswahl war eine dünne gelbe Linie,
+## die Vorschaubilder waren in ein Rechteck gestreckt, und die Leiste im
+## Inventar sah anders aus als die echte. Jeder dieser Punkte hat hier eine
+## Prüfung bekommen, damit er nicht zurückkommt.
+func _check_inventory_ui(world: Node2D) -> void:
+	var inv: Inventory = world.inventory
+	var bar: BuildBar = world.build_bar
+	if inv == null or bar == null:
+		return
+	main.open_inventory()
+	await _frames(14)
+
+	# 1. Bilder, die nicht verzerren können.
+	#
+	#    Das Materialbild wird 1:1 gezeichnet. Damit das aufgeht, muss seine
+	#    Kantenlänge ein ganzes Vielfaches der Weltkachel sein — eine 32er
+	#    Kachel in ein 48er Feld gestreckt macht manche Bildpunkte zwei breit.
+	_check(TileIcon.SIZE % Config.TILE == 0 and TileIcon.SIZE > Config.TILE,
+		"Materialbild ist ein ganzes Vielfaches der Kachel (%d px)" % TileIcon.SIZE)
+	_check(bar.icons.size() == MapData.Tile.COUNT,
+		"Ein Materialbild je Bodentyp (%d)" % bar.icons.size())
+	var square := true
+	for tex: Texture2D in bar.icons:
+		if tex == null or tex.get_width() != TileIcon.SIZE \
+				or tex.get_height() != TileIcon.SIZE:
+			square = false
+	_check(square, "Jedes Materialbild ist quadratisch und unverzerrt")
+
+	# 2. Gleiche Felder, gleichmässige Abstände.
+	var cards: Array[ItemSlot] = []
+	var row: Array[ItemSlot] = []
+	for slot: ItemSlot in _item_slots(inv):
+		if slot.kind == ItemSlot.Kind.CARD:
+			cards.append(slot)
+		else:
+			row.append(slot)
+	_check(cards.size() == 3 and row.size() == 3,
+		"Drei Materialfelder und drei Leistenfelder (%d / %d)" % [cards.size(), row.size()])
+	_even_row(cards, "Materialfelder")
+	_even_row(row, "Leistenfelder im Inventar")
+	_even_row(_item_slots(bar), "Leistenfelder im Spiel")
+	_check(not row.is_empty() and not _item_slots(bar).is_empty()
+		and row[0].size == _item_slots(bar)[0].size,
+		"Die Leiste sieht im Inventar aus wie im Spiel")
+
+	# 3. Die Auswahl ist eindeutig — nicht nur eine dünne Linie.
+	inv.select_slot(0)
+	await _frames(14)
+	var lit := 0
+	for slot: ItemSlot in row:
+		if slot.selected:
+			lit += 1
+	_check(lit == 1, "Genau ein Feld der Leiste ist gewählt (%d)" % lit)
+	var chosen := row[0]
+	var other := row[1]
+	_check(chosen.highlight_strength() > 0.9 and other.highlight_strength() < 0.1,
+		"Das gewählte Feld ist voll hervorgehoben, die anderen nicht")
+	var hot := chosen.frame_style()
+	var cold := other.frame_style()
+	_check(hot.border_width_left > cold.border_width_left and hot.shadow_size > 0
+		and cold.shadow_size == 0,
+		"Gewählt heisst kräftigerer Rahmen UND Schein, nicht nur eine Linie")
+	_check(hot.bg_color != cold.bg_color, "Auch die Fläche des gewählten Feldes ist anders")
+
+	# 4. Überfahren hebt ein Feld sichtbar ab — und lässt es wieder los.
+	var probe := cards[1]
+	_hover_at(probe.get_global_rect().get_center())
+	await _frames(14)
+	_check(probe.hover_strength() > 0.9,
+		"Ein Feld hebt sich beim Überfahren ab (%.2f)" % probe.hover_strength())
+	_check(probe.frame_style().bg_color != cards[2].frame_style().bg_color,
+		"Das überfahrene Feld sieht anders aus als seine Nachbarn")
+	# Genau jetzt zeigt ein Bild alle drei Zustände auf einmal: Gras gewählt,
+	# Sand überfahren, Wasser ruhig. Deshalb entsteht es hier und nicht beim
+	# Öffnen.
+	await _shot("09_inventar")
+	_hover_at(Vector2(4, 4))
+	await _frames(14)
+	_check(probe.hover_strength() < 0.1, "Und fällt danach wieder zurück")
+
+	# 5. Kein Erklärtext mehr. Übrig sind Überschrift, Zwischenüberschrift und
+	#    der eine Hinweis, wie man wieder herauskommt.
+	var texts: Array[String] = []
+	for l: Label in _labels(inv):
+		if l.text.strip_edges() != "":
+			texts.append(l.text)
+	var longest := 0
+	for t: String in texts:
+		longest = maxi(longest, t.length())
+	_check(texts.size() <= 3 and longest <= 20,
+		"Kaum noch Text im Inventar (%d Zeilen, längste %d Zeichen: %s)"
+		% [texts.size(), longest, ", ".join(texts)])
+
+	# 6. Nichts kann eine Eingabe durchlassen: kein Feld nimmt den Tastaturfokus,
+	#    jedes fängt seinen Mausklick selbst ab.
+	var leaky: Array[String] = []
+	for slot: ItemSlot in _item_slots(inv) + _item_slots(bar):
+		if slot.focus_mode != Control.FOCUS_NONE:
+			leaky.append("Fokus")
+		if slot.mouse_filter != Control.MOUSE_FILTER_STOP:
+			leaky.append("Mausfilter")
+	_check(leaky.is_empty(), "Kein Feld lässt eine Eingabe durch%s"
+		% ("" if leaky.is_empty() else " (%s)" % ", ".join(leaky)))
+
+	# 7. Inventar und Leiste sind getrennte Ansichten: nie beide zugleich.
+	_check(inv.visible and not bar.visible,
+		"Bei offenem Inventar ist die Leiste im Spiel nicht zusätzlich zu sehen")
+
+	# 8. Testplan 6 – 8: jedes der drei Materialien lässt sich wählen.
+	var saved: Array = bar.loadout()
+	for tile: int in [MapData.Tile.GRASS, MapData.Tile.SAND, MapData.Tile.WATER]:
+		inv.select_slot(0)
+		inv.equip_requested.emit(0, tile)
+		await _frames(2)
+		_check(bar.types[0] == tile and bar.tile_type() == tile,
+			"%s im Inventar gewählt — %s ist aktiv" % [MapData.NAMES[tile], MapData.NAMES[tile]])
+	bar.set_loadout(saved)
+	await _frames(2)
+
+	# 9. Testplan 9: über die Leiste gewechselt kommt dasselbe Material heraus.
+	var wrong: Array[String] = []
+	for i in bar.types.size():
+		bar.slot_clicked.emit(i)
+		await _frames(2)
+		if bar.selected != i or bar.tile_type() != bar.types[i]:
+			wrong.append(str(i + 1))
+	_check(wrong.is_empty(), "Ein Klick auf ein Feld der Leiste wählt genau dessen Material%s"
+		% ("" if wrong.is_empty() else " (Feld %s)" % ", ".join(wrong)))
+	bar.select(0)
+
+	# 10. Der Umschalter greift nur da, wo er soll. In der Pause tut E nichts —
+	#    und meldet das auch, damit die Taste nicht stillschweigend verschwindet.
+	main.close_inventory()
+	await _frames(3)
+	main.pause_game()
+	await _frames(3)
+	_check(not main.toggle_inventory() and main.state == main.State.PAUSED,
+		"E öffnet das Inventar nicht aus der Pause heraus")
+	main.resume_game()
+	await _frames(3)
+	_check(main.state == main.State.PLAYING and not inv.visible,
+		"Danach läuft das Spiel wieder, das Inventar bleibt zu")
+
+## Gleich groß und gleich weit auseinander — sonst wirkt eine Reihe gebastelt.
+func _even_row(list: Array, what: String) -> void:
+	if list.size() < 2:
+		_check(false, "%s: zu wenige Felder zum Vergleichen" % what)
+		return
+	var same := true
+	var gaps: Array[float] = []
+	for i in list.size():
+		if list[i].size != list[0].size:
+			same = false
+		if i > 0:
+			gaps.append(list[i].position.x - (list[i - 1].position.x + list[i - 1].size.x))
+	var even := true
+	for g: float in gaps:
+		if absf(g - gaps[0]) > 0.5:
+			even = false
+	_check(same, "%s: alle gleich groß (%s)" % [what, list[0].size])
+	_check(even, "%s: gleichmäßige Abstände (%.0f px)" % [what, gaps[0]])
+
+## Schiebt den Mauszeiger auf einen Punkt, damit sich der Überfahren-Zustand
+## prüfen lässt.
+func _hover_at(pos: Vector2) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	get_viewport().push_input(motion)
+
+func _item_slots(node: Node) -> Array[ItemSlot]:
+	var out: Array[ItemSlot] = []
+	if node is ItemSlot:
+		out.append(node)
+	for child: Node in node.get_children():
+		out.append_array(_item_slots(child))
+	return out
+
+func _labels(node: Node) -> Array[Label]:
+	var out: Array[Label] = []
+	if node is Label:
+		out.append(node)
+	for child: Node in node.get_children():
+		out.append_array(_labels(child))
+	return out
 
 ## Kein Durchsickern von Eingaben zwischen Oberfläche und Spiel.
 ##
