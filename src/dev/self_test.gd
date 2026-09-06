@@ -411,6 +411,10 @@ func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
 			var c := o + Vector2i(x, y)
 			if tool.map.get_tile(c.x, c.y) == MapData.Tile.GRASS:
 				tool.place(c, MapData.Tile.MEADOW)
+	# Felsplateau: hier muss die Klippe mit Wand und Schlagschatten entstehen
+	for y in range(-2, 3):
+		for x in range(14, 21):
+			tool.place(o + Vector2i(x, y), MapData.Tile.ROCK)
 	# Teich mit Sandsaum
 	for y in range(6, 11):
 		for x in range(7, 13):
@@ -421,7 +425,21 @@ func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
 	await _frames(2)
 	_check(tool.map.is_solid(o.x + 9, o.y + 8), "Teich blockiert")
 
-	player.position = Vector2(o.x + 7.0, o.y + 4.0) * Config.TILE
+	# Klippe: Wandkachel auf dem Fels, Schlagschatten auf der Kachel darunter
+	var edges: TileMapLayer = world.streamer.layers[GroundTileSet.LAYER_EDGE]
+	var shadows: TileMapLayer = world.streamer.layers[GroundTileSet.LAYER_SHADOW]
+	var brink := o + Vector2i(17, 2)          # unterste Felsreihe
+	_check(edges.get_cell_source_id(brink) != -1, "Fels bekommt eine Kantenkachel")
+	_check(shadows.get_cell_source_id(brink + Vector2i(0, 1)) != -1,
+		"Schlagschatten liegt unter der Klippe")
+	_check(shadows.get_cell_source_id(brink) == -1,
+		"Auf dem Fels selbst liegt kein Schatten")
+	var shore := o + Vector2i(9, 6)           # Sand direkt über dem Teich
+	_check(edges.get_cell_source_id(shore) != -1, "Land am Wasser bekommt eine Uferkante")
+	_check(edges.get_cell_source_id(o + Vector2i(9, 7)) != -1,
+		"Wasser am Ufer bekommt ein Tiefenband")
+
+	player.position = Vector2(o.x + 12.0, o.y + 4.0) * Config.TILE
 	player.velocity = Vector2.ZERO
 	world.camera.snap_to_target()
 	await _frames(6)

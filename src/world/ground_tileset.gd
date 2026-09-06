@@ -42,6 +42,18 @@ const NAMES := {
 ## Gebaute Flächen bekommen eckige Übergänge statt runder.
 const HARD := [MapData.Tile.PATH, MapData.Tile.COBBLE]
 
+## Fels und Wasser verlaufen überhaupt nicht: sie belegen genau ihre Blöcke.
+##
+## Das Eck-Autotiling legt die Geländegrenze auf das Eckraster — eine halbe
+## Kachel versetzt zum Blockraster. Für Wiese, Waldboden und Sand ist das
+## richtig, die sollen ineinander übergehen. Für eine Klippe und für eine
+## Uferlinie nicht: Wand, Uferband und Brandung sitzen am Block, der weiche
+## Auslauf aber darüber hinaus — die Brandung landete dadurch auf dem Sand
+## statt im Wasser. Diese beiden Übergänge machen die Kantenkacheln.
+##
+## Tiefwasser bleibt weich: dort geht es nicht um eine Kante, sondern um Tiefe.
+const SHARP := [MapData.Tile.ROCK, MapData.Tile.WATER]
+
 ## Gehört ein Bodentyp zu einer Schicht des Stapels?
 ##
 ## Diese Regel ist die einzige Wahrheit darüber, welche Schicht wo liegt —
@@ -83,6 +95,14 @@ var _full_count: int = 0               ## Vollkacheln je Bodentyp
 ## gewesen, hier sind es 81 Bytes.
 var _table := PackedByteArray()
 var _shade: FastNoiseLite               ## grossflaechige Bodenhelligkeit
+var edges: EdgeArt                      ## Klippen und Ufer
+var _sharp: Array[bool] = []            ## Schichten ohne weichen Übergang
+
+## Die Schichtenliste enthält hinter den neun Bodenschichten noch zwei:
+## die Kanten (Klippenwand, Uferband) und die Schlagschatten darunter.
+const LAYER_EDGE := 9
+const LAYER_SHADOW := 10
+const LAYER_COUNT := 11
 
 static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 	var g := GroundTileSet.new()
@@ -125,7 +145,10 @@ static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 		g._sources.append(sid)
 		g._slots.append(slots)
 
+	g.edges = EdgeArt.build(ts)
 	g._build_table()
+	for pos in STACK.size():
+		g._sharp.append(SHARP.has(STACK[pos]))
 	g._shade = FastNoiseLite.new()
 	g._shade.seed = seed_value + 809
 	g._shade.frequency = 0.030
@@ -289,6 +312,9 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 					layers[pos].erase_cell(cell)
 			else:
 				layers[pos].set_cell(cell, _sources[pos], full[pos])
+		if erase:
+			layers[LAYER_EDGE].erase_cell(cell)
+			layers[LAYER_SHADOW].erase_cell(cell)
 		return
 
 	var variant := -1
@@ -308,12 +334,67 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 			mask |= 4                                   # unten rechts
 		if _table[base + t3] != 0 and _table[base + t6] != 0 and _table[base + t7] != 0:
 			mask |= 8                                   # unten links
-		if mask == 15 or pos == 0:
+		if mask == 15 or pos == 0 or _sharp[pos]:
 			if variant < 0:
 				variant = variant_at(x, y)
 			layer.set_cell(cell, _sources[pos], _full(pos, variant))
 		else:
 			layer.set_cell(cell, _sources[pos], (_slots[pos] as Array[Vector2i])[mask])
+
+	_paint_edges(layers, cell, t1, t3, t4, t5, t7, erase)
+
+## Klippen und Ufer: alles, was Höhe zeigen soll.
+##
+## Der Schatten wird bewusst auf der Kachel UNTER der Wand gesetzt, aber von
+## dieser Kachel aus nach oben geschaut — sonst würde eine Kachel in den
+## Nachbarchunk schreiben, und beim Entladen bliebe der Schatten stehen.
+func _paint_edges(layers: Array[TileMapLayer], cell: Vector2i,
+		north: int, west: int, here: int, east: int, south: int, erase: bool) -> void:
+	var edge_layer := layers[LAYER_EDGE]
+	var shadow_layer := layers[LAYER_SHADOW]
+
+	var mask := 0
+	var slots: Array[Vector2i] = []
+	if here == MapData.Tile.ROCK:
+		# Klippe: gezählt wird, wo KEIN Fels liegt.
+		if north != here: mask |= EdgeArt.N
+		if east != here: mask |= EdgeArt.E
+		if south != here: mask |= EdgeArt.S
+		if west != here: mask |= EdgeArt.W
+		slots = edges.cliff
+	elif _is_water(here):
+		# Tiefenband: gezählt wird, wo Land liegt.
+		if not _is_water(north): mask |= EdgeArt.N
+		if not _is_water(east): mask |= EdgeArt.E
+		if not _is_water(south): mask |= EdgeArt.S
+		if not _is_water(west): mask |= EdgeArt.W
+		slots = edges.depth
+	else:
+		# Uferkante auf dem Land: gezählt wird, wo Wasser liegt.
+		if _is_water(north): mask |= EdgeArt.N
+		if _is_water(east): mask |= EdgeArt.E
+		if _is_water(south): mask |= EdgeArt.S
+		if _is_water(west): mask |= EdgeArt.W
+		slots = edges.bank
+
+	# Ausführung nach Position streuen: sonst wiederholt sich dieselbe Wand an
+	# jeder Kachel und die Klippe sieht gestempelt aus.
+	var v := posmod(cell.x * 7 + cell.y * 13, EdgeArt.VARIANTS)
+	if mask == 0:
+		if erase:
+			edge_layer.erase_cell(cell)
+	elif here == MapData.Tile.ROCK:
+		edge_layer.set_cell(cell, edges.source, slots[mask * EdgeArt.VARIANTS + v])
+	else:
+		edge_layer.set_cell(cell, edges.source, slots[mask])
+
+	if north == MapData.Tile.ROCK and here != MapData.Tile.ROCK:
+		shadow_layer.set_cell(cell, edges.source, edges.foot[v])
+	elif erase:
+		shadow_layer.erase_cell(cell)
+
+static func _is_water(t: int) -> bool:
+	return t == MapData.Tile.WATER or t == MapData.Tile.DEEP_WATER
 
 ## Die Vollkacheln aller Schichten für eine Kachel ohne abweichende Nachbarn.
 func _full_for(tile: int, x: int, y: int) -> Array:

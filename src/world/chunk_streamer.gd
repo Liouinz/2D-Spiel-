@@ -20,7 +20,9 @@ var ground: GroundTileSet
 var player: Node2D
 var decor_at: Callable          ## (x, y) -> Index einer Dekorationskachel oder -1
 
-var layers: Array[TileMapLayer] = []   ## die neun Bodenschichten
+## Neun Bodenschichten, danach Kanten und Schlagschatten
+## (siehe GroundTileSet.LAYER_EDGE / LAYER_SHADOW).
+var layers: Array[TileMapLayer] = []
 var decor: TileMapLayer
 var body: StaticBody2D                 ## Sammelknoten aller Kollisionsformen
 
@@ -38,13 +40,14 @@ func setup(m: MapData, g: GroundTileSet, p: Node2D) -> void:
 	player = p
 
 	for pos in GroundTileSet.STACK.size():
-		var layer := TileMapLayer.new()
-		layer.name = "L%d_%s" % [pos, GroundTileSet.NAMES[GroundTileSet.STACK[pos]]]
-		layer.z_index = -40 + pos
-		layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		layer.tile_set = g.tileset
-		add_child(layer)
-		layers.append(layer)
+		layers.append(_layer("L%d_%s" % [pos, GroundTileSet.NAMES[GroundTileSet.STACK[pos]]],
+			-40 + pos, g))
+
+	# Kanten und Schatten liegen über dem Boden, aber unter der Brandung:
+	# Klippenwände und Uferbänder gehören zum Untergrund, die Wellen darüber.
+	# Reihenfolge muss zu GroundTileSet.LAYER_EDGE / LAYER_SHADOW passen.
+	layers.append(_layer("Kanten", -20, g))
+	layers.append(_layer("Schatten", -21, g))
 
 	decor = TileMapLayer.new()
 	decor.name = "Decoration"
@@ -56,6 +59,15 @@ func setup(m: MapData, g: GroundTileSet, p: Node2D) -> void:
 	body = StaticBody2D.new()
 	body.name = "Collision"
 	add_child(body)
+
+func _layer(layer_name: String, z: int, g: GroundTileSet) -> TileMapLayer:
+	var layer := TileMapLayer.new()
+	layer.name = layer_name
+	layer.z_index = z
+	layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	layer.tile_set = g.tileset
+	add_child(layer)
+	return layer
 
 ## Baut sofort alles auf, was um die Figur herum liegen muss — ohne Budget,
 ## damit beim Betreten der Welt nichts fehlt.
