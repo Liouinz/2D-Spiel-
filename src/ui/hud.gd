@@ -10,6 +10,7 @@ var grid: GridOverlay
 
 var _label: Label
 var _blocks: Label
+var minimap: Control
 var _time: float = 0.0
 
 func _ready() -> void:
@@ -28,6 +29,12 @@ func _ready() -> void:
 		_blocks.offset_right = 900
 		_blocks.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		root.add_child(_blocks)
+
+	# Minimap: zeigt das Gebaute auch dann, wenn das Raster aus ist.
+	if Config.EMPTY_WORLD:
+		minimap = preload("res://src/ui/minimap.gd").new()
+		minimap.name = "Minimap"
+		root.add_child(minimap)
 
 	if Settings.show_hints:
 		_label = _make_label(17)

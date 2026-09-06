@@ -16,6 +16,7 @@ var bar: CanvasLayer            ## BuildBar
 var grid: GridOverlay
 var camera: GameCamera
 var water: WaterFx              ## Brandung neu berechnen, wenn Wasser entsteht
+var minimap: Control            ## sofort nachziehen statt erst beim nächsten Takt
 
 var _last: Vector2i = Vector2i(-9999, -9999)
 
@@ -81,6 +82,8 @@ func place(cell: Vector2i, tile: int) -> void:
 	streamer.refresh_cell(cell)
 	if is_instance_valid(water):
 		water.refresh(cell)
+	if is_instance_valid(minimap):
+		minimap.refresh()
 	Audio.play_step()
 
 ## Sichert die gebaute Karte von Hand (F5). Automatisch passiert das ausserdem

@@ -10,13 +10,18 @@ enum Dir { DOWN, UP, SIDE }
 
 const W := 32
 const H := 48
+## Wie tief die Figur beim Schwimmen einsinkt. player.gd verschiebt das Bild
+## um denselben Wert nach unten, damit der Kopf an seiner Stelle bleibt.
+const SWIM_SINK := 16
+
 const EYE := Color8(46, 40, 52)
 const EYE_WHITE := Color8(236, 232, 226)
 
-## -> {"idle": [dir][2] Texture, "walk": [dir][4] Texture, "shadow": Texture}
+## -> {"idle": [dir][2], "walk": [dir][4], "swim": [dir][2], "shadow": Texture}
 static func build() -> Dictionary:
 	var idle: Array = []
 	var walk: Array = []
+	var swim: Array = []
 	for dir in 3:
 		var i_frames: Array[Texture2D] = []
 		i_frames.append(Pixel.tex(_frame(dir, 0, 0, 0)))
@@ -27,7 +32,43 @@ static func build() -> Dictionary:
 		for f in 4:
 			w_frames.append(Pixel.tex(_frame(dir, phases[f], 1 if f % 2 == 1 else 0, phases[f])))
 		walk.append(w_frames)
-	return {"idle": idle, "walk": walk, "shadow": Pixel.tex(_shadow())}
+		var s_frames: Array[Texture2D] = []
+		s_frames.append(Pixel.tex(_swim_frame(dir, 0)))
+		s_frames.append(Pixel.tex(_swim_frame(dir, 1)))
+		swim.append(s_frames)
+	return {"idle": idle, "walk": walk, "swim": swim, "shadow": Pixel.tex(_shadow())}
+
+## Schwimmbild: dasselbe Laufbild, aber unterhalb der Wasserlinie abgeschnitten
+## und darunter ein paar Wellen.
+##
+## Abschneiden statt einer eigenen Figur: so bleibt sie in jeder Blickrichtung
+## dieselbe Person, und die Wasserlinie sitzt garantiert an derselben Stelle
+## wie der Versatz, mit dem player.gd die Figur einsinken lässt.
+static func _swim_frame(dir: int, phase: int) -> Image:
+	var img := _frame(dir, 0, phase, 1 if phase == 0 else -1)
+	var line := H - SWIM_SINK
+	# Alles unter der Wasserlinie verschwindet.
+	for y in range(line, H):
+		for x in W:
+			img.set_pixel(x, y, Color(0, 0, 0, 0))
+	# Wellenkragen: drei Reihen, die zu den Seiten hin auslaufen. Er ist
+	# breiter als die Figur, sonst sieht sie aus wie in ein Loch gesteckt.
+	for i in 3:
+		var y := line - 2 + i
+		if y < 0 or y >= H:
+			continue
+		for x in range(2, W - 2):
+			# Zu den Rändern hin ausdünnen — eine durchgezogene Linie sähe aus
+			# wie ein Brett.
+			var edge := minf(float(x - 2), float(W - 3 - x)) / 6.0
+			if (x * 7 + i * 11 + phase * 5) % 5 == 0 and edge < 1.0:
+				continue
+			if edge < 0.35:
+				continue
+			var c := Palette.WATER_FOAM if i == 1 else Palette.WATER_LIGHT
+			var a := (0.90 if i == 1 else 0.55) * minf(edge, 1.0)
+			img.set_pixel(x, y, Color(c, a))
+	return img
 
 static func _shadow() -> Image:
 	var img := Pixel.make(30, 14)

@@ -56,6 +56,10 @@ const PLAYER_HITBOX := Vector2(18, 12)  ## Fußkollision (halbe Größe)
 const JUMP_TIME := 0.45               ## Dauer eines Sprungs in Sekunden
 const JUMP_HEIGHT := 14.0             ## Scheitelhöhe in Bildpunkten
 
+## Schwimmen. Im flachen Wasser kommt man durch, aber langsamer als an Land —
+## rund 55 % der Gehgeschwindigkeit. Gerannt und gesprungen wird nicht.
+const SWIM_SPEED := 68.0
+
 ## Halber Zoom bei doppelter Kachelgröße = unverändertes Sichtfeld,
 ## aber doppelt so feine Grafik.
 const CAMERA_ZOOM := 1.5

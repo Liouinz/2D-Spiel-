@@ -14,6 +14,12 @@ var _anim_time: float = 0.0
 var _step_accum: float = 0.0
 var _was_moving: bool = false
 var _jump_time: float = -1.0   ## < 0 = am Boden, sonst Fortschritt in Sekunden
+var _swimming: bool = false
+var map: MapData               ## um zu wissen, worauf die Figur steht
+
+## Schwimmt die Figur gerade?
+func is_swimming() -> bool:
+	return _swimming
 
 ## Ist die Figur gerade in der Luft? Der Selbsttest fragt das ab.
 func is_jumping() -> bool:
@@ -58,8 +64,13 @@ func _physics_process(delta: float) -> void:
 	if input.length() > 1.0:
 		input = input.normalized()
 
-	var running := Input.is_action_pressed("run")
-	var top_speed := Config.PLAYER_RUN_SPEED if running else Config.PLAYER_SPEED
+	_update_swimming()
+	var running := Input.is_action_pressed("run") and not _swimming
+	var top_speed := Config.PLAYER_SPEED
+	if _swimming:
+		top_speed = Config.SWIM_SPEED
+	elif running:
+		top_speed = Config.PLAYER_RUN_SPEED
 	if input == Vector2.ZERO:
 		velocity = velocity.move_toward(Vector2.ZERO, Config.PLAYER_FRICTION * delta)
 	else:
@@ -76,9 +87,27 @@ func _physics_process(delta: float) -> void:
 	_update_sprite(velocity.length())
 	_footsteps(delta, moving, top_speed)
 
+## Im flachen Wasser wird geschwommen: langsamer, ohne Rennen und Springen.
+## Tiefwasser bleibt eine Wand, dorthin kommt man gar nicht erst.
+func _update_swimming() -> void:
+	if map == null:
+		return
+	var b := GridOverlay.block_at(global_position)
+	var wet := map.is_swimmable(b.x, b.y)
+	if wet == _swimming:
+		return
+	_swimming = wet
+	if wet:
+		_jump_time = -1.0
+		Audio.play_ui("splash")
+	else:
+		Audio.play_ui("surface")
+
 ## Der Sprung verschiebt nur die Grafik. Position und Kollision bleiben am
 ## Boden, damit sich niemand über Wände oder Wasser hinwegsetzen kann.
 func _jump(delta: float) -> void:
+	if _swimming:
+		return
 	if _jump_time < 0.0:
 		if Input.is_action_just_pressed("jump"):
 			_jump_time = 0.0
@@ -101,13 +130,22 @@ func _face(input: Vector2) -> void:
 
 func _update_sprite(speed: float) -> void:
 	var moving := speed > 6.0
-	var set_name := "walk" if moving else "idle"
+	var set_name := "swim" if _swimming else ("walk" if moving else "idle")
 	var frames: Array = _frames[set_name][_dir]
 	var idx := int(_anim_time) % frames.size()
 	_sprite.texture = frames[idx]
 	_sprite.flip_h = _flip
 	# Beim Spiegeln muss der Versatz mitgespiegelt werden
 	_sprite.offset.x = -ActorArt.W * 0.5
+
+	# Schwimmen: das Bild ist an der Wasserlinie abgeschnitten, also muss es um
+	# denselben Betrag nach unten, damit der Kopf an seiner Stelle bleibt. Der
+	# Bodenschatten fällt weg — im Wasser gibt es keinen.
+	if _swimming:
+		_sprite.offset.y = -ActorArt.H + ActorArt.SWIM_SINK
+		_shadow.visible = false
+		return
+	_shadow.visible = true
 
 	# Sprung: Figur hoch, Schatten bleibt liegen und wird kleiner und blasser.
 	var lift := jump_height()
@@ -121,6 +159,14 @@ func _update_sprite(speed: float) -> void:
 		_shadow.modulate.a = 1.0
 
 func _footsteps(delta: float, moving: bool, top_speed: float) -> void:
+	if _swimming:
+		# Schwimmen klingt nicht nach Schritten, aber auch nicht nach nichts.
+		_step_accum += delta
+		if _step_accum >= 0.55:
+			_step_accum = 0.0
+			if moving:
+				Audio.play_step()
+		return
 	if not moving:
 		_step_accum = 0.35
 		return

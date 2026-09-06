@@ -79,6 +79,10 @@ func _run() -> void:
 	_check(player != null, "Spieler existiert")
 	_check(main.state == main.State.PLAYING, "Zustand PLAYING")
 	_check(not get_tree().paused, "Baum läuft")
+	# Beim Betreten der Welt fallen einmalig Shader-Übersetzung und
+	# Texturuploads an — im ersten Messfenster waren das 849 ms, im zweiten
+	# schon 2,5. Deshalb wird erst gemessen, wenn das durch ist.
+	await _frames(30)
 
 	# --- Karte ---
 	# Bei 4,2 Millionen Kacheln wird nicht mehr die ganze Karte gezählt,
@@ -204,7 +208,20 @@ func _run() -> void:
 	if beach != Vector2i(-1, -1):
 		player.position = Vector2(beach.x * Config.TILE, beach.y * Config.TILE)
 		cam.snap_to_target()
-	await _frames(30)                      # aufwärmen
+	# Aufwärmen. Gemessen wurde: das allererste Messfenster nach dem Betreten
+	# der Welt lag bei 849 ms, das zweite schon bei 2,5 — Shader-Übersetzung
+	# und Texturuploads, kein Dauerzustand. Auch nach einem weiten Sprung im
+	# Gelände fällt das noch einmal an, deshalb hier grosszügig.
+	await _frames(90)
+
+	# Zwei Messungen: im Stand und im Lauf. Im Lauf kommt das Nachladen der
+	# Chunks dazu — das ist der interessante Fall, aber getrennt zu sehen.
+	var t_still := 0.0
+	for i in 30:
+		await get_tree().physics_frame
+		t_still += Performance.get_monitor(Performance.TIME_PROCESS)
+	var ms_still := t_still / 30.0 * 1000.0
+
 	var t_process := 0.0
 	var t_physics := 0.0
 	var draws := 0.0
@@ -218,8 +235,8 @@ func _run() -> void:
 	Input.action_release("move_right")
 	var ms_process := t_process / runs * 1000.0
 	var ms_physics := t_physics / runs * 1000.0
-	print("Leistung: process %.2f ms, physics %.2f ms, Draw-Calls %d, Objekte %d" % [
-		ms_process, ms_physics, int(draws / runs), world.get_node("Sorted").get_child_count()])
+	print("Leistung nach dem Aufwärmen: Stand %.2f ms, Lauf mit Chunk-Laden %.2f ms, physics %.2f ms, Draw-Calls %d" % [
+		ms_still, ms_process, ms_physics, int(draws / runs)])
 	# Gemessen wird auf einem Software-Rasterizer (Xvfb/llvmpipe). Die Prozesszeit
 	# hängt dort an der Füllrate und schwankt zwischen Läufen um mehr als das
 	# Doppelte — sie wird berichtet, aber nicht bewertet. Geprüft wird, was
@@ -227,9 +244,28 @@ func _run() -> void:
 	# Wasserlast und die Bündelung der Zeichenaufrufe. Bricht das Batching der
 	# Kachelschichten, fällt es dort sofort auf.
 	print("Aufschlag der Spielwelt gegenüber dem Menü: %.2f ms (Software-Rasterizer, nur Bericht)"
-		% (ms_process - ms_menu))
+		% (ms_still - ms_menu))
 	var avg_draws := int(draws / runs)
 	_check(avg_draws < 120, "Zeichenaufrufe bleiben gebündelt (%d)" % avg_draws)
+
+	# Renderunabhängige Kennzahlen: die Prozesszeit misst hier ein
+	# Software-Rasterizer und taugt nur zum Bericht, nicht zum Prüfen.
+	var mm: Control = world.hud.minimap
+	if mm != null:
+		var t0 := Time.get_ticks_usec()
+		for i in 60:
+			mm.refresh()
+		var ms_mini := (Time.get_ticks_usec() - t0) / 60000.0
+		print("Minimap: %.2f ms je Aufbau" % ms_mini)
+		_check(ms_mini < 6.0, "Minimap baut sich zügig auf (%.2f ms)" % ms_mini)
+	var st2: ChunkStreamer = world.streamer
+	var probe := GridOverlay.chunk_of(GridOverlay.block_at(player.global_position)) + Vector2i(3, 0)
+	var t2 := Time.get_ticks_usec()
+	for i in 10:
+		st2.ground.paint_chunk(st2.layers, map, probe)
+	var ms_chunk := (Time.get_ticks_usec() - t2) / 10000.0
+	print("Chunk malen: %.2f ms" % ms_chunk)
+	_check(ms_chunk < 8.0, "Ein Chunk ist schnell gemalt (%.2f ms)" % ms_chunk)
 	var water: WaterFx = world.get_node("WaterFx")
 	print("Wasser-Effekt: %d Rechtecke im letzten Bild" % water.prims)
 	_check(water.prims < 900, "Wasser zeichnet sparsam (%d Rechtecke)" % water.prims)
@@ -365,26 +401,63 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 	await _frames(2)
 	_check(path_layer.get_cell_source_id(origin) == -1, "Zurückgesetzter Block ist wieder leer")
 
-	# Wasser blockiert und bekommt eine eigene Kollisionsform.
+	# Flaches Wasser lässt sich durchschwimmen, Tiefwasser nicht.
 	var wet := home + Vector2i(6, -6)
-	var before_shapes := tool.shape_count()
 	tool.place(wet, MapData.Tile.WATER)
 	await _frames(2)
-	_check(map.is_solid(wet.x, wet.y) and tool.shape_count() > before_shapes,
-		"Gesetztes Wasser blockiert")
+	_check(not map.is_solid(wet.x, wet.y) and map.is_swimmable(wet.x, wet.y),
+		"Gesetztes Wasser ist schwimmbar")
 	player.position = Vector2(wet.x + 0.5, wet.y - 1.5) * Config.TILE
 	player.velocity = Vector2.ZERO
 	await _frames(3)
-	await _drive("move_down", 70)
+	_check(not player.is_swimming(), "An Land wird nicht geschwommen")
+	# Bis ins Wasser laufen und dort anhalten: eine feste Bilderzahl liefe
+	# einfach durch den Teich hindurch.
+	Input.action_press("move_down")
+	var reached := false
+	for i in 90:
+		await get_tree().physics_frame
+		if player.is_swimming():
+			reached = true
+			break
+	Input.action_release("move_down")
+	await _frames(4)
 	var stand := GridOverlay.block_at(player.global_position)
-	_check(not map.is_solid(stand.x, stand.y), "Spieler läuft nicht ins gesetzte Wasser")
-	tool.place(wet, MapData.Tile.GRASS)
+	_check(reached and player.is_swimming(),
+		"Figur schwimmt im gesetzten Wasser (Block %d|%d)" % [stand.x, stand.y])
+	_check(player.velocity.length() <= Config.SWIM_SPEED + 1.0,
+		"Im Wasser höchstens Schwimmgeschwindigkeit (%.0f)" % player.velocity.length())
+	await _drive("move_up", 70)
+	_check(not player.is_swimming(), "Nach dem Verlassen wird wieder gelaufen")
+
+	# Tiefwasser bleibt eine Wand.
+	var deep := home + Vector2i(8, -6)
+	tool.place(deep, MapData.Tile.DEEP_WATER)
 	await _frames(2)
-	_check(not map.is_solid(wet.x, wet.y), "Wasser entfernt, Kollision weg")
+	_check(map.is_solid(deep.x, deep.y) and tool.shape_count() > 0,
+		"Tiefwasser blockiert (%d Formen)" % tool.shape_count())
+	tool.place(wet, MapData.Tile.GRASS)
+	tool.place(deep, MapData.Tile.GRASS)
+	await _frames(2)
+	_check(not map.is_solid(deep.x, deep.y), "Tiefwasser entfernt, Kollision weg")
 
 	# Ein kleines Stück Dorf bauen — als Bildbeleg und als Belastungsprobe für
 	# die Übergänge zwischen vier verschiedenen Bodentypen auf engem Raum.
 	await _build_demo(tool, world, player)
+
+	# Minimap zeigt, was unter der Figur liegt.
+	var mini: Control = world.hud.minimap
+	_check(mini != null, "Minimap vorhanden")
+	if mini != null:
+		mini.refresh()
+		await _frames(2)
+		var under := map.get_tile(int(player.position.x) / Config.TILE, int(player.position.y) / Config.TILE)
+		var img: Image = mini._img
+		_check(img.get_width() > 0 and img.get_height() > 0,
+			"Minimap-Bild ist %d × %d" % [img.get_width(), img.get_height()])
+		var center_px := img.get_pixel(img.get_width() / 2, img.get_height() / 2)
+		_check(center_px.is_equal_approx(mini.color_of(under)),
+			"Mittelpunkt der Minimap zeigt den Boden unter der Figur")
 
 	# Speichern und Laden ergibt dieselbe Karte.
 	_check(tool.save(), "Karte gespeichert")
@@ -423,7 +496,7 @@ func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
 		for x in range(8, 12):
 			tool.place(o + Vector2i(x, y), MapData.Tile.WATER)
 	await _frames(2)
-	_check(tool.map.is_solid(o.x + 9, o.y + 8), "Teich blockiert")
+	_check(tool.map.is_swimmable(o.x + 9, o.y + 8), "Teich ist schwimmbar")
 
 	# Klippe: Wandkachel auf dem Fels, Schlagschatten auf der Kachel darunter
 	var edges: TileMapLayer = world.streamer.layers[GroundTileSet.LAYER_EDGE]
@@ -445,10 +518,28 @@ func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
 	await _frames(6)
 	await _shot("07_bauen")
 
+	# Schwimmbild: Figur mitten in den Teich setzen. Der Bauzeiger liegt in
+	# der Bildmitte und verdeckte sie sonst.
+	player.position = Vector2(o.x + 9.5, o.y + 8.5) * Config.TILE
+	player.velocity = Vector2.ZERO
+	world.camera.snap_to_target()
+	tool.set_process(false)
+	world.grid.cursor_block = Vector2i(-1, -1)
+	await _frames(8)
+	_check(player.is_swimming(), "Figur schwimmt im Teich")
+	await _shot("08_schwimmen")
+	tool.set_process(true)
+	player.position = Vector2(o.x + 12.0, o.y + 4.0) * Config.TILE
+	player.velocity = Vector2.ZERO
+	await _frames(4)
+
 ## Chunk-Laden: die Welt kommt und geht um die Figur herum.
 func _check_streaming(world: Node2D, player: Player) -> void:
 	var st: ChunkStreamer = world.streamer
 	var want := (2 * Config.LOAD_RADIUS + 1) * (2 * Config.LOAD_RADIUS + 1)
+	# Das Nachladen ist auf zwei Chunks je Bild begrenzt: nach den Fahrten
+	# oben können noch welche in der Warteschlange stehen.
+	await _frames(20)
 	var here := GridOverlay.chunk_of(GridOverlay.block_at(player.global_position))
 	_check(st.is_loaded(here), "Chunk unter der Figur ist geladen")
 	var cells := st.layers[0].get_used_cells().size()

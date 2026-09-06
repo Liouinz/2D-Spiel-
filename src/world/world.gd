@@ -28,6 +28,7 @@ func _ready() -> void:
 	# herum, also braucht er ihre Position, bevor die erste Kachel fällt.
 	player = Player.new()
 	player.name = "Player"
+	player.map = map
 	var spawn := map.find_free_near(Config.spawn_block())
 	player.position = Vector2(spawn.x + 0.5, spawn.y + 0.5) * Config.TILE
 
@@ -114,6 +115,9 @@ func _ready() -> void:
 	hud.player = player
 	hud.grid = grid
 	add_child(hud)
+	if is_instance_valid(hud.minimap):
+		hud.minimap.map = map
+		hud.minimap.player = player
 
 	# Bau-Leiste: nur im Aufbaumodus. Auf der fertigen Insel würde ein Klick
 	# sonst Wege und Küste zerlegen.
@@ -130,6 +134,7 @@ func _ready() -> void:
 		build_tool.grid = grid
 		build_tool.camera = camera
 		build_tool.water = water
+		build_tool.minimap = hud.minimap
 		add_child(build_tool)
 		build_bar.slot_clicked.connect(func(i: int) -> void:
 			build_bar.select(i)

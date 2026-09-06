@@ -234,6 +234,63 @@ mitgespeichert. Passen Fassung oder Maße nicht, wird die Datei übergangen stat
 zu stürzen. Der Selbsttest legt eine vorhandene Karte vorher beiseite und
 schreibt sie danach zurück — ein Testlauf darf niemandem seine Arbeit löschen.
 
+## Nachtrag: grosse Welt, Klippen, Ufer, Schwimmen
+
+**Die Bauvorschau hing am Raster.** `GridOverlay` setzte beim Umschalten
+`visible = false`; damit lief `_draw()` gar nicht mehr und der Zeigerkasten
+verschwand mit. Jetzt schaltet **G** ein eigenes Feld `show_grid`, das nur die
+Linien betrifft. Die Vorschau zeichnet zusätzlich die gewählte Bodenkachel
+halbdurchsichtig in den Block.
+
+**128 × 128 Chunks = 4,2 Millionen Kacheln.** Godot hat für TileMaps kein
+eingebautes Chunk-Laden (Issue #72458, „not planned"), also `ChunkStreamer`:
+5 × 5 Chunks um die Figur, höchstens zwei Ladevorgänge je Bild, Kacheln und
+Kollisionsformen werden beim Entladen freigegeben. Die Karte selbst bleibt
+vollständig im Speicher (4,2 MB) — sonst stimmten die Eckmasken an den Grenzen
+zu ungeladenen Chunks nicht.
+
+**Sechs ganzseitige Datenfelder mussten weg**, zusammen rund 66 MB: die
+Begehbarkeit (wird gerechnet), die Helligkeitsvarianten, die Dekorationskarte,
+die Ufermaske und neun Zugehörigkeitsraster (ersetzt durch eine
+Nachschlagtabelle von 2304 Bytes). Die Dekoration entscheidet jetzt ein
+Streuwert aus den Koordinaten statt ein fortlaufender Zufallsgenerator — sonst
+sähe dieselbe Kachel je nach Ladereihenfolge anders aus.
+
+**Der Kachelaufbau ging von 5,9 auf 2,2 ms je Chunk.** Drei Sachen: die 3 × 3-
+Nachbarschaft wird direkt im Puffer gelesen statt über neun Funktionsaufrufe,
+ein frisch geladener Chunk braucht kein Löschen, und Kacheln ohne abweichende
+Nachbarn überspringen die Eckrechnung ganz. Damit die direkte Pufferlesung auch
+bei einer beschädigten Speicherdatei sicher bleibt, ist die Nachschlagtabelle
+über den ganzen Bytebereich aufgespannt statt nur über die bekannten Bodentypen.
+
+**Klippen und Ufer.** Recherchiert bei Slynyrd („Top Down Tiles"): Höhe entsteht
+durch eine Wandfläche nach unten plus einen Schlagschatten, der *immer gleich
+lang* ist, egal wie hoch die Wand ist. `EdgeArt` baut drei Kachelsätze über eine
+4-Bit-Nachbarmaske, dazu zwei Schichten (Kanten, Schatten). Die Wand läuft über
+die Blockkante: 16 px auf der Felskachel, 7 px auf der Kachel darunter, danach
+10 px Schatten. Drei Ausführungen je Maske, nach Position gestreut — mit einer
+wiederholte sich dieselbe Wand an jeder Kachel.
+
+**Fels und flaches Wasser verlaufen nicht mehr.** Das Eck-Autotiling legt die
+Geländegrenze auf das Eckraster, eine halbe Kachel versetzt zum Blockraster.
+Für Wiese, Waldboden und Sand ist das richtig. Für Klippe und Uferlinie nicht:
+Wand, Uferband und Brandung sassen am Block, der weiche Auslauf aber darüber
+hinaus — die Brandung landete auf dem Sand statt im Wasser. Diese beiden
+Bodentypen belegen jetzt genau ihre Blöcke, den Übergang machen die
+Kantenkacheln. Tiefwasser bleibt weich, dort geht es um Tiefe statt um eine
+Kante.
+
+**Schwimmen.** Flaches Wasser hält nicht mehr auf, Tiefwasser schon — die
+Trennung gab es im Bodentyp bereits. Das Schwimmbild ist das Laufbild, an der
+Wasserlinie abgeschnitten, mit einem Wellenkragen darunter; `player.gd`
+verschiebt das Bild um denselben Betrag nach unten, damit der Kopf an seiner
+Stelle bleibt. Dadurch bleibt die Figur in jeder Blickrichtung dieselbe Person,
+ohne acht neue Bilder von Hand.
+
+**Speichern in Fassung 2.** 4,2 MB roh, mit Zstd auf wenige Kilobyte. Eine Karte
+anderer Grösse wird mittig in die neue übernommen statt verworfen — eine
+gewachsene Welt darf niemandem seine Arbeit kosten.
+
 ## Lizenzlage
 
 Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest

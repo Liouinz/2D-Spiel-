@@ -50,14 +50,19 @@ Raster ist das technische Skelett der Welt und im fertigen Spiel unsichtbar —
 hier wird es absichtlich in Rot gezeigt, damit sich planen lässt, wie viele
 Blöcke ein Objekt belegt.
 
-- **Ein Block = 32 × 32 Pixel.** Die Karte ist 96 × 80 Blöcke groß.
-- **Ein Chunk = 16 × 16 Blöcke** (512 px). Die Karte geht damit in genau
-  **6 × 5 = 30 vollständige Chunks** auf. Die Chunk-Grenzen sind gelb und tragen
-  ihre Nummer in der oberen linken Ecke.
+- **Ein Block = 32 × 32 Pixel.** Die Karte ist **2048 × 2048 Blöcke** groß —
+  65 536 × 65 536 Pixel. Einmal quer durchzulaufen dauert rennend rund vier
+  Minuten.
+- **Ein Chunk = 16 × 16 Blöcke** (512 px), also **128 × 128 = 16 384 Chunks**.
+  Die Chunk-Grenzen sind gelb und tragen ihre Nummer in der oberen linken Ecke.
+- Geladen sind immer nur **5 × 5 Chunks um die Figur**; beim Laufen kommen neue
+  dazu und alte fallen weg. Ohne das wäre die Karte nicht darstellbar.
 - Der Block unter der Figur ist hervorgehoben.
-- Die orange Umrandung ist die unsichtbare Wand am Kartenrand.
 - Oben links steht Chunk, Block und Position innerhalb des Chunks.
-- **G** schaltet das Raster ein und aus.
+- Oben rechts eine **Minimap** mit vier Chunks Umgebung.
+- **G** schaltet nur die **Rasterlinien** um. Die Bauvorschau unter dem Zeiger
+  bleibt immer sichtbar — sie zeigt die gewählte Kachel halbdurchsichtig im
+  Block, damit man sieht, *wohin* und *was* man setzt.
 
 Zum Größenvergleich: ein kleines Wohnhaus ist 92 px breit, belegt also rund
 3 Blöcke in der Breite und 3 in der Höhe; die Scheune 5 × 3 Blöcke.
@@ -67,15 +72,22 @@ Zum Größenvergleich: ein kleines Wohnhaus ist 92 px breit, belegt also rund
 Unten steht eine Leiste mit acht Bodentypen. Jedes Feld zeigt die echte
 Bodenkachel, nicht ein Ersatzsymbol.
 
-- **1 – 8** oder **Mausrad** wählt den Bodentyp.
+- **1 – 8**, **Mausrad** oder ein **Klick auf das Feld** wählt den Bodentyp.
 - **Linke Maustaste** setzt ihn auf den Block unter dem Zeiger, **rechte
   Maustaste** setzt zurück auf Gras. Gedrückt halten malt.
 - Der Block unter dem Zeiger ist weiß umrandet.
-- Gesetztes **Wasser blockiert** und bekommt Brandung an den Ufern.
+- Gesetztes **Wasser lässt sich durchschwimmen** — die Figur sinkt ein, wird
+  langsamer und bekommt einen Wellenkragen. **Tiefwasser** bleibt eine Wand.
+- **Fels** sieht aus wie eine Klippe: Wandfläche nach unten, Lichtkante oben,
+  Schlagschatten darunter. Begehbar bleibt er trotzdem.
 - Die Übergänge zu den Nachbarn werden sofort mitgerechnet — ein gesetzter Weg
   bekommt saubere Kanten, ganz ohne Nacharbeit.
 
 ![Bauen mit der Leiste](docs/bilder/bauen.png)
+
+Klippe mit Wand und Schlagschatten, Teich mit Uferkante, Minimap oben rechts.
+
+![Schwimmen](docs/bilder/schwimmen.png)
 
 Die gebaute Karte wird **beim Zurückgehen ins Hauptmenü und beim Beenden
 automatisch gesichert**, mit **F5** auch von Hand. Sie liegt in
@@ -97,8 +109,8 @@ kommt mit `false` unverändert zurück.
 | Eingabe | Aktion |
 |---|---|
 | **W A S D** oder **Pfeiltasten** | Laufen |
-| **Shift** | Rennen |
-| **Leertaste** | Springen |
+| **Shift** | Rennen (nicht im Wasser) |
+| **Leertaste** | Springen (nicht im Wasser) |
 | **G** | Blockraster ein / aus |
 | **1 – 8** / **Mausrad** | Bodentyp wählen (Aufbaumodus) |
 | **Linke Maustaste** | Block setzen (Aufbaumodus) |
@@ -109,7 +121,7 @@ kommt mit `false` unverändert zurück.
 
 ## Was drin ist
 
-**Welt** — Eine Insel aus 96 × 80 Kacheln mit klar erkennbaren Gebieten: ein Dorf mit
+**Welt** — Eine Insel aus 96 × 80 Kacheln (der Aufbaumodus ist 2048 × 2048) mit klar erkennbaren Gebieten: ein Dorf mit
 gepflastertem Platz, Brunnen und elf Gebäuden, dichter Misch­wald im Nordwesten, blühende Wiese im
 Nordosten, Felsland im Osten und eine Bucht mit Sandstrand im Südwesten. Getretene Erdwege
 verbinden alles miteinander.
@@ -203,7 +215,10 @@ src/ui/pause_menu.gd       Pause-Menü
 src/ui/options_menu.gd     Optionen
 src/ui/hud.gd              Steuerungshinweis, Chunk- und Blockanzeige
 src/ui/build_bar.gd        Bau-Leiste mit acht Bodentypen
-src/world/build_tool.gd    Blöcke setzen, Wasserkollision, Speichern
+src/ui/minimap.gd          Übersichtskarte oben rechts
+src/world/build_tool.gd    Blöcke setzen, Speichern
+src/world/chunk_streamer.gd  Lädt und entlädt Chunks um die Figur
+src/gfx/edge_art.gd        Klippenwände, Schlagschatten, Uferkanten
 src/ui/cloud_layer.gd      Ziehende Wolken im Hauptmenü
 
 src/audio/audio.gd         Autoload: prozedurale Musik und Effekte
@@ -223,8 +238,10 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 53 Prüfungen; im Aufbaumodus
-Weltaufbau ~340 ms, auf der Insel ~1,5 s mit 616 Objekten und 572 Kollisionsformen). Eine der Prüfungen durchsucht das
+Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 78 Prüfungen; im Aufbaumodus
+Weltaufbau ~550 ms bei 2048 × 2048 Blöcken, auf der Insel ~1,5 s mit 616 Objekten).
+Ein Chunk ist in 1,5 ms gemalt, die Minimap in 1,1 ms, die Physik braucht 0,3 ms je
+Bild und der Boden kommt mit 72 Zeichenaufrufen aus. Eine der Prüfungen durchsucht das
 Projekt nach fremden Asset-Dateien und schlägt fehl, sobald eine auftaucht — siehe
 [`CREDITS.md`](CREDITS.md). Mit einer echten Anzeige
 lassen sich zusätzlich Screenshots und ein Kontaktbogen aller erzeugten Grafiken ablegen:

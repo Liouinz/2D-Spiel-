@@ -36,14 +36,21 @@ func is_water(x: int, y: int) -> bool:
 ##
 ## Früher lag daneben ein zweites ganzseitiges Feld; bei 2048 x 2048 Blöcken
 ## wären das 4,2 MB gewesen, die nach jedem gesetzten Block hätten nachgeführt
-## werden müssen. Die Regel ist ohnehin kurz: der Weltrand und Wasser halten
-## auf, alles andere nicht.
+## werden müssen. Die Regel ist ohnehin kurz.
+##
+## FLACHES Wasser hält nicht mehr auf — dort wird geschwommen. Tiefwasser
+## schon: das ist die Grenze, hinter der es nicht weitergeht, und im Inselmodus
+## umschließt es die ganze Insel.
 func is_solid(x: int, y: int) -> bool:
 	if not in_bounds(x, y):
 		return true
 	if x == 0 or y == 0 or x == Config.MAP_W - 1 or y == Config.MAP_H - 1:
 		return true
-	return is_water(x, y)
+	return get_tile(x, y) == Tile.DEEP_WATER
+
+## Kann hier geschwommen werden?
+func is_swimmable(x: int, y: int) -> bool:
+	return in_bounds(x, y) and get_tile(x, y) == Tile.WATER
 
 ## Baut die Karte auf. Im Aufbaumodus entsteht eine leere Fläche, sonst die
 ## komplette Insel.

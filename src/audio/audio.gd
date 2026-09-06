@@ -23,6 +23,10 @@ func _ready() -> void:
 	# Absprung steigt, Landung fällt und endet auf einem dumpfen Aufsetzer.
 	_sfx["jump"] = _sequence([[392.0, 0.05], [523.0, 0.06], [659.0, 0.07]], 0.26)
 	_sfx["land"] = _sequence([[330.0, 0.05], [196.0, 0.09]], 0.24)
+	# Eintauchen: kurzer Rauschstoss. Auftauchen: derselbe Stoss, aber heller
+	# und mit einem Ton darüber, damit sich beides unterscheidet.
+	_sfx["splash"] = _noise(0.22, 0.30)
+	_sfx["surface"] = _sequence([[294.0, 0.06], [392.0, 0.10]], 0.20)
 	for i in VOICES:
 		var p := AudioStreamPlayer.new()
 		p.process_mode = Node.PROCESS_MODE_ALWAYS

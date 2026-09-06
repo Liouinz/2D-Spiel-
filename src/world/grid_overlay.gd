@@ -30,13 +30,30 @@ var cursor_tex: Texture2D                 ## gewählte Bodenkachel als Geistbild
 func _init() -> void:
 	z_index = 500          ## über allem, auch über Bäumen
 
+var _last_view := Rect2(Vector2.INF, Vector2.ZERO)
+var _last_cursor := Vector2i(-2, -2)
+var _last_player := Vector2i(-9999, -9999)
+
+## Nur neu zeichnen, wenn sich wirklich etwas geändert hat.
+##
+## Vorher lief `_draw()` jedes Bild: rund 45 Linien, der Weltrand und bis zu
+## sechs Chunk-Nummern über den Textserver. Beim Stillstehen ist das reine
+## Arbeit für nichts, und auf einem schwachen Rechner fällt sie auf.
 func _process(_delta: float) -> void:
+	var view := camera.visible_world_rect() if is_instance_valid(camera) else Rect2()
+	var pb := block_at(player.global_position) if is_instance_valid(player) else Vector2i.ZERO
+	if view == _last_view and cursor_block == _last_cursor and pb == _last_player:
+		return
+	_last_view = view
+	_last_cursor = cursor_block
+	_last_player = pb
 	queue_redraw()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_action_pressed("toggle_grid"):
 		return
 	show_grid = not show_grid
+	_last_view = Rect2(Vector2.INF, Vector2.ZERO)   # erzwingt ein neues Bild
 	queue_redraw()
 	get_viewport().set_input_as_handled()
 
@@ -87,9 +104,13 @@ func _draw_grid(t: float, x0: int, y0: int, x1: int, y1: int) -> void:
 
 	_draw_chunk_numbers(t, x0, y0, x1, y1)
 
-	# Weltrand: hier steht die unsichtbare Wand
-	var size := Config.world_size_px()
-	draw_rect(Rect2(t, t, size.x - 2 * t, size.y - 2 * t), BORDER, false, 3.0)
+	# Weltrand: hier steht die unsichtbare Wand.
+	#
+	# Nur die Stücke zeichnen, die wirklich im Bild sind. Als ein Rechteck über
+	# die ganze Welt kostete das bei 65 536 px Kantenlänge rund 17 ms je Bild —
+	# der Rasterizer muss die Linien auch dann durchrechnen, wenn sie weit
+	# ausserhalb liegen.
+	_draw_border(t, x0, y0, x1, y1)
 
 	# Block unter der Spielfigur
 	if is_instance_valid(player):
@@ -110,6 +131,23 @@ func _draw_cursor(t: float) -> void:
 		draw_texture_rect(cursor_tex, box, false, CURSOR_GHOST)
 	draw_rect(box, Color(0, 0, 0, 0.55), false, 5.0)
 	draw_rect(box, CURSOR_LINE, false, 2.0)
+
+func _draw_border(t: float, x0: int, y0: int, x1: int, y1: int) -> void:
+	var lo := t
+	var hi_x := (Config.MAP_W - 1) * t
+	var hi_y := (Config.MAP_H - 1) * t
+	var left := x0 * t
+	var right := x1 * t
+	var top := y0 * t
+	var bottom := y1 * t
+	if lo >= top and lo <= bottom:
+		draw_line(Vector2(left, lo), Vector2(right, lo), BORDER, 3.0)
+	if hi_y >= top and hi_y <= bottom:
+		draw_line(Vector2(left, hi_y), Vector2(right, hi_y), BORDER, 3.0)
+	if lo >= left and lo <= right:
+		draw_line(Vector2(lo, top), Vector2(lo, bottom), BORDER, 3.0)
+	if hi_x >= left and hi_x <= right:
+		draw_line(Vector2(hi_x, top), Vector2(hi_x, bottom), BORDER, 3.0)
 
 ## Chunk-Nummer in die obere linke Ecke jedes sichtbaren Chunks.
 ##
