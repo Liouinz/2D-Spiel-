@@ -21,6 +21,15 @@ var build_msec: int = 0
 
 var _sorted: Node2D
 func _ready() -> void:
+	# Die Welt MUSS pausierbar sein.
+	#
+	# Main setzt für sich PROCESS_MODE_ALWAYS, damit Menüs auch bei pausiertem
+	# Baum bedienbar bleiben. Die Welt hängt als Kind darunter und erbte das
+	# still mit — get_tree().paused hatte auf sie überhaupt keine Wirkung.
+	# Dadurch lief bei offenem Menü oder Inventar alles weiter: die Figur ging
+	# weiter, und das Bauwerkzeug setzte bei jedem Klick im Menü einen Block.
+	process_mode = Node.PROCESS_MODE_PAUSABLE
+
 	var started := Time.get_ticks_msec()
 	var builder := WorldBuilder.new()
 	builder.build(Config.WORLD_SEED)
@@ -139,6 +148,7 @@ func _ready() -> void:
 		build_tool.water = water
 		build_tool.minimap = hud.minimap
 		build_tool.main = get_parent()
+		build_tool.player = player
 		add_child(build_tool)
 		build_bar.slot_clicked.connect(func(i: int) -> void:
 			build_bar.select(i)
@@ -149,6 +159,8 @@ func _ready() -> void:
 			Settings.save_settings())
 
 		inventory = InventoryScene.new()
+		# Das Inventar ist UI und muss bei pausiertem Baum bedienbar bleiben.
+		inventory.process_mode = Node.PROCESS_MODE_ALWAYS
 		add_child(inventory)
 		inventory.setup(builder.art, build_bar)
 		inventory.equip_requested.connect(func(slot: int, tile: int) -> void:

@@ -211,6 +211,12 @@ func _set_state(next: State) -> void:
 			_world.build_bar.visible = next == State.PLAYING or next == State.INVENTORY
 		if is_instance_valid(_world.inventory):
 			_world.inventory.visible = next == State.INVENTORY
+		# Die Bauvorschau hier löschen, nicht im Bauwerkzeug: das läuft bei
+		# pausiertem Baum zu Recht nicht mehr und käme gar nicht mehr dazu.
+		# Sonst bliebe der Zeigerkasten während des Menüs stehen.
+		if is_instance_valid(_world.grid) and next != State.PLAYING:
+			_world.grid.cursor_block = Vector2i(-1, -1)
+			_world.grid.queue_redraw()
 	if in_menu:
 		_main_menu.focus_first()
 	elif next == State.PAUSED:

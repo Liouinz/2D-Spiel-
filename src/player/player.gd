@@ -9,6 +9,10 @@ const WALK_FPS := 9.0
 ## kann. Die Figur weiss nichts vom Wasser-Effekt, nur dass sie eintaucht.
 signal splashed(pos: Vector2)
 
+## Halbe Kantenlänge des Fussabdrucks. Schmaler als eine Kachel, damit die
+## Figur durch eine ein Feld breite Lücke passt.
+const FOOT := Vector2(12.0, 12.0)
+
 var _frames: Dictionary
 var _sprite: Sprite2D
 var _shadow: Sprite2D
@@ -20,7 +24,6 @@ var _was_moving: bool = false
 var _jump_time: float = -1.0   ## < 0 = am Boden, sonst Fortschritt in Sekunden
 var _swimming: bool = false
 var _level: int = 0            ## Höhenstufe, auf der die Figur steht
-var _fall_time: float = -1.0   ## < 0 = kein Fallen
 var map: MapData               ## um zu wissen, worauf die Figur steht
 
 ## Auf welcher Höhenstufe steht die Figur? 0 = Boden, 1 = Fels.
@@ -126,45 +129,50 @@ func _block_ledges(delta: float) -> void:
 	if map == null or _swimming:
 		return
 	var reach := _level + (1 if jump_height() >= Config.CLIMB_HEIGHT else 0)
-	if velocity.x != 0.0:
-		var ahead := global_position + Vector2(velocity.x * delta, 0.0)
-		var b := GridOverlay.block_at(ahead)
+	# Geprüft wird der FUSSABDRUCK, nicht ein einzelner Punkt. Mit nur einem
+	# Punkt in der Mitte schob sich die Figur bis zur halben Breite in den Fels
+	# hinein, bevor sie anhielt — und weil die Klippenwand nur nach unten
+	# gezeichnet wird, sah das je nach Anlaufrichtung verschieden aus.
+	if velocity.x != 0.0 and _foot_blocked(Vector2(velocity.x * delta, 0.0), reach):
+		velocity.x = 0.0
+	if velocity.y != 0.0 and _foot_blocked(Vector2(0.0, velocity.y * delta), reach):
+		velocity.y = 0.0
+
+## Liegt in der Zielposition des Fussabdrucks ein Feld über `reach`?
+func _foot_blocked(step: Vector2, reach: int) -> bool:
+	var base := global_position + step
+	for corner: Vector2 in [
+			Vector2(-FOOT.x, 0.0), Vector2(FOOT.x, 0.0),
+			Vector2(-FOOT.x, -FOOT.y), Vector2(FOOT.x, -FOOT.y)]:
+		var b := GridOverlay.block_at(base + corner)
 		if map.level_at(b.x, b.y) > reach:
-			velocity.x = 0.0
-	if velocity.y != 0.0:
-		var ahead2 := global_position + Vector2(0.0, velocity.y * delta)
-		var b2 := GridOverlay.block_at(ahead2)
-		if map.level_at(b2.x, b2.y) > reach:
-			velocity.y = 0.0
+			return true
+	return false
 
 ## Nach der Bewegung: auf welcher Stufe steht die Figur jetzt? Geht es hinunter,
 ## fällt sie kurz sichtbar, statt einfach eine Stufe tiefer zu erscheinen.
-func _update_level(delta: float) -> void:
-	if map == null:
-		return
-	if _fall_time >= 0.0:
-		_fall_time += delta
-		if _fall_time >= Config.FALL_TIME:
-			_fall_time = -1.0
-			Audio.play_ui("land")
-	if is_jumping():
+func _update_level(_delta: float) -> void:
+	if map == null or is_jumping():
 		return
 	var b := GridOverlay.block_at(global_position)
 	var here := map.level_at(b.x, b.y)
 	if here == _level:
 		return
-	if here < _level and _fall_time < 0.0:
-		_fall_time = 0.0
+	if here < _level:
+		Audio.play_ui("land")          # nur hörbar, kein Bildversatz
 	_level = here
 
-## Wie hoch die Figur gerade über dem Boden schwebt: Sprung plus Reststrecke
-## eines Falls von einer Stufe.
+## Wie hoch die Figur gerade über dem Boden schwebt. Das ist AUSSCHLIESSLICH
+## der Sprung.
+##
+## Hier lag der Fehler mit dem „Hochklatschen": beim Verlassen einer Felsstufe
+## wurde dem Versatz schlagartig die volle Wandhöhe aufgeschlagen und dann
+## weggeblendet — die Figur schoss also erst 16 Pixel nach OBEN und sank dann.
+## Das war doppelt falsch: sie soll herunter, nicht hinauf, und die Höhe steckt
+## ohnehin schon in der Kachelgrafik (Wand und Schlagschatten). Ein Versatz
+## verschöbe die Figur gegen ihre eigene Kollisionsfläche.
 func lift() -> float:
-	var h := jump_height()
-	if _fall_time >= 0.0:
-		var f := 1.0 - _fall_time / Config.FALL_TIME
-		h += EdgeArt.WALL_TOP * f * f
-	return h
+	return jump_height()
 
 ## Der Sprung verschiebt nur die Grafik. Position und Kollision bleiben am
 ## Boden, damit sich niemand über Wände oder Wasser hinwegsetzen kann.

@@ -84,6 +84,9 @@ Bodenkachel, nicht ein Ersatzsymbol.
   springst Du hinauf und stehst oben. Herunter geht immer.
 - Ein gesetzter Block **füllt sein Feld** und verbindet sich mit den Nachbarn —
   eine Reihe wird ein Streifen, kein Punktmuster.
+- **Gedrückt halten malt lückenlos**, auch bei schneller Maus.
+- Während **Menü oder Inventar** offen sind, passiert in der Welt nichts: keine
+  Blöcke, keine Bewegung, keine Vorschau.
 - Die Übergänge zu den Nachbarn werden sofort mitgerechnet — ein gesetzter Weg
   bekommt saubere Kanten, ganz ohne Nacharbeit.
 
@@ -252,7 +255,7 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 94 Prüfungen; im Aufbaumodus
+Der Exit-Code ist 0, wenn alles in Ordnung ist (aktuell 115 Prüfungen; im Aufbaumodus
 Weltaufbau ~550 ms bei 2048 × 2048 Blöcken, auf der Insel ~1,5 s mit 616 Objekten).
 Ein Chunk ist in 1,5 ms gemalt, die Minimap in 1,1 ms, die Physik braucht 0,3 ms je
 Bild und der Boden kommt mit 72 Zeichenaufrufen aus. Eine der Prüfungen durchsucht das

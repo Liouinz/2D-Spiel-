@@ -335,6 +335,60 @@ Figur über Wasser war — sie klappte mitten in der Luft ins Schwimmbild um. Je
 wird der Sprung zu Ende geflogen; beim Aufkommen kommt der Klang und ein
 Wellenring, den `water_fx.gd` als Kranz kurzer Striche zeichnet.
 
+## Nachtrag: Eingabetrennung, Kollision, Klippenkante
+
+Sieben Fehler, alle mit einer gemeinsamen Eigenschaft: sie waren nicht dort, wo
+man sie sah.
+
+**Die Welt lief bei pausiertem Baum weiter.** `Main` setzt für sich
+`PROCESS_MODE_ALWAYS`, damit Menüs bedienbar bleiben. Die Welt hängt als Kind
+darunter, hatte `PROCESS_MODE_INHERIT` und erbte das still mit —
+`get_tree().paused` hatte auf sie überhaupt keine Wirkung. Bei offenem Menü oder
+Inventar lief also alles weiter. Die Welt ist jetzt ausdrücklich
+`PROCESS_MODE_PAUSABLE`, das Inventar ausdrücklich `ALWAYS`.
+
+**Das Bauwerkzeug fragte den rohen Maustastenzustand ab.**
+`Input.is_mouse_button_pressed()` lief an der Ereigniskette vorbei: kein
+`set_input_as_handled()` konnte es abfangen, keine Oberfläche es abschirmen. Ein
+Klick auf „Fortsetzen" setzte deshalb gleichzeitig einen Block. Gesetzt wird
+jetzt auf das Press-Ereignis; gemalt nur, solange ein Druck gehalten wird, der
+in der Welt begonnen hat. Nebeneffekt: sehr kurze Klicks, die innerhalb eines
+Bildes begannen und endeten, gingen vorher verloren und kommen jetzt an.
+
+**Die Figur wurde beim Verlassen einer Felsstufe hochgeschleudert.** `lift()`
+schlug dem Bildversatz schlagartig die volle Wandhöhe auf und blendete sie dann
+weg — die Figur schoss erst 16 Pixel nach OBEN und sank dann. Doppelt falsch:
+sie soll herunter, und die Höhe steckt ohnehin in der Kachelgrafik. Der Versatz
+ist ersatzlos weg; `lift()` ist jetzt ausschliesslich der Sprung.
+
+**Die Kantenprüfung sah nur einen Punkt.** Geprüft wurde der Fusspunkt der
+Figur, nicht ihr Fussabdruck — sie schob sich bis zur halben Breite in den Fels,
+bevor sie anhielt. Jetzt werden die vier Ecken eines 24 × 24-Fussabdrucks
+geprüft, und das Anhalten ist aus allen vier Richtungen gleich.
+
+**Die Klippenwand ragte in das Nachbarfeld.** Sie belegte 16 Pixel der
+Felskachel und 7 Pixel der Kachel darunter. Damit stand sie in fremden Feldern —
+bei Fels über Wasser mitten im Wasser — und die sichtbare Kante lag 7 Pixel
+tiefer als die Stelle, an der die Figur anhält. Von Süden sah es aus, als bliebe
+man in der Wand stecken, von Norden richtig. Genau das war die
+richtungsabhängige Merkwürdigkeit. Jetzt bleibt die Wand vollständig auf ihrer
+Kachel: **sichtbare Kante = Blockkante = Kollisionskante**. Auf das Feld darunter
+kommt nur der Schlagschatten, und ein Schatten behauptet keine feste Fläche.
+
+**Ein fester Block liess sich in die eigene Figur setzen.** Die neue
+Kollisionsform lag mitten im Körper, und `move_and_slide()` drückte ihn im
+nächsten Bild mit voller Kraft heraus — in eine vom Zufall der Überlappung
+abhängige Richtung. Wird jetzt abgelehnt, geprüft über denselben Fussabdruck.
+
+**Schnelles Ziehen liess Lücken.** Zwischen zwei Bildern liegen bei schneller
+Maus mehrere Felder; gesetzt wurde nur das aktuelle. Jetzt wird die Linie
+aufgefüllt — gedeckelt auf zwölf Felder, damit ein springender Zeiger keine
+lange Spur zieht.
+
+**Die Bauvorschau blieb im Menü stehen.** Folgefehler der ersten Behebung: das
+Bauwerkzeug läuft bei pausiertem Baum zu Recht nicht mehr und kam nicht mehr
+dazu, den Zeigerkasten zu löschen. Das macht jetzt der Zustandswechsel selbst.
+
 ## Lizenzlage
 
 Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest

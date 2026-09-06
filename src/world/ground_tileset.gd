@@ -404,6 +404,9 @@ func _paint_edges(layers: Array[TileMapLayer], cell: Vector2i,
 	else:
 		edge_layer.set_cell(cell, edges.source, slots[mask])
 
+	# Schlagschatten der Klippe auf dem Feld darunter. Nur ein Schatten — die
+	# Wand selbst bleibt vollständig auf der Felskachel, damit sichtbare Kante
+	# und Kollisionskante zusammenfallen.
 	if north == MapData.Tile.ROCK and here != MapData.Tile.ROCK:
 		shadow_layer.set_cell(cell, edges.source, edges.foot[v])
 	elif erase:

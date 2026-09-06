@@ -381,6 +381,50 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 	_check(cob.get_cell_source_id(solo + Vector2i(1, 0)) != -1,
 		"Nachbarfeld bekommt den Saum")
 
+	# Ein einzelner Klick setzt genau ein Feld — und zwar das unter dem Zeiger.
+	var quick := home0 + Vector2i(-10, -10)
+	var neighbours_before := 0
+	for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		if map.get_tile(quick.x + o.x, quick.y + o.y) == MapData.Tile.COBBLE:
+			neighbours_before += 1
+	tool.place(quick, MapData.Tile.COBBLE)
+	await _frames(2)
+	var neighbours_after := 0
+	for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		if map.get_tile(quick.x + o.x, quick.y + o.y) == MapData.Tile.COBBLE:
+			neighbours_after += 1
+	_check(map.get_tile(quick.x, quick.y) == MapData.Tile.COBBLE
+		and neighbours_after == neighbours_before,
+		"Ein Klick setzt genau ein Feld, kein Nachbarfeld")
+
+	# Ziehen über mehrere Felder darf keine Lücke lassen.
+	var drag_from := home0 + Vector2i(-12, 4)
+	var drag_to := drag_from + Vector2i(7, 3)
+	tool._last = drag_from
+	tool.place(drag_from, MapData.Tile.PATH)
+	tool._stroke(drag_from, drag_to, MapData.Tile.PATH)
+	await _frames(2)
+	var gap := false
+	var dd := drag_to - drag_from
+	for i in 8:
+		var c := Vector2i(drag_from.x + int(round(float(dd.x) * i / 7.0)),
+			drag_from.y + int(round(float(dd.y) * i / 7.0)))
+		if map.get_tile(c.x, c.y) != MapData.Tile.PATH:
+			gap = true
+	_check(not gap, "Schnelles Ziehen lässt keine Lücke")
+
+	# Bauen in alle vier Richtungen an ein bestehendes Feld.
+	var seed_cell := home0 + Vector2i(-14, -2)
+	tool.place(seed_cell, MapData.Tile.COBBLE)
+	var all_dirs := true
+	for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+			Vector2i(1, 1), Vector2i(-1, -1)]:
+		tool.place(seed_cell + o, MapData.Tile.COBBLE)
+		if map.get_tile(seed_cell.x + o.x, seed_cell.y + o.y) != MapData.Tile.COBBLE:
+			all_dirs = false
+	await _frames(2)
+	_check(all_dirs, "Anbauen links, rechts, oben, unten und diagonal")
+
 	# Sechs in einer Reihe: früher zerfiel das in sechs Punkte.
 	var rowy := home0.y - 5
 	for i in 6:
@@ -518,6 +562,12 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 		_check(main.state == main.State.PLAYING and not inv.visible, "Inventar schliesst wieder")
 		world.build_bar.select(0)
 
+	# --- Eingaben dürfen nicht von der Oberfläche ins Spiel durchsickern ---
+	await _check_input_lock(world, map, player)
+
+	# --- Alles zusammen, schnell hintereinander ---
+	await _check_stress(world, map, player)
+
 	# --- Eigene Tasten für Minimap und Anzeige ---
 	var g2: GridOverlay = world.grid
 	var grid_before := g2.show_grid
@@ -577,6 +627,14 @@ func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
 	for y in range(-2, 3):
 		for x in range(14, 21):
 			tool.place(o + Vector2i(x, y), MapData.Tile.ROCK)
+	# Fels direkt über Wasser — genau der Fall vom Foto, bei dem die Wand ins
+	# Wasser ragte.
+	for y in range(4, 7):
+		for x in range(0, 6):
+			tool.place(o + Vector2i(x, y), MapData.Tile.ROCK)
+	for y in range(7, 10):
+		for x in range(0, 6):
+			tool.place(o + Vector2i(x, y), MapData.Tile.WATER)
 	# Teich mit Sandsaum
 	for y in range(6, 11):
 		for x in range(7, 13):
@@ -625,6 +683,11 @@ func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
 		await _shot("10_auf_dem_fels")
 		tool.set_process(true)
 
+	# Kein Bildversatz beim Verlassen der Stufe — das war das „Hochklatschen".
+	var lift_on_rock := player.lift()
+	_check(is_zero_approx(lift_on_rock),
+		"Auf dem Fels schwebt die Figur nicht (%.1f px)" % lift_on_rock)
+
 	# Herunter geht immer — bis zur Kante laufen, egal wie weit oben sie steht.
 	Input.action_press("move_down")
 	var dropped := false
@@ -636,6 +699,31 @@ func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
 	Input.action_release("move_down")
 	await _frames(4)
 	_check(dropped, "Vom Fels herunter geht ohne Sprung")
+	var max_lift := 0.0
+	for i in 20:
+		await get_tree().physics_frame
+		max_lift = maxf(max_lift, player.lift())
+	_check(is_zero_approx(max_lift),
+		"Beim Heruntergehen wird die Figur nicht hochgeschleudert (%.1f px)" % max_lift)
+
+	# Anlaufen gegen die Kante muss aus JEDER Richtung gleich anhalten.
+	var sides := {
+		"von Süden": [Vector2i(17, 3), "move_up"],
+		"von Norden": [Vector2i(17, -3), "move_down"],
+		"von Westen": [Vector2i(13, 0), "move_right"],
+		"von Osten": [Vector2i(22, 0), "move_left"],
+	}
+	var symmetric := true
+	for name: String in sides:
+		var start: Vector2i = o + sides[name][0]
+		player.position = Vector2(start.x + 0.5, start.y + 0.5) * Config.TILE
+		player.velocity = Vector2.ZERO
+		await _frames(4)
+		await _drive(sides[name][1], 60)
+		if player.level() != 0:
+			symmetric = false
+			print("   Kante %s: Figur steht auf Stufe %d" % [name, player.level()])
+	_check(symmetric, "Die Felskante hält aus allen vier Richtungen gleich an")
 
 	# Klippe: Wandkachel auf dem Fels, Schlagschatten auf der Kachel darunter
 	var edges: TileMapLayer = world.streamer.layers[GroundTileSet.LAYER_EDGE]
@@ -671,6 +759,133 @@ func _build_demo(tool: BuildTool, world: Node2D, player: Player) -> void:
 	player.position = Vector2(o.x + 12.0, o.y + 4.0) * Config.TILE
 	player.velocity = Vector2.ZERO
 	await _frames(4)
+
+## Der Durchgang aus Punkt 9: Bewegung, Springen, Bauen, Abbauen, Wasser,
+## Fels, Inventar, Menü und schnelle Eingaben in einem Rutsch. Geprüft wird
+## nicht ein Einzelfall, sondern dass nichts davon einander stört.
+func _check_stress(world: Node2D, map: MapData, player: Player) -> void:
+	var tool: BuildTool = world.build_tool
+	var home := GridOverlay.block_at(player.global_position)
+	var field := home + Vector2i(-20, -14)
+
+	# 40 Setzungen so schnell wie möglich, abwechselnd zwei Typen.
+	var kinds := [MapData.Tile.COBBLE, MapData.Tile.PATH, MapData.Tile.MEADOW,
+		MapData.Tile.SAND]
+	for i in 40:
+		tool.place(field + Vector2i(i % 8, i / 8), kinds[i % kinds.size()])
+	await _frames(2)
+	var wrong := 0
+	for i in 40:
+		var c := field + Vector2i(i % 8, i / 8)
+		if map.get_tile(c.x, c.y) != kinds[i % kinds.size()]:
+			wrong += 1
+	_check(wrong == 0, "40 schnelle Setzungen landen alle richtig (%d falsch)" % wrong)
+
+	# Wieder abbauen — jedes Feld muss zurück auf Gras.
+	for i in 40:
+		tool.place(field + Vector2i(i % 8, i / 8), MapData.Tile.GRASS)
+	await _frames(2)
+	var left := 0
+	for i in 40:
+		var c := field + Vector2i(i % 8, i / 8)
+		if map.get_tile(c.x, c.y) != MapData.Tile.GRASS:
+			left += 1
+	_check(left == 0, "Abbauen räumt alle 40 Felder (%d übrig)" % left)
+
+	# Bauen WÄHREND der Bewegung und im Sprung.
+	player.position = Vector2(field.x + 2.5, field.y + 6.5) * Config.TILE
+	player.velocity = Vector2.ZERO
+	await _frames(3)
+	Input.action_press("move_right")
+	Input.action_press("jump")
+	var built: Array[Vector2i] = []
+	for i in 24:
+		await get_tree().physics_frame
+		var c := GridOverlay.block_at(player.global_position) + Vector2i(0, 3)
+		tool.place(c, MapData.Tile.COBBLE)
+		built.append(c)
+	Input.action_release("jump")
+	Input.action_release("move_right")
+	await _frames(3)
+	var missed := 0
+	for c: Vector2i in built:
+		if map.get_tile(c.x, c.y) != MapData.Tile.COBBLE:
+			missed += 1
+	_check(missed == 0, "Bauen während Laufen und Sprung trifft (%d daneben)" % missed)
+
+	# Ein fester Block darf nicht in die Figur gesetzt werden.
+	var under := GridOverlay.block_at(player.global_position)
+	tool.place(under, MapData.Tile.DEEP_WATER)
+	await _frames(3)
+	_check(map.get_tile(under.x, under.y) != MapData.Tile.DEEP_WATER,
+		"Fester Block wird nicht in die eigene Figur gesetzt")
+	var pos_before := player.position
+	await _frames(10)
+	_check(player.position.distance_to(pos_before) < 2.0,
+		"Die Figur wird dabei nicht weggeschleudert (%.1f px)" %
+		player.position.distance_to(pos_before))
+
+	# Die Klippenwand bleibt auf ihrer Kachel — sichtbare Kante = Blockkante.
+	_check(EdgeArt.WALL_FOOT == 0,
+		"Die Klippenwand ragt in kein Nachbarfeld")
+
+	for i in 40:
+		tool.place(built[i % built.size()], MapData.Tile.GRASS)
+	await _frames(2)
+
+## Kein Durchsickern von Eingaben zwischen Oberfläche und Spiel.
+##
+## Der Fehler war: Main setzt für sich PROCESS_MODE_ALWAYS, die Welt hing als
+## Kind darunter und erbte das. get_tree().paused hatte auf sie keine Wirkung,
+## und das Bauwerkzeug fragte den rohen Maustastenzustand ab — ein Klick auf
+## „Fortsetzen" setzte damit gleich einen Block.
+func _check_input_lock(world: Node2D, map: MapData, player: Player) -> void:
+	var tool: BuildTool = world.build_tool
+	_check(world.process_mode == Node.PROCESS_MODE_PAUSABLE,
+		"Die Welt ist pausierbar")
+
+	var probe := GridOverlay.block_at(player.global_position) + Vector2i(4, 4)
+	tool.place(probe, MapData.Tile.GRASS)
+	await _frames(2)
+
+	for entry: Array in [["Pause", main.State.PAUSED], ["Inventar", main.State.INVENTORY]]:
+		if entry[1] == main.State.PAUSED:
+			main.pause_game()
+		else:
+			main.toggle_inventory()
+		await _frames(3)
+
+		var pos_before := player.position
+		var tile_before := map.get_tile(probe.x, probe.y)
+		# Maustaste UND Laufrichtung gedrückt halten — genau die Lage, in der
+		# vorher gebaut und gelaufen wurde.
+		Input.action_press("move_right")
+		var press := InputEventMouseButton.new()
+		press.button_index = MOUSE_BUTTON_LEFT
+		press.pressed = true
+		tool._unhandled_input(press)
+		await _frames(12)
+		Input.action_release("move_right")
+
+		_check(map.get_tile(probe.x, probe.y) == tile_before,
+			"%s: kein Block wird gesetzt" % entry[0])
+		_check(player.position == pos_before,
+			"%s: die Figur bewegt sich nicht" % entry[0])
+		_check(world.grid.cursor_block.x < 0, "%s: keine Bauvorschau" % entry[0])
+
+		if entry[1] == main.State.PAUSED:
+			main.resume_game()
+		else:
+			main.toggle_inventory()
+		await _frames(4)
+
+	# Nach dem Schliessen läuft alles wieder — aber die noch gedrückte Taste
+	# malt nicht weiter.
+	_check(main.state == main.State.PLAYING, "Nach dem Schliessen läuft das Spiel")
+	var after := map.get_tile(probe.x, probe.y)
+	await _frames(8)
+	_check(map.get_tile(probe.x, probe.y) == after,
+		"Eine noch gehaltene Maustaste baut nicht weiter")
 
 ## Chunk-Laden: die Welt kommt und geht um die Figur herum.
 func _check_streaming(world: Node2D, player: Player) -> void:

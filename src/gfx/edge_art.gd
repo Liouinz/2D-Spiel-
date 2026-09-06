@@ -23,16 +23,23 @@ const E := 2
 const S := 4
 const W := 8
 
-## Die Wand läuft über die Blockkante hinweg: die obere Hälfte liegt auf der
-## Felskachel, die untere auf der Kachel darunter.
+## Die Wand bleibt VOLLSTÄNDIG auf der Felskachel.
 ##
-## Das muss so sein, weil das Eck-Autotiling die Geländegrenze auf das ECKRASTER
-## legt — eine halbe Kachel versetzt zum Blockraster. Der Fels läuft dadurch
-## schon in der Kachelmitte in Gras aus. Eine Wand nur im unteren Kachelteil
-## stünde sichtbar auf Gras. Deckt sie beide Kacheln, verdeckt sie den weichen
-## Auslauf und die Kante sitzt dort, wo der Block endet.
-const WALL_TOP := 16         ## auf der Felskachel, von unten gerechnet
-const WALL_FOOT := 7         ## auf der Kachel darunter
+## Früher lief sie über die Blockkante hinweg und belegte noch sieben Pixel der
+## Kachel darunter. Das war aus zwei Gründen falsch: die Wand stand dadurch in
+## fremden Feldern — bei Fels über Wasser mitten im Wasser — und die sichtbare
+## Kante lag 7 Pixel tiefer als die Stelle, an der die Figur tatsächlich
+## anhält. Beim Anlaufen von Süden sah es deshalb aus, als bliebe man in der
+## Wand stecken, von Norden dagegen richtig.
+##
+## Jetzt gilt: sichtbare Kante = Blockkante = Stelle, an der die Bewegung
+## anhält. Auf die Kachel darunter kommt nur noch der Schlagschatten, und ein
+## Schatten behauptet keine feste Fläche.
+##
+## Fels verläuft nicht (SHARP), die Kachel ist also bis zum Rand gefüllt — die
+## Wand steht damit nicht auf Gras.
+const WALL_TOP := 16         ## Wandhöhe, ganz auf der Felskachel
+const WALL_FOOT := 0         ## nichts mehr auf der Kachel darunter
 const SHADOW_H := 10         ## Schlagschatten darunter — immer gleich lang
 const SHADOW_DX := 2         ## Versatz nach rechts: Licht kommt von links
 const BANK_W := 5            ## Uferkante auf dem Land
@@ -121,14 +128,13 @@ static func _cliff_tile(mask: int, v: int) -> Image:
 			Pixel.px(img, T - 3 - jag, y, Palette.STONE_DARK.lerp(Palette.STONE, 0.55))
 	return img
 
-## Die Fortsetzung der Wand auf der Kachel unter dem Fels, dazu der
-## Schlagschatten. Er ist immer gleich lang, egal wie hoch die Felsfläche ist —
-## so machen es Pixel-Spiele, sonst kippt die Perspektive.
-static func _foot_tile(v: int) -> Image:
+## Der Schlagschatten auf der Kachel unter dem Fels — und NUR der Schatten.
+## Er ist immer gleich lang, egal wie hoch die Felsfläche ist; so machen es
+## Pixel-Spiele, sonst kippt die Perspektive.
+static func _foot_tile(_v: int) -> Image:
 	var img := Pixel.make(T, T)
-	_wall(img, 0, WALL_FOOT, false, v)
-	for y in range(WALL_FOOT, WALL_FOOT + SHADOW_H):
-		var f := 1.0 - float(y - WALL_FOOT) / SHADOW_H
+	for y in SHADOW_H:
+		var f := 1.0 - float(y) / SHADOW_H
 		var a := 0.46 * f * f
 		for x in range(SHADOW_DX, T):
 			if a < Pixel.bayer(x, y) * 0.22:
@@ -141,10 +147,8 @@ static func _foot_tile(v: int) -> Image:
 ## Nicht einfach dunkel: oben am Bruch hell, nach unten in den Schatten, dazu
 ## unregelmässige Risse. Gleichmässige Risse sähen aus wie ein Heizkörper.
 static func _wall(img: Image, top: int, height: int, lip: bool, v: int) -> void:
-	# Die Wand geht insgesamt über WALL_TOP + WALL_FOOT Pixel; der Verlauf
-	# muss über beide Kacheln hinweg durchlaufen, sonst gibt es eine Naht.
-	var total := float(WALL_TOP + WALL_FOOT)
-	var offset := 0.0 if lip else float(WALL_TOP)
+	var total := float(WALL_TOP)
+	var offset := 0.0
 	for y in range(top, top + height):
 		var f := (offset + float(y - top)) / total
 		Pixel.hline(img, 0, y, T, Palette.STONE.lerp(Palette.STONE_DARK.darkened(0.35), f))
