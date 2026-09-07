@@ -420,7 +420,7 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **223 Prüfungen**.
+Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **229 Prüfungen**.
 Darunter unter anderem:
 
 - genau drei Bodentypen in Aufzählung, Kachelstapel, Leiste, Inventar und Minimap
@@ -449,11 +449,16 @@ Darunter unter anderem:
   bekommen jeweils die richtige Eckmaske
 - jeder gesetzte Block bekommt ein Zeichen, es verschwindet wieder, und beim
   Ziehen bleiben nie mehr als 24 stehen
+- nichts rechnet, wenn es nichts zu rechnen gibt: Bau-Rückmeldung, Staub und
+  Wasserwirkung schalten ihr `_process` wirklich ab
 - Musik vorhanden, Klangeffekte weder im Ton noch an einer Aufrufstelle
 - keine fremde Asset-Datei im Projekt (siehe [`CREDITS.md`](CREDITS.md))
 
-Weltaufbau rund 260 ms bei 2048 × 2048 Blöcken. Ein Chunk ist in 1,5 ms gemalt,
-die Minimap in 1,1 ms, die Physik braucht 0,5 ms je Bild.
+Weltaufbau rund 210 ms bei 2048 × 2048 Blöcken. Ein Chunk ist in 1,1 ms gemalt,
+die Minimap in 0,8 ms, die Physik braucht 0,7 ms je Bild. Die Bildzeit im Test
+(rund 16 ms) stammt von einem **Software-Rasterizer** ohne Grafikkarte und sagt
+nichts über einen echten Rechner — sie ist als Vergleichswert gedacht, nicht als
+Versprechen.
 
 Mit einer echten Anzeige lassen sich zusätzlich Screenshots ablegen:
 

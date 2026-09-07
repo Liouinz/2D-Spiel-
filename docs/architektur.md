@@ -754,7 +754,18 @@ landete die Brandung auf dem Sand statt im Wasser.
 Das ist ein Bildvergleich ohne Bilder: ein Ausrutscher im Autotiling fällt als
 falsche Zahl auf, nicht erst jemandem beim Spielen.
 
-**Stand:** 223 Prüfungen, alle grün.
+**Nichts rechnet, wenn es nichts zu rechnen gibt.** Das ist die Regel, an der
+Wirkungen in einem Sandkastenspiel scheitern: sie laufen weiter, auch wenn sie
+abgeschaltet sind oder gar nichts zu tun haben. Für Bau-Rückmeldung, Staub und
+Wasserwirkung wird deshalb `is_processing()` geprüft, nicht die Sichtbarkeit.
+
+Ausserdem wirft die Leistungsmessung jetzt einen ersten Durchlauf weg. Auch nach
+90 Aufwärmbildern fiel im ersten Messfenster noch eine Spitze an — zuletzt 56 ms
+statt 17, aus Shader-Übersetzung und Texturuploads, die erst dort fällig werden.
+Eine Zahl, die in der Dokumentation landet, darf davon nicht stammen.
+
+**Stand:** 229 Prüfungen, alle grün. Weltaufbau 208 ms, ein Chunk in 1,1 ms, die
+Minimap in 0,8 ms, Physik 0,7 ms je Bild, 50 Zeichenaufrufe.
 
 ## Lizenzlage
 

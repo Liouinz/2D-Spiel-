@@ -163,6 +163,7 @@ func _run() -> void:
 	await _check_water(world, map, player)
 	await _check_terrain_shapes(world, map)
 	await _check_build_feedback(world)
+	await _check_idle_cost(world)
 	await _check_toggle(world, map, player)
 	await _check_inventory_ui(world)
 	await _check_design_system(world)
@@ -824,6 +825,48 @@ func _check_toggle(world: Node2D, map: MapData, player: Player) -> void:
 	main._unhandled_input(_key("ui_cancel"))
 	await _frames(3)
 	_check(main.state == main.State.PLAYING and not inv.visible, "ESC schliesst das Inventar")
+
+# --- Sparsamkeit --------------------------------------------------------------
+
+## Nichts rechnet, wenn es nichts zu rechnen gibt.
+##
+## Das ist die Regel, an der Wirkungen in einem Sandkastenspiel scheitern: sie
+## laufen weiter, auch wenn sie abgeschaltet sind oder gar nichts zu tun haben.
+## Hier wird für jede der drei Wirkungen nachgesehen, ob sie sich wirklich
+## abschaltet — `is_processing()` lügt nicht.
+func _check_idle_cost(world: Node2D) -> void:
+	var fx: BuildFx = world.build_fx
+	var ambient: AmbientFx = world.ambient
+	var water: WaterFx = world.get_node("WaterFx")
+
+	await _frames(40)
+	_check(not fx.is_processing(),
+		"Ohne offene Zeichen rechnet die Bau-Rückmeldung nicht")
+	world.build_tool.place(Config.spawn_block() + Vector2i(28, 28), MapData.Tile.SAND)
+	await _frames(2)
+	_check(fx.is_processing(), "Mit einem Zeichen rechnet sie wieder")
+	await _frames(40)
+	_check(not fx.is_processing(), "Und hört von selbst wieder auf")
+
+	var part_before := Settings.particles
+	Settings.particles = 0
+	Settings.changed_and_save()
+	await _frames(4)
+	_check(not ambient.is_processing(), "Ohne Staub rechnet der Staub nicht")
+	Settings.particles = part_before
+	Settings.changed_and_save()
+	await _frames(4)
+	_check(ambient.is_processing(), "Mit Staub rechnet er wieder")
+
+	var water_before := Settings.water_detail
+	Settings.water_detail = 0
+	Settings.changed_and_save()
+	water.prims = -1
+	await _frames(10)
+	_check(water.prims <= 0, "Wasser „Einfach\" zeichnet nichts (%d)" % water.prims)
+	Settings.water_detail = water_before
+	Settings.changed_and_save()
+	await _frames(6)
 
 # --- Bauen: Form erkennen, Rückmeldung geben ----------------------------------
 
@@ -1731,6 +1774,11 @@ func _check_performance(world: Node2D, map: MapData, player: Player, ms_menu: fl
 	# der Welt lag bei 849 ms, das zweite schon bei 2,5 — Shader-Übersetzung
 	# und Texturuploads, kein Dauerzustand.
 	await _frames(90)
+	# Ein Messdurchlauf wird weggeworfen. Auch nach dem Aufwärmen fällt beim
+	# ersten Fenster noch eine Spitze an (zuletzt gemessen: 56 ms statt 17) —
+	# Shader-Übersetzung und Texturuploads, die erst hier fällig werden. Eine
+	# Zahl, die in der Dokumentation landet, darf davon nicht stammen.
+	await _frame_cost()
 
 	var t_still := 0.0
 	for i in 30:
