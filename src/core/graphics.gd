@@ -26,6 +26,7 @@ const RANGE_RADIUS := [1, 2, 3, 4]
 
 const OFF_ON := ["Aus", "An"]
 const DETAIL := ["Einfach", "Mittel", "Hoch"]
+const STEPS := ["Aus", "Reduziert", "Voll"]
 
 func _ready() -> void:
 	Settings.changed.connect(apply)
@@ -77,6 +78,23 @@ func water_redraw_hz() -> float:
 ## die Fläche ruhig — das spart den grössten Teil der Zeichenarbeit.
 func water_animated() -> bool:
 	return Settings.water_detail > 0
+
+## Wie stark sich Gras und Wasser bewegen. 0 heisst: gar nicht.
+func wind_strength() -> float:
+	match clampi(Settings.wind, 0, 2):
+		0: return 0.0
+		1: return 0.45
+		_: return 1.0
+
+## Wie viele Staubpunkte gleichzeitig in der Luft sind.
+##
+## Die Zahl ist absichtlich klein: sie leben nur im sichtbaren Ausschnitt, und
+## mehr als eine Handvoll wirkt nicht lebendiger, sondern schmutzig.
+func particle_count() -> int:
+	match clampi(Settings.particles, 0, 2):
+		0: return 0
+		1: return 18
+		_: return 42
 
 ## Schattenwurf der Figur.
 func shadows_on() -> bool:

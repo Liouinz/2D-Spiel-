@@ -663,6 +663,57 @@ Wechsel gesprungen wäre.
 
 **Stand:** 196 Prüfungen, alle grün.
 
+## Nachtrag: Bewegung in der Welt — und ein Boden, der wie Boden aussieht
+
+**Wind und Wasserlicht als Shader auf der Schicht.** Der Boden sind vier
+`TileMapLayer` über einer Karte mit 4,2 Millionen Feldern. Jede Kachel einzeln
+zu animieren ist nicht bezahlbar, ein Knoten je bewegtem Halm erst recht nicht.
+Ein Shader auf der Schicht kostet dagegen genau drei Materialien, unabhängig von
+der Weltgrösse.
+
+**Der Vertex-Schritt, nicht das Fragment.** Die erste Fassung rechnete die
+Wellen je Bildpunkt. Gemessen auf dem Software-Rasterizer bei 1280 x 720: 13,8 ms
+je Bild ohne Bewegung, **66 ms mit** — und die Physikzeit stieg von 0,3 auf
+9,8 ms mit, weil Godot bei langsamen Bildern mehrere Physikschritte nachholt.
+Dieselbe Wirkung im `vertex()` kostet wieder rund 17 ms. Eine Kachel hat vier
+Eckpunkte und 1024 Bildpunkte; die Wellenlänge liegt bei mehreren hundert
+Bildpunkten, die lineare Interpolation über eine 32er-Kachel sieht man nicht.
+Es gibt bewusst kein `fragment()` — ohne eines nimmt Godot das voreingestellte
+`COLOR *= texture(TEXTURE, UV)`, genau das, was gebraucht wird.
+
+**Helligkeit statt Verschiebung.** Die Kacheln kommen aus einem Atlas. Ein
+verschobenes UV griffe in die Nachbarkachel im Atlasbild; an jeder Kachelkante
+entstünden Streifen fremder Farbe. Eine wandernde Aufhellung liest sich als Böe
+über einem Feld und kann das nicht.
+
+**„Aus" muss nichts kosten.** Bei Stufe 0 wird das Material ABGEHÄNGT, nicht auf
+Stärke null gesetzt — ein Shader mit Faktor null rechnet trotzdem. Dasselbe beim
+Staub: die Punkte werden entfernt, nicht unsichtbar geschaltet. Beides prüft der
+Selbsttest, weil man einer Einstellung sonst nicht ansieht, ob sie hält, was sie
+verspricht.
+
+**Was die Messung wert ist.** Eine erste Prüfung verglich „mit" und „ohne"
+direkt und schlug fehl, sobald die Zahlen um zwei Millisekunden streuten — sie
+mass Rauschen. Die vier Kombinationen liegen alle bei 17 bis 21 ms; der
+Unterschied ist auf einem Software-Rasterizer nicht auflösbar. Geprüft wird
+deshalb die Grössenordnung: die Bewegung darf das Bild nicht um ein Vielfaches
+teurer machen. Die Fragment-Fassung wäre daran gescheitert, das Rauschen ist es
+nicht. Ausserdem wird ein erster Messdurchlauf weggeworfen — ein frisch
+angehängter Shader wird beim ersten Bild übersetzt, diese eine Spitze (gemessen:
+100 ms) gehört nicht in die Zahl.
+
+**Der Boden.** Die Gras- und Sandkacheln trugen 230 deckende Einzelpixel auf
+1024 — knapp ein Viertel der Fläche. Das war kein Gras, sondern Bildrauschen,
+und es überdeckte jede grössere Struktur; im Bild las sich der Boden als
+Fernsehschnee. Jetzt sind es rund 70, eingeblendet statt gesetzt, und die Halme
+stehen in Büscheln von zwei bis drei. Damit fielen die Helligkeitsstufen je
+Kachel auf, die das Korn vorher verdeckt hatte — `SHADE_STEP` ist von 0,035 auf
+0,018 zurückgenommen, die grosse Helligkeitsbewegung kommt ohnehin vom Wind und
+läuft über Kachelkanten hinweg weich durch. Die gemessenen Kachelnähte sind
+dabei besser geworden: Gras 1,16 → 0,51, Sand 0,66 → 0,54.
+
+**Stand:** 207 Prüfungen, alle grün.
+
 ## Lizenzlage
 
 Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest

@@ -12,6 +12,7 @@ var build_bar: BuildBar
 var build_tool: BuildTool
 var inventory: Inventory
 var streamer: ChunkStreamer
+var ambient: AmbientFx
 
 const HudScene := preload("res://src/ui/hud.gd")
 
@@ -77,6 +78,12 @@ func _ready() -> void:
 	camera.snap_to_target()
 	water.camera = camera
 	player.splashed.connect(water.splash)
+
+	# Staub und Pollen in der Luft — nur im sichtbaren Ausschnitt.
+	ambient = AmbientFx.new()
+	ambient.name = "AmbientFx"
+	ambient.camera = camera
+	add_child(ambient)
 
 	# Rotes Blockraster über allem — zeigt das sonst unsichtbare Grid.
 	grid = GridOverlay.new()

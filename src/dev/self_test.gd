@@ -165,6 +165,7 @@ func _run() -> void:
 	await _check_inventory_ui(world)
 	await _check_design_system(world)
 	await _check_settings(world)
+	await _check_motion(world)
 	await _check_input_lock(world, map, player)
 	await _check_input_map(world)
 	await _check_stress(world, map, player)
@@ -821,6 +822,103 @@ func _check_toggle(world: Node2D, map: MapData, player: Player) -> void:
 	main._unhandled_input(_key("ui_cancel"))
 	await _frames(3)
 	_check(main.state == main.State.PLAYING and not inv.visible, "ESC schliesst das Inventar")
+
+# --- Bewegung in der Welt -----------------------------------------------------
+
+## Wind, Wasserlicht und Staub — und dass sich beides wirklich abschalten lässt.
+##
+## „Aus" muss heissen: kostet nichts. Ein Shader mit Stärke null rechnet
+## trotzdem für jeden Eckpunkt, und Staubpunkte, die nur unsichtbar sind, werden
+## trotzdem bewegt. Deshalb wird hier nicht die Sichtbarkeit geprüft, sondern
+## ob Material und Punkte überhaupt noch da sind.
+func _check_motion(world: Node2D) -> void:
+	var streamer: ChunkStreamer = world.streamer
+	var ambient: AmbientFx = world.ambient
+	var wind_before := Settings.wind
+	var part_before := Settings.particles
+
+	for level in 3:
+		Settings.wind = level
+		Settings.changed_and_save()
+		await _frames(2)
+		_check(streamer.wind_level() == level,
+			"Bewegungsstufe %d liegt wirklich auf dem Boden (%d)" % [level, streamer.wind_level()])
+	Settings.wind = 0
+	Settings.changed_and_save()
+	await _frames(2)
+	_check(streamer.layers[0].material == null and streamer.layers[2].material == null,
+		"Bewegung „Aus\" hängt das Material ab, statt es auf null zu rechnen")
+
+	# Die Wellen laufen im Vertex-Schritt, nicht je Bildpunkt. Im Fragment
+	# kostete dieselbe Wirkung das Fünffache je Bild — deshalb steht das hier
+	# als Prüfung und nicht nur als Kommentar.
+	Settings.wind = 2
+	Settings.changed_and_save()
+	await _frames(2)
+	var code: String = streamer.layers[0].material.shader.code
+	_check(code.contains("void vertex()") and not code.contains("void fragment()"),
+		"Die Bewegung wird je Eckpunkt gerechnet, nicht je Bildpunkt")
+
+	# Staub: Anzahl folgt der Einstellung, „Aus" lässt nichts übrig.
+	for entry: Array in [[0, 0], [1, 18], [2, 42]]:
+		Settings.particles = entry[0]
+		Settings.changed_and_save()
+		await _frames(4)
+		_check(ambient._motes.size() == entry[1],
+			"Staubstufe %d hält %d Punkte (%d)" % [entry[0], entry[1], ambient._motes.size()])
+	Settings.particles = 0
+	Settings.changed_and_save()
+	await _frames(6)
+	_check(ambient.drawn == 0, "Staub „Aus\" zeichnet nichts mehr (%d)" % ambient.drawn)
+	Settings.particles = 2
+	Settings.changed_and_save()
+	await _frames(20)
+	_check(ambient.drawn > 0, "Staub „Voll\" zeichnet wieder (%d Punkte)" % ambient.drawn)
+
+	# Was die Bewegung kostet, getrennt nach Ursache.
+	#
+	# Ein erster Durchlauf wird weggeworfen: ein frisch angehängter Shader wird
+	# beim ersten Bild übersetzt, und diese eine Spitze (gemessen: 100 ms)
+	# gehört nicht in die Messung.
+	Settings.wind = 2
+	Settings.particles = 2
+	Settings.changed_and_save()
+	await _frames(30)
+	await _frame_cost()
+
+	var cost := {}
+	for entry: Array in [["Wind + Staub", 2, 2], ["nur Staub", 0, 2],
+			["nur Wind", 2, 0], ["nichts", 0, 0]]:
+		Settings.wind = entry[1]
+		Settings.particles = entry[2]
+		Settings.changed_and_save()
+		await _frames(25)
+		cost[entry[0]] = await _frame_cost()
+	for key: String in cost:
+		print("  Bewegung %-14s %6.2f ms je Bild" % [key, cost[key]])
+
+	# Geprüft wird die Grössenordnung, nicht die Nachkommastelle: auf einem
+	# Software-Rasterizer streuen die Werte um ein bis zwei Millisekunden, ein
+	# Unterschied darunter sagt nichts. Was diese Prüfung fangen soll, ist eine
+	# Wirkung, die das Bild VIELFACH teurer macht — die erste Fassung rechnete
+	# die Wellen je Bildpunkt statt je Eckpunkt und kostete das Fünffache.
+	var quiet: float = cost["nichts"]
+	var loud: float = cost["Wind + Staub"]
+	_check(loud <= quiet * 1.6 + 3.0,
+		"Bewegung kostet keine Grössenordnung (%.2f ms mit, %.2f ms ohne)" % [loud, quiet])
+
+	Settings.wind = wind_before
+	Settings.particles = part_before
+	Settings.changed_and_save()
+	await _frames(20)
+
+## Mittlere Bildzeit über 30 Bilder in Millisekunden.
+func _frame_cost() -> float:
+	var total := 0.0
+	for i in 30:
+		await get_tree().process_frame
+		total += Performance.get_monitor(Performance.TIME_PROCESS)
+	return total / 30.0 * 1000.0
 
 # --- Einstellungen ------------------------------------------------------------
 

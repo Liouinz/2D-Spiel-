@@ -12,7 +12,11 @@ const VARIANTS := 6
 ## 32er-Kacheln ist jede Kachel eine große einfarbige Fläche, und schon wenige
 ## Prozent Abstand lassen das Raster als Schachbrett hervortreten.
 const SHADES := 3
-const SHADE_STEP := 0.035
+## Vorher 0,035. Das dichte Korn hat die Stufen früher verdeckt; auf einer
+## ruhigeren Fläche fällt jede Stufe sofort als Schachbrettfeld auf. Die grosse
+## Helligkeitsbewegung kommt jetzt ohnehin vom Wind-Shader, der über Kachelkanten
+## hinweg weich verläuft.
+const SHADE_STEP := 0.018
 
 var base: Array = []        ## [tile_type][stufe * VARIANTS + variante] -> Image
 
@@ -78,36 +82,53 @@ func _grain(img: Image, rng: RandomNumberGenerator, count: int, c: Color) -> voi
 func _grass_tile(bg: Color, light: Color, dark: Color, hi: Color,
 		rng: RandomNumberGenerator, blades: int) -> Image:
 	var img := Pixel.filled(T, T, bg)
-	_mottle(img, rng, 4, light, 0.40)
-	_mottle(img, rng, 3, dark, 0.36)
-	_grain(img, rng, 120, light)
-	_grain(img, rng, 80, dark)
-	_grain(img, rng, 30, hi)
-	# Einzelne Halme mit hellem Kopf und dunklem Fuß
+	# Grosse weiche Flecken zuerst — sie geben der Fläche ihre Struktur.
+	_mottle(img, rng, 5, light, 0.30)
+	_mottle(img, rng, 4, dark, 0.28)
+	# Korn: deutlich weniger und viel schwächer als früher.
+	#
+	# Vorher lagen 230 deckende Einzelpixel auf 1024 — knapp ein Viertel der
+	# Kachel. Aus zwei Metern Abstand war das kein Gras, sondern Bildrauschen,
+	# und es überdeckte jede grössere Struktur. Jetzt sind es rund 70, und sie
+	# werden eingeblendet statt gesetzt: das Korn stört die Fläche nicht mehr,
+	# es raut sie nur auf.
+	_grain(img, rng, 44, Color(light.r, light.g, light.b, 0.42))
+	_grain(img, rng, 30, Color(dark.r, dark.g, dark.b, 0.38))
+	# Halme in kleinen Büscheln statt einzeln verstreut: zwei bis drei
+	# nebeneinander liest man als Gras, gleichmässig verteilte Striche nicht.
 	for i in blades:
-		var x := rng.randi_range(1, T - 2)
-		var y := rng.randi_range(3, T - 5)
-		var h := rng.randi_range(3, 5)
-		Pixel.vline(img, x, y, h, light)
-		Pixel.px(img, x, y, hi)
-		Pixel.px(img, x + (1 if rng.randf() < 0.5 else -1), y + 1, light)
-		Pixel.px(img, x, y + h, dark)
+		var bx := rng.randi_range(1, T - 3)
+		var by := rng.randi_range(3, T - 6)
+		for k in rng.randi_range(2, 3):
+			var x := bx + k + rng.randi_range(-1, 1)
+			var y := by + rng.randi_range(-1, 1)
+			var h := rng.randi_range(3, 5)
+			Pixel.vline(img, x, y, h, Color(light.r, light.g, light.b, 0.85))
+			Pixel.px(img, x, y, Color(hi.r, hi.g, hi.b, 0.75))
+			Pixel.px(img, x, y + h, Color(dark.r, dark.g, dark.b, 0.7))
 	return img
 
 func _sand_tile(rng: RandomNumberGenerator) -> Image:
 	var img := Pixel.filled(T, T, Palette.SAND)
-	_mottle(img, rng, 4, Palette.SAND_LIGHT, 0.34)
-	_mottle(img, rng, 3, Palette.SAND_DARK, 0.30)
-	_grain(img, rng, 100, Palette.SAND_LIGHT)
-	_grain(img, rng, 70, Palette.SAND_DARK)
+	_mottle(img, rng, 5, Palette.SAND_LIGHT, 0.26)
+	_mottle(img, rng, 4, Palette.SAND_DARK, 0.22)
+	# Sand ist eine ruhige Fläche. Dichtes Korn liess ihn körnig wie Schmirgel
+	# aussehen; die Rippelmarken tragen die Struktur.
+	_grain(img, rng, 34, Color(Palette.SAND_LIGHT.r, Palette.SAND_LIGHT.g,
+		Palette.SAND_LIGHT.b, 0.40))
+	_grain(img, rng, 24, Color(Palette.SAND_DARK.r, Palette.SAND_DARK.g,
+		Palette.SAND_DARK.b, 0.34))
 	# Rippelmarken
-	for i in rng.randi_range(1, 3):
+	for i in rng.randi_range(2, 3):
 		var y := rng.randi_range(3, T - 4)
-		var len := rng.randi_range(10, 20)
+		var len := rng.randi_range(12, 22)
 		var x0 := rng.randi_range(0, T - len)
-		for s in len:
-			Pixel.px(img, x0 + s, y + int(sin(s * 0.5) * 1.2), Palette.SAND_DARK)
-			Pixel.px(img, x0 + s, y + int(sin(s * 0.5) * 1.2) + 1, Palette.SAND_LIGHT)
+		for s2 in len:
+			var wave := int(sin(s2 * 0.5) * 1.2)
+			Pixel.px(img, x0 + s2, y + wave,
+				Color(Palette.SAND_DARK.r, Palette.SAND_DARK.g, Palette.SAND_DARK.b, 0.55))
+			Pixel.px(img, x0 + s2, y + wave + 1,
+				Color(Palette.SAND_LIGHT.r, Palette.SAND_LIGHT.g, Palette.SAND_LIGHT.b, 0.6))
 	return img
 
 func _water_tile(bg: Color, hi: Color, deep: Color, rng: RandomNumberGenerator) -> Image:

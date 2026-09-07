@@ -128,6 +128,12 @@ func _page_video() -> Control:
 	_choice(grid, "water", "Wasser", Graphics.DETAIL,
 		func() -> int: return Settings.water_detail,
 		func(v: int) -> void: Settings.water_detail = v)
+	_choice(grid, "wind", "Bewegung", Graphics.STEPS,
+		func() -> int: return Settings.wind,
+		func(v: int) -> void: Settings.wind = v)
+	_choice(grid, "particles", "Staub in der Luft", Graphics.STEPS,
+		func() -> int: return Settings.particles,
+		func(v: int) -> void: Settings.particles = v)
 	_choice(grid, "shadows", "Schatten", Graphics.OFF_ON,
 		func() -> int: return 1 if Settings.shadows else 0,
 		func(v: int) -> void: Settings.shadows = v == 1)
@@ -238,6 +244,8 @@ func refresh() -> void:
 	_show_row("fullscreen", 1 if Settings.fullscreen else 0)
 	_show_row("range", Settings.render_range)
 	_show_row("water", Settings.water_detail)
+	_show_row("wind", Settings.wind)
+	_show_row("particles", Settings.particles)
 	_show_row("shadows", 1 if Settings.shadows else 0)
 	_show_row("fps", Settings.fps_limit)
 	_show_row("vsync", 1 if Settings.vsync else 0)

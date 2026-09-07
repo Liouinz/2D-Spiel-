@@ -181,6 +181,8 @@ Es steht dort **nichts, was nicht wirkt**:
 |---|---|
 | **Sichtweite** 3×3 … 9×9 | setzt den Chunk-Radius; mehr Chunks werden geladen und kommen über die nächsten Bilder dazu, zu weite fliegen sofort raus |
 | **Wasser** Einfach / Mittel / Hoch | Bildrate der Wasserwirkung (8 / 16 / 24 Hz); „Einfach“ zeichnet Glitzern und Brandung gar nicht mehr |
+| **Bewegung** Aus / Reduziert / Voll | Wind über dem Gras und Licht auf dem Wasser; „Aus“ hängt die Materialien ab, statt sie auf null zu rechnen |
+| **Staub in der Luft** Aus / Reduziert / Voll | 0 / 18 / 42 schwebende Punkte im sichtbaren Ausschnitt |
 | **Schatten** Aus / An | der Bodenschatten der Figur |
 | **Bildratengrenze** 30 … Unbegrenzt | `Engine.max_fps` |
 | **Bildsynchronisierung** | VSync des Fensters |
@@ -196,6 +198,51 @@ und dass sie einen Neustart übersteht.
 
 Unter **Steuerung** steht die vollständige Tastenbelegung — erzeugt aus der
 tatsächlichen InputMap, sie kann also nicht veralten.
+
+## Die Welt bewegt sich
+
+Über dem Gras laufen **Windböen**, über dem Wasser wandern **Lichtstreifen**,
+und in der Luft schweben **Staub und Pollen**. Zusammen ist das der Unterschied
+zwischen einem Bild und „draußen“ — ohne sie steht die Luft über dem Boden
+völlig still.
+
+Wind und Wasserlicht laufen als Shader auf der jeweiligen Bodenschicht. Das ist
+hier die einzige vertretbare Bauform: der Boden sind vier `TileMapLayer` mit
+Millionen möglicher Kacheln, ein Knoten je bewegtem Halm wäre nicht bezahlbar.
+So kostet die Bewegung genau drei Materialien — unabhängig davon, wie groß die
+Welt ist.
+
+Zwei Entscheidungen stecken darin:
+
+- **Gerechnet wird je Eckpunkt, nicht je Bildpunkt.** Eine Kachel hat vier Ecken
+  und 1024 Bildpunkte. Die erste Fassung rechnete die Wellen im Fragment und
+  kostete 66 ms je Bild statt 14 — dieselbe Wirkung im Vertex-Schritt kostet
+  wieder rund 14. Die Wellenlänge liegt bei mehreren hundert Bildpunkten, die
+  Interpolation über eine 32er-Kachel sieht man nicht.
+- **Verändert wird die Helligkeit, nicht die Lage der Bildpunkte.** Die Kacheln
+  kommen aus einem Atlas; ein verschobenes UV griffe in die Nachbarkachel im
+  Atlasbild, und an jeder Kachelkante entstünden Streifen fremder Farbe.
+
+Der Staub lebt ausschließlich im sichtbaren Ausschnitt: wer ihn verlässt, wird
+auf der Gegenseite wieder eingesetzt statt weiterberechnet. Dadurch kostet die
+Wirkung immer gleich viel, egal wie groß die Welt ist.
+
+Der Selbsttest misst alle vier Kombinationen (mit/ohne Wind, mit/ohne Staub) und
+schlägt fehl, wenn die Bewegung das Bild um eine Größenordnung teurer macht.
+
+### Der Boden sieht aus wie Boden
+
+Die Gras- und Sandkacheln sind neu gezeichnet. Vorher lagen **230 deckende
+Einzelpixel auf 1024** — knapp ein Viertel der Kachel. Aus zwei Metern Abstand
+war das kein Gras, sondern Bildrauschen, und es überdeckte jede größere
+Struktur. Jetzt sind es rund 70, und sie werden eingeblendet statt gesetzt.
+Die Halme stehen in kleinen Büscheln statt gleichmäßig verstreut — zwei bis
+drei nebeneinander liest man als Gras, einzelne Striche nicht.
+
+Damit fielen auch die Helligkeitsstufen je Kachel auf, die das dichte Korn
+vorher verdeckt hatte: sie sind von 3,5 % auf 1,8 % zurückgenommen. Die große
+Helligkeitsbewegung kommt jetzt ohnehin vom Wind, und die läuft über
+Kachelkanten hinweg weich durch.
 
 ## Anzeigen
 
@@ -292,6 +339,7 @@ src/core/main.gd           Zustandsautomat MENÜ / SPIEL / PAUSE / OPTIONEN / IN
 src/gfx/pixel.gd           Zeichen-Werkzeuge auf Images, mit umlaufendem Kachelrand
 src/gfx/tile_art.gd        Die drei Bodenkacheln in Varianten und Helligkeitsstufen
 src/gfx/tile_icon.gd       Materialbild der Oberfläche aus echten Bodenkacheln
+src/gfx/world_shaders.gd   Wind über dem Gras, Licht auf dem Wasser
 src/gfx/terrain_atlas.gd   Übergangskacheln für das Eck-Autotiling
 src/gfx/edge_art.gd        Uferband auf dem Land, Tiefenband im Wasser
 src/gfx/actor_art.gd       Spielerfigur (Idle, Laufzyklus, Schwimmen)
@@ -302,6 +350,7 @@ src/world/world_builder.gd Karte, Kachelgrafik und Kachelsatz erzeugen
 src/world/chunk_streamer.gd Lädt und entlädt Chunks um die Figur, baut die Kollision
 src/world/build_tool.gd    Blöcke setzen und entfernen, Speichern
 src/world/water_fx.gd      Glitzern und Uferschaum (nur im Sichtbereich)
+src/world/ambient_fx.gd    Staub und Pollen in der Luft (nur im Sichtbereich)
 src/world/world.gd         Setzt die Spielwelt zusammen
 
 src/player/player.gd       Bewegung, Sprung, Schwimmen, Animation
@@ -343,7 +392,7 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **196 Prüfungen**.
+Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **207 Prüfungen**.
 Darunter unter anderem:
 
 - genau drei Bodentypen in Aufzählung, Kachelstapel, Leiste, Inventar und Minimap
@@ -366,6 +415,8 @@ Darunter unter anderem:
 - jede Einstellung ändert das System dahinter (Engine-Bildrate, geladene
   Chunks, gezeichnete Wasserwirkung, Schatten der Figur) und übersteht einen
   Neustart
+- Bewegung „Aus“ hängt die Materialien wirklich ab, die Wellen laufen im
+  Vertex-Schritt, und die Bewegung kostet keine Größenordnung
 - Musik vorhanden, Klangeffekte weder im Ton noch an einer Aufrufstelle
 - keine fremde Asset-Datei im Projekt (siehe [`CREDITS.md`](CREDITS.md))
 

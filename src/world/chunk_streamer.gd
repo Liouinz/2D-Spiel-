@@ -24,6 +24,14 @@ var player: Node2D
 var layers: Array[TileMapLayer] = []
 var body: StaticBody2D                 ## Sammelknoten aller Kollisionsformen
 
+## Materialien, die Gras und Wasser in Bewegung halten. Sie hängen an der
+## Schicht, nicht an der Kachel — deshalb kostet die Bewegung unabhängig von der
+## Weltgrösse immer nur diese Materialien. Einmal gebaut, danach nur noch
+## zugewiesen oder abgehängt.
+var _grass_full: ShaderMaterial
+var _grass_simple: ShaderMaterial
+var _water_mat: ShaderMaterial
+
 var _loaded: Dictionary = {}           ## Vector2i -> Array[CollisionShape2D]
 var _pending: Array[Vector2i] = []     ## noch zu ladende Chunks, nächster zuerst
 var _last_chunk := Vector2i(-9999, -9999)
@@ -41,6 +49,12 @@ func setup(m: MapData, g: GroundTileSet, p: Node2D) -> void:
 		layers.append(_layer("L%d_%s" % [pos, GroundTileSet.NAMES[GroundTileSet.STACK[pos]]],
 			-40 + pos, g))
 
+	# Gras weht, Wasser bekommt wandernde Lichtstreifen. Die Reihenfolge der
+	# Schichten steht in GroundTileSet.STACK: 0 Gras, 1 Sand, 2 Wasser.
+	_grass_full = WorldShaders.make(WorldShaders.GRASS)
+	_grass_simple = WorldShaders.make(WorldShaders.GRASS_SIMPLE)
+	_water_mat = WorldShaders.make(WorldShaders.WATER)
+
 	# Die Kantenschicht liegt über dem Boden, aber unter der Brandung:
 	# Uferbänder gehören zum Untergrund, die Wellen darüber.
 	# Der Index muss zu GroundTileSet.LAYER_EDGE passen.
@@ -55,10 +69,29 @@ func setup(m: MapData, g: GroundTileSet, p: Node2D) -> void:
 	# kommen in die Warteschlange und werden über die nächsten Bilder verteilt
 	# nachgeladen. Deshalb stockt das Spiel beim Umstellen nicht.
 	Graphics.applied.connect(_on_graphics_applied)
+	apply_wind()
 
 func _on_graphics_applied() -> void:
+	apply_wind()
 	if is_instance_valid(player):
 		_refresh_wanted()
+
+## Hängt die Bewegung an die Bodenschichten — oder ab.
+##
+## Öffentlich, damit der Selbsttest die drei Stufen messen kann.
+func apply_wind() -> void:
+	if layers.size() < 3:
+		return
+	layers[0].material = WorldShaders.grass_for(Settings.wind, _grass_simple, _grass_full)
+	layers[2].material = _water_mat if Settings.wind > 0 else null
+	WorldShaders.set_strength([_grass_full, _grass_simple, _water_mat],
+		Graphics.wind_strength())
+
+## Welche Bewegungsstufe liegt gerade auf dem Boden? 0 keine, 1 einfach, 2 voll.
+func wind_level() -> int:
+	if layers.is_empty() or layers[0].material == null:
+		return 0
+	return 1 if layers[0].material == _grass_simple else 2
 
 func _layer(layer_name: String, z: int, g: GroundTileSet) -> TileMapLayer:
 	var layer := TileMapLayer.new()
