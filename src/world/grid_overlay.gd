@@ -123,14 +123,31 @@ func _draw_grid(t: float, x0: int, y0: int, x1: int, y1: int) -> void:
 ##
 ## Gezeichnet wird nicht nur der Rahmen, sondern die gewählte Bodenkachel
 ## halbdurchsichtig darin: so sieht man nicht nur wohin, sondern auch was.
+##
+## Der Rahmen besteht aus vier Eckwinkeln statt aus einem geschlossenen Kasten.
+## Ein Kasten legt sich wie ein zweites Raster über die Welt und schluckt die
+## Kachel darunter; Winkel zeigen dasselbe Feld, lassen es aber frei. Bewusst
+## ohne Pulsieren: das Raster zeichnet sich nur neu, wenn sich etwas ändert, und
+## dieser Sparzweck ist mehr wert als eine atmende Linie.
 func _draw_cursor(t: float) -> void:
 	if cursor_block.x < 0:
 		return
 	var box := Rect2(cursor_block.x * t, cursor_block.y * t, t, t)
 	if cursor_tex != null:
 		draw_texture_rect(cursor_tex, box, false, CURSOR_GHOST)
-	draw_rect(box, Color(0, 0, 0, 0.55), false, 5.0)
-	draw_rect(box, CURSOR_LINE, false, 2.0)
+	var arm := t * 0.3
+	for corner: Array in [[box.position, 1.0, 1.0], [Vector2(box.end.x, box.position.y), -1.0, 1.0],
+			[Vector2(box.position.x, box.end.y), 1.0, -1.0], [box.end, -1.0, -1.0]]:
+		var p: Vector2 = corner[0]
+		var dx: float = corner[1]
+		var dy: float = corner[2]
+		# Erst dunkel und dick, dann hell und dünn: der Winkel bleibt auf jedem
+		# Untergrund lesbar, auch auf hellem Sand.
+		for pass_i in 2:
+			var col: Color = Color(0, 0, 0, 0.6) if pass_i == 0 else CURSOR_LINE
+			var w: float = 4.0 if pass_i == 0 else 2.0
+			draw_line(p, p + Vector2(arm * dx, 0.0), col, w)
+			draw_line(p, p + Vector2(0.0, arm * dy), col, w)
 
 func _draw_border(t: float, x0: int, y0: int, x1: int, y1: int) -> void:
 	var lo := t

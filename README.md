@@ -94,11 +94,38 @@ auch aus dem Augenwinkel zu erkennen.
 - **1 – 3**, **Mausrad** oder ein **Klick auf das Feld** wählt den Bodentyp.
 - **Linke Maustaste** setzt ihn auf den Block unter dem Zeiger, **rechte
   Maustaste** setzt zurück auf Gras. Gedrückt halten malt.
-- Der Block unter dem Zeiger ist weiß umrandet.
+- Der Block unter dem Zeiger wird von **vier Eckwinkeln** eingefasst, mit der
+  gewählten Kachel halbdurchsichtig darin. Winkel statt eines geschlossenen
+  Kastens: ein Kasten legt sich wie ein zweites Raster über die Welt und
+  schluckt die Kachel darunter.
+- Jeder gesetzte Block bekommt für zwei Zehntelsekunden einen **Rahmen, der
+  herauswächst und verblasst** — ohne so ein Zeichen fühlt sich Bauen an, als
+  füllte man eine Tabelle aus. Beim schnellen Ziehen bleiben höchstens 24
+  Zeichen stehen, sonst verdecken sie die Welt, die sie zeigen sollen.
+- Beim Aufkommen nach einem Sprung staubt es kurz unter der Figur.
 - Ein gesetzter Block **füllt sein Feld** und verbindet sich mit den Nachbarn —
   eine Reihe wird ein Streifen, kein Punktmuster. Das gilt in alle acht
   Richtungen, für jede Materialkombination und auch beim schnellen Ziehen.
 - Die Übergänge zu den Nachbarn werden sofort mitgerechnet.
+
+### Das Gelände erkennt die Form
+
+Die Übergangskachel eines Feldes ist durch ihre **Eckmaske** bestimmt: vier
+Bits, eines je Ecke, gesetzt wenn eines der drei dort anliegenden Felder zur
+Schicht gehört. Daraus ergibt sich von selbst, welche Darstellung passt:
+
+| Was gebaut wurde | Was das Feld daneben bekommt |
+|---|---|
+| einzelnes Feld | Vollkachel; ringsum Kanten und Aussenecken |
+| gerade Fläche | Vollkachel innen, gerade Kante aussen (2 Bits) |
+| Aussenecke | nur diagonal berührt → 1 Bit |
+| Innenecke (L-Form) | drei Ecken bedeckt → 3 Bits |
+| Übergang zu Wasser | hart am Block, kein Saum — sonst läge die Brandung auf dem Sand |
+
+Der Selbsttest baut jede dieser Formen und prüft die Maske, statt Bilder zu
+vergleichen: „Feld schräg über einem Einzelblock ist eine Aussenecke",
+„Das Feld in der Kerbe einer L-Form ist eine Innenecke". Ein Ausrutscher im
+Autotiling fällt damit sofort auf.
 - Gebaut werden kann auch **im Laufen und im Sprung**.
 
 ![Bauen mit der Leiste](docs/bilder/bauen.png)
@@ -351,6 +378,7 @@ src/world/chunk_streamer.gd Lädt und entlädt Chunks um die Figur, baut die Kol
 src/world/build_tool.gd    Blöcke setzen und entfernen, Speichern
 src/world/water_fx.gd      Glitzern und Uferschaum (nur im Sichtbereich)
 src/world/ambient_fx.gd    Staub und Pollen in der Luft (nur im Sichtbereich)
+src/world/build_fx.gd      Kurze Rückmeldung: gesetzter Block, Landung
 src/world/world.gd         Setzt die Spielwelt zusammen
 
 src/player/player.gd       Bewegung, Sprung, Schwimmen, Animation
@@ -392,7 +420,7 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **207 Prüfungen**.
+Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **223 Prüfungen**.
 Darunter unter anderem:
 
 - genau drei Bodentypen in Aufzählung, Kachelstapel, Leiste, Inventar und Minimap
@@ -417,6 +445,10 @@ Darunter unter anderem:
   Neustart
 - Bewegung „Aus“ hängt die Materialien wirklich ab, die Wellen laufen im
   Vertex-Schritt, und die Bewegung kostet keine Größenordnung
+- Einzelfeld, gerade Kante, Außenecke, Innenecke und der Übergang zu Wasser
+  bekommen jeweils die richtige Eckmaske
+- jeder gesetzte Block bekommt ein Zeichen, es verschwindet wieder, und beim
+  Ziehen bleiben nie mehr als 24 stehen
 - Musik vorhanden, Klangeffekte weder im Ton noch an einer Aufrufstelle
 - keine fremde Asset-Datei im Projekt (siehe [`CREDITS.md`](CREDITS.md))
 

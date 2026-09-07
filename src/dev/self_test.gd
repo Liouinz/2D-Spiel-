@@ -161,6 +161,8 @@ func _run() -> void:
 	await _check_chunks()
 	await _check_building(world, map, player)
 	await _check_water(world, map, player)
+	await _check_terrain_shapes(world, map)
+	await _check_build_feedback(world)
 	await _check_toggle(world, map, player)
 	await _check_inventory_ui(world)
 	await _check_design_system(world)
@@ -822,6 +824,126 @@ func _check_toggle(world: Node2D, map: MapData, player: Player) -> void:
 	main._unhandled_input(_key("ui_cancel"))
 	await _frames(3)
 	_check(main.state == main.State.PLAYING and not inv.visible, "ESC schliesst das Inventar")
+
+# --- Bauen: Form erkennen, Rückmeldung geben ----------------------------------
+
+## Erkennt das Gelände, welche Form gebaut wurde?
+##
+## Die Übergangskachel eines Feldes ist durch ihre ECKMASKE bestimmt: vier Bits,
+## eines je Ecke, gesetzt wenn eines der drei dort anliegenden Felder zur Schicht
+## gehört. Aus der Maske lässt sich also ablesen, ob ein Feld eine gerade Kante,
+## eine Aussenecke oder eine Innenecke ist — und genau das wird hier geprüft,
+## statt Bilder zu vergleichen.
+##
+##   1 Bit   Aussenecke (nur diagonal berührt)
+##   2 Bits  gerade Kante
+##   3 Bits  Innenecke
+##   4 Bits  Vollkachel (Maske 15)
+func _check_terrain_shapes(world: Node2D, map: MapData) -> void:
+	var tool: BuildTool = world.build_tool
+	var origin := Config.spawn_block() + Vector2i(20, 20)
+	var sand := MapData.Tile.SAND
+
+	# --- Einzelnes Feld ---
+	tool.place(origin, sand)
+	await _frames(2)
+	_check(_mask_at(world, 1, origin) == 15,
+		"Einzelnes Feld ist eine Vollkachel (%d)" % _mask_at(world, 1, origin))
+	var north := _mask_at(world, 1, origin + Vector2i(0, -1))
+	var north_west := _mask_at(world, 1, origin + Vector2i(-1, -1))
+	_check(_bits(north) == 2, "Feld über einem Einzelblock ist eine Kante (%d Bits)" % _bits(north))
+	_check(_bits(north_west) == 1,
+		"Feld schräg über einem Einzelblock ist eine Aussenecke (%d Bits)" % _bits(north_west))
+	_check(north == 12, "Die Kante liegt unten (Maske %d, erwartet 12)" % north)
+	_check(north_west == 4, "Die Aussenecke liegt unten rechts (Maske %d, erwartet 4)" % north_west)
+
+	# --- Gerade Fläche: Mitte einer 3 x 3 bleibt voll, der Rand wird Kante ---
+	for oy in range(-1, 2):
+		for ox in range(-1, 2):
+			tool.place(origin + Vector2i(ox, oy), sand)
+	await _frames(2)
+	_check(_mask_at(world, 1, origin) == 15, "Mitte einer Fläche bleibt eine Vollkachel")
+	var edge := _mask_at(world, 1, origin + Vector2i(0, -2))
+	_check(edge == 12, "Über einer Fläche liegt eine gerade Kante (Maske %d)" % edge)
+
+	# --- Innenecke: L-Form, das freie Feld in der Kerbe ---
+	for oy in range(-1, 2):
+		for ox in range(-1, 2):
+			tool.place(origin + Vector2i(ox, oy), MapData.Tile.GRASS)
+	var l_cells := [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1)]
+	for c: Vector2i in l_cells:
+		tool.place(origin + c, sand)
+	await _frames(2)
+	var inner := _mask_at(world, 1, origin + Vector2i(1, 1))
+	_check(_bits(inner) == 3,
+		"Das Feld in der Kerbe einer L-Form ist eine Innenecke (%d Bits, Maske %d)"
+		% [_bits(inner), inner])
+	_check(inner == 11, "Die Innenecke lässt genau die abgewandte Ecke frei (Maske %d)" % inner)
+
+	# --- Übergang zu Wasser: hart am Block, kein Saum im Nachbarfeld ---
+	for c: Vector2i in l_cells:
+		tool.place(origin + c, MapData.Tile.GRASS)
+	var pond := origin + Vector2i(6, 0)
+	tool.place(pond, MapData.Tile.WATER)
+	await _frames(2)
+	_check(_mask_at(world, 2, pond) == 15, "Wasser füllt sein Feld ganz")
+	_check(_mask_at(world, 2, pond + Vector2i(0, -1)) < 0,
+		"Neben dem Wasser liegt kein Wassersaum — seine Kante sitzt am Block")
+	_check(_mask_at(world, 1, pond) == 15,
+		"Unter dem Wasser liegt Sand, damit die Brandung auf Sand trifft")
+	tool.place(pond, MapData.Tile.GRASS)
+	await _frames(2)
+
+## Die Eckmaske eines Feldes auf einer Bodenschicht.
+##
+## 0 – 14 sind Übergänge, 15 ist eine Vollkachel, −1 heisst: dort liegt nichts.
+func _mask_at(world: Node2D, layer_pos: int, cell: Vector2i) -> int:
+	var layer: TileMapLayer = world.streamer.layers[layer_pos]
+	var coords := layer.get_cell_atlas_coords(cell)
+	if coords.x < 0:
+		return -1
+	var slots: Array = world.streamer.ground._slots[layer_pos]
+	var idx := slots.find(coords)
+	if idx < 0:
+		return -1
+	return idx if idx < TerrainAtlas.PARTIAL else 15
+
+func _bits(mask: int) -> int:
+	if mask < 0:
+		return 0
+	var n := 0
+	for i in 4:
+		if mask & (1 << i):
+			n += 1
+	return n
+
+## Bauen muss sich anfühlen, als hätte man etwas getan.
+##
+## Geprüft wird, dass jedes gesetzte Feld ein Zeichen bekommt, dass das Zeichen
+## wieder verschwindet, und dass beim schnellen Ziehen nicht hunderte davon
+## stehen bleiben und die Welt zudecken.
+func _check_build_feedback(world: Node2D) -> void:
+	var fx: BuildFx = world.build_fx
+	var tool: BuildTool = world.build_tool
+	_check(fx != null, "Rückmeldung beim Bauen vorhanden")
+	if fx == null:
+		return
+	var at := Config.spawn_block() + Vector2i(24, 24)
+	tool.place(at, MapData.Tile.SAND)
+	await _frames(3)
+	_check(fx.drawn > 0, "Ein gesetzter Block bekommt ein Zeichen (%d)" % fx.drawn)
+	await _frames(40)
+	_check(fx.drawn == 0, "Das Zeichen verschwindet von selbst wieder (%d)" % fx.drawn)
+
+	# Schnelles Ziehen: viele Felder, aber die Zeichen bleiben begrenzt.
+	for i in 60:
+		tool.place(at + Vector2i(i % 12, i / 12), MapData.Tile.SAND)
+	_check(fx._marks.size() <= BuildFx.MAX_MARKS,
+		"Beim Ziehen bleiben höchstens %d Zeichen stehen (%d)"
+		% [BuildFx.MAX_MARKS, fx._marks.size()])
+	for i in 60:
+		tool.place(at + Vector2i(i % 12, i / 12), MapData.Tile.GRASS)
+	await _frames(40)
 
 # --- Bewegung in der Welt -----------------------------------------------------
 

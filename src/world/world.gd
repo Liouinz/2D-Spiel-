@@ -13,6 +13,7 @@ var build_tool: BuildTool
 var inventory: Inventory
 var streamer: ChunkStreamer
 var ambient: AmbientFx
+var build_fx: BuildFx
 
 const HudScene := preload("res://src/ui/hud.gd")
 
@@ -79,6 +80,12 @@ func _ready() -> void:
 	water.camera = camera
 	player.splashed.connect(water.splash)
 
+	# Kurze Rückmeldung beim Bauen und beim Aufkommen.
+	build_fx = BuildFx.new()
+	build_fx.name = "BuildFx"
+	add_child(build_fx)
+	player.landed.connect(build_fx.puff)
+
 	# Staub und Pollen in der Luft — nur im sichtbaren Ausschnitt.
 	ambient = AmbientFx.new()
 	ambient.name = "AmbientFx"
@@ -118,6 +125,7 @@ func _ready() -> void:
 	build_tool.camera = camera
 	build_tool.water = water
 	build_tool.minimap = hud.minimap
+	build_tool.fx = build_fx
 	build_tool.main = get_parent()
 	add_child(build_tool)
 	build_bar.slot_clicked.connect(func(i: int) -> void:

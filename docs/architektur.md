@@ -714,6 +714,48 @@ dabei besser geworden: Gras 1,16 → 0,51, Sand 0,66 → 0,54.
 
 **Stand:** 207 Prüfungen, alle grün.
 
+## Nachtrag: Baugefühl und die Form, die das Gelände erkennt
+
+**Zielwinkel statt Kasten.** Die Bauvorschau war ein geschlossener weisser
+Rahmen um den Block. Der legt sich wie ein zweites Raster über die Welt und
+schluckt genau die Kachel, die er zeigen soll. Vier Eckwinkel zeigen dasselbe
+Feld und lassen es frei. Bewusst ohne Pulsieren: `GridOverlay` zeichnet sich nur
+neu, wenn sich wirklich etwas geändert hat — dieser Sparzweck ist mehr wert als
+eine atmende Linie, und eine pulsierende Vorschau hätte ihn zunichtegemacht.
+
+**Ein Zeichen für „das habe ich getan".** `BuildFx` hält eine kurze Liste
+vergänglicher Marken: ein Rahmen, der aus dem gesetzten Block herauswächst und
+in 0,22 Sekunden verblasst, und eine kleine Staubwolke beim Aufkommen nach einem
+Sprung. Ohne so etwas fühlt sich Bauen an wie das Ausfüllen einer Tabelle. Die
+Liste ist auf 24 Marken begrenzt — beim schnellen Ziehen entstehen sonst
+hunderte, und die verdecken am Ende die Welt, die sie zeigen sollen. Ist die
+Liste leer, laufen weder `_process` noch `_draw`.
+
+**Die Form steckt schon in der Maske.** Das Eck-Autotiling war da, geprüft wurde
+bisher aber nur, DASS Übergänge entstehen. Der Kachelindex eines Übergangsfeldes
+IST seine Eckmaske (0 – 14; 15 ist die Vollkachel), und daraus lässt sich die
+Form direkt ablesen:
+
+| Bits | Bedeutung |
+|---|---|
+| 1 | Aussenecke — nur diagonal berührt |
+| 2 | gerade Kante |
+| 3 | Innenecke |
+| 4 | Vollkachel |
+
+Der Selbsttest baut ein Einzelfeld, eine 3 x 3-Fläche, eine L-Form und ein
+Wasserfeld und liest die Masken der Nachbarn ab. Er prüft nicht nur die Anzahl
+der Bits, sondern welche: über einem Einzelblock muss Maske 12 stehen (die
+beiden unteren Ecken), schräg darüber Maske 4 (nur unten rechts), in der Kerbe
+einer L-Form Maske 11 (alles ausser der abgewandten Ecke). Neben Wasser darf gar
+nichts auf der Wasserschicht liegen — seine Kante sitzt hart am Block, sonst
+landete die Brandung auf dem Sand statt im Wasser.
+
+Das ist ein Bildvergleich ohne Bilder: ein Ausrutscher im Autotiling fällt als
+falsche Zahl auf, nicht erst jemandem beim Spielen.
+
+**Stand:** 223 Prüfungen, alle grün.
+
 ## Lizenzlage
 
 Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest

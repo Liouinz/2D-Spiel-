@@ -26,6 +26,7 @@ var grid: GridOverlay
 var camera: GameCamera
 var water: WaterFx              ## Brandung neu berechnen, wenn Wasser entsteht
 var minimap: Control            ## sofort nachziehen statt erst beim nächsten Takt
+var fx: BuildFx                 ## kurzes Zeichen auf dem gesetzten Block
 var main: Node                  ## öffnet und schliesst das Inventar
 
 ## Weiter als so viele Felder wird beim Ziehen nicht aufgefüllt. Springt der
@@ -152,6 +153,8 @@ func place(cell: Vector2i, tile: int) -> void:
 	# und muss auch nicht dagegen geprüft werden.
 	map.set_tile(cell.x, cell.y, tile)
 	streamer.refresh_cell(cell)
+	if is_instance_valid(fx):
+		fx.flash(cell)
 	if is_instance_valid(water):
 		water.refresh(cell)
 	if is_instance_valid(minimap):
