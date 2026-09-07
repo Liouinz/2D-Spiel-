@@ -17,6 +17,10 @@ const HudScene := preload("res://src/ui/hud.gd")
 
 var build_msec: int = 0
 
+## Von Main gesetzt, bevor die Welt in den Baum kommt: neue Welt statt der
+## gespeicherten Karte.
+var fresh: bool = false
+
 var _sorted: Node2D
 
 func _ready() -> void:
@@ -31,7 +35,7 @@ func _ready() -> void:
 
 	var started := Time.get_ticks_msec()
 	var builder := WorldBuilder.new()
-	builder.build(Config.WORLD_SEED)
+	builder.build(Config.WORLD_SEED, fresh)
 	map = builder.map
 
 	# Die Figur muss vor dem Boden dastehen: der ChunkStreamer lädt um sie

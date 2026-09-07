@@ -37,13 +37,9 @@ const CAPTION_H := 30
 const BAND_H := 19
 const BADGE := Vector2(20, 18)
 
-const FONT_CARD := 15
-const FONT_SLOT := 12
-const FONT_NUMBER := 12
-
-## Wie schnell die Zustände ineinander übergehen. Hoch genug, dass es nie
-## träge wirkt, niedrig genug, dass man den Übergang sieht.
-const SPEED := 14.0
+const FONT_CARD := UiTheme.FONT_SMALL
+const FONT_SLOT := UiTheme.FONT_TINY
+const FONT_NUMBER := UiTheme.FONT_TINY
 
 ## Wie weit ein Feld beim Überfahren und beim Auswählen über seine Kante
 ## hinauswächst. Bewusst klein — die Bewegung soll ruhig bleiben.
@@ -124,7 +120,7 @@ func _gui_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	var want_hover := 1.0 if _over else 0.0
 	var want_sel := 1.0 if selected else 0.0
-	var step := clampf(delta * SPEED, 0.0, 1.0)
+	var step := clampf(delta * UiTheme.STATE_SPEED, 0.0, 1.0)
 	_hover = lerpf(_hover, want_hover, step)
 	_sel = lerpf(_sel, want_sel, step)
 	if absf(_hover - want_hover) < 0.005 and absf(_sel - want_sel) < 0.005:
@@ -150,7 +146,7 @@ func _draw() -> void:
 		# Der Name liegt im Fuss auf einem dunklen Band. So bleibt das Feld
 		# quadratisch und der Name trotzdem lesbar.
 		var band := Rect2(PAD_SLOT, size.y - PAD_SLOT - BAND_H, ICON, BAND_H)
-		draw_rect(band, Color(0.04, 0.05, 0.07, 0.74))
+		draw_rect(band, Color(UiTheme.SCRIM, 0.74))
 		_draw_caption(GroundTileSet.NAMES[tile], band.position.y, band.size.y, FONT_SLOT)
 	if number > 0:
 		_draw_number()
@@ -158,9 +154,7 @@ func _draw() -> void:
 ## Das Kachelbild sitzt in einer leicht vertieften Mulde und wird 1:1
 ## gezeichnet — keine Streckung, kein angeschnittener Ausschnitt.
 func _draw_icon(pos: Vector2) -> void:
-	var well := StyleBoxFlat.new()
-	well.bg_color = Color(0.05, 0.06, 0.08, 0.9)
-	well.set_corner_radius_all(4)
+	var well := UiTheme.box(UiTheme.SURFACE_SUNKEN, Color(0, 0, 0, 0), 0, UiTheme.RADIUS_S - 2)
 	draw_style_box(well, Rect2(pos - Vector2(2, 2), Vector2(ICON + 4, ICON + 4)))
 	if _icon == null:
 		return
@@ -174,22 +168,20 @@ func _draw_icon(pos: Vector2) -> void:
 	draw_texture_rect(_icon, Rect2(pos, Vector2(ICON, ICON)), false, tint)
 
 func _draw_number() -> void:
-	var box := StyleBoxFlat.new()
-	box.bg_color = Color(0.04, 0.05, 0.07, 0.78)
-	box.set_corner_radius_all(3)
-	box.corner_radius_top_left = 4
+	var box := UiTheme.box(Color(UiTheme.SCRIM, 0.78), Color(0, 0, 0, 0), 0, 3)
+	box.corner_radius_top_left = UiTheme.RADIUS_S - 2
 	var rect := Rect2(Vector2(PAD_SLOT, PAD_SLOT), BADGE)
 	draw_style_box(box, rect)
-	var col: Color = Palette.UI_ACCENT if selected else Palette.UI_TEXT
+	var col: Color = UiTheme.ACCENT if selected else UiTheme.TEXT
 	_text(str(number), rect.position.x, rect.size.x, rect.position.y, rect.size.y,
-		FONT_NUMBER, col if not disabled else Palette.UI_TEXT_DIM)
+		FONT_NUMBER, col if not disabled else UiTheme.TEXT_DIM)
 
 func _draw_caption(text: String, y: float, height: float, font_size: int) -> void:
-	var col: Color = Palette.UI_TEXT
+	var col: Color = UiTheme.TEXT
 	if disabled:
-		col = Palette.UI_TEXT_DIM
+		col = UiTheme.TEXT_DIM
 	elif selected:
-		col = Palette.UI_ACCENT
+		col = UiTheme.ACCENT
 	_text(text, 0.0, size.x, y, height, font_size, col)
 
 ## Waagerecht und senkrecht mittig, mit dunklem Saum — lesbar auf jedem Boden.
@@ -201,7 +193,7 @@ func _text(text: String, x: float, width: float, y: float, height: float,
 	var baseline := y + (height + font.get_ascent(font_size) - font.get_descent(font_size)) * 0.5
 	var at := Vector2(x, baseline)
 	draw_string_outline(font, at, text, HORIZONTAL_ALIGNMENT_CENTER, width, font_size,
-		4, Color(0, 0, 0, 0.8))
+		UiTheme.OUTLINE, Color(0, 0, 0, 0.8))
 	draw_string(font, at, text, HORIZONTAL_ALIGNMENT_CENTER, width, font_size, col)
 
 ## Wie deutlich dieses Feld gerade hervorgehoben ist (0 … 1). Öffentlich,
@@ -217,31 +209,21 @@ func hover_strength() -> float:
 ## Ebenfalls öffentlich: der Selbsttest liest daran ab, dass ein gewähltes Feld
 ## wirklich anders aussieht und nicht nur eine Spur heller ist.
 func frame_style() -> StyleBoxFlat:
-	var box := StyleBoxFlat.new()
-	box.set_corner_radius_all(7)
 	if disabled:
-		box.bg_color = Color(0.09, 0.10, 0.12, 0.55)
-		box.border_color = Color(0.24, 0.24, 0.26, 0.6)
-		box.set_border_width_all(2)
-		return box
+		return UiTheme.box(Color(0.09, 0.10, 0.12, 0.55), Color(0.24, 0.24, 0.26, 0.6),
+			UiTheme.BORDER, UiTheme.RADIUS_S)
 
 	# Fläche: ruhig, hellt beim Überfahren auf, im gewählten Zustand warm getönt.
-	var bg := Color(0.10, 0.11, 0.14, 0.94)
-	bg = bg.lerp(Color(0.17, 0.19, 0.23, 0.96), _hover)
-	bg = bg.lerp(Color(0.22, 0.19, 0.13, 0.98), _sel)
-	box.bg_color = bg
-
+	var bg := UiTheme.SURFACE_RAISED.lerp(UiTheme.SURFACE_HOVER, _hover) \
+		.lerp(UiTheme.SURFACE_ACTIVE, _sel)
 	# Rahmen: dezent, beim Überfahren Holzton, gewählt in der Akzentfarbe.
-	var border := Color(0.20, 0.21, 0.24, 0.9)
-	border = border.lerp(Palette.UI_BORDER_HI, _hover)
-	border = border.lerp(Palette.UI_ACCENT, _sel)
-	box.border_color = border
-	box.set_border_width_all(int(round(lerpf(2.0, 3.0, _sel))))
+	var border := UiTheme.LINE.lerp(UiTheme.ACCENT_LINE, _hover).lerp(UiTheme.ACCENT, _sel)
+	var box := UiTheme.box(bg, border,
+		int(round(lerpf(UiTheme.BORDER, UiTheme.BORDER_STRONG, _sel))), UiTheme.RADIUS_S)
 
 	# Schein: nur das gewählte Feld bekommt einen — dadurch ist die Auswahl
 	# nicht mehr an einer dünnen gelben Linie zu erraten.
 	if _sel > 0.01:
 		box.shadow_size = int(round(10.0 * _sel))
-		box.shadow_color = Color(Palette.UI_ACCENT.r, Palette.UI_ACCENT.g,
-			Palette.UI_ACCENT.b, 0.34 * _sel)
+		box.shadow_color = Color(UiTheme.ACCENT, 0.34 * _sel)
 	return box

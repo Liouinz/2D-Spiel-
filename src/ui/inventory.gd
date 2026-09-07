@@ -33,19 +33,18 @@ const ALL := [
 ]
 
 const CARD := ItemSlot.CARD_SIZE      ## 92 x 112
-const CARD_GAP := 14
-const PAD := 22                       ## Innenrand der Tafel
+const CARD_GAP := UiTheme.SPACE_M
+const PAD := UiTheme.SPACE_L          ## Innenrand der Tafel
 const PAD_TOP := 18
-const PAD_BOTTOM := 14
+const PAD_BOTTOM := UiTheme.SPACE_M
 const TITLE_H := 30
 const LABEL_H := 20
 const FOOTER_H := 18
 
-## Dauer der Einblendung. Kurz genug, dass es nie im Weg ist.
-const OPEN_TIME := 0.12
-
-## Wie stark die Welt hinter dem Inventar abgedunkelt wird.
-const DIM := 0.68
+## Dauer und Stärke der Einblendung kommen aus dem Designsystem — das Inventar
+## blendet damit genauso ein wie jedes Menü.
+const OPEN_TIME := UiTheme.ANIM
+const DIM := UiTheme.SCRIM.a
 
 signal equip_requested(slot: int, tile: int)
 
@@ -74,6 +73,7 @@ func setup(build_bar: BuildBar) -> void:
 	_root.name = "Root"
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UiTheme.attach(_root)
 	add_child(_root)
 
 	# Abdunkelung. STOP, nicht IGNORE: sie fängt jeden Klick neben der Tafel ab,
@@ -81,7 +81,7 @@ func setup(build_bar: BuildBar) -> void:
 	_dim = ColorRect.new()
 	_dim.name = "Dim"
 	_dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_dim.color = Color(0.03, 0.04, 0.06, DIM)
+	_dim.color = Color(UiTheme.SCRIM, DIM)
 	_dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	_root.add_child(_dim)
 
@@ -104,15 +104,14 @@ func _build_panel() -> void:
 	_root.add_child(_panel)
 
 	var y := PAD_TOP
-	_panel.add_child(_label("INVENTAR", 22, PAD, y, content_w, TITLE_H,
-		Palette.UI_ACCENT))
+	_panel.add_child(_label("INVENTAR", UiTheme.FONT_H1, PAD, y, content_w, TITLE_H,
+		UiTheme.ACCENT))
 	y += TITLE_H + 6
 
 	# Schmale Zierlinie unter der Überschrift — trennt Kopf und Inhalt, ohne
 	# dass dafür ein weiterer Satz nötig wäre.
 	var rule := ColorRect.new()
-	rule.color = Color(Palette.UI_BORDER_HI.r, Palette.UI_BORDER_HI.g,
-		Palette.UI_BORDER_HI.b, 0.55)
+	rule.color = Color(UiTheme.ACCENT_LINE, 0.55)
 	rule.position = Vector2((w - 64) * 0.5, y)
 	rule.size = Vector2(64, 2)
 	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -128,8 +127,8 @@ func _build_panel() -> void:
 		_cards.append(card)
 	y += int(CARD.y) + 16
 
-	_panel.add_child(_label("Bauleiste", 14, PAD, y, content_w, LABEL_H,
-		Palette.UI_TEXT_DIM))
+	_panel.add_child(_label("Bauleiste", UiTheme.FONT_SMALL, PAD, y, content_w, LABEL_H,
+		UiTheme.TEXT_DIM))
 	y += LABEL_H + 8
 
 	# Die Leiste sieht hier genauso aus wie im Spiel — gleiche Fassung, gleiche
@@ -151,8 +150,8 @@ func _build_panel() -> void:
 		_slots.append(slot)
 	y += bar_h + 12
 
-	_panel.add_child(_label("E – Schließen", 13, PAD, y, content_w, FOOTER_H,
-		Palette.UI_TEXT_DIM))
+	_panel.add_child(_label("E – Schließen", UiTheme.FONT_TINY, PAD, y, content_w, FOOTER_H,
+		UiTheme.TEXT_DIM))
 	y += FOOTER_H + PAD_BOTTOM
 
 	_panel.set_anchors_preset(Control.PRESET_CENTER)
@@ -160,7 +159,7 @@ func _build_panel() -> void:
 	_panel.offset_right = w * 0.5
 	_panel.offset_top = -y * 0.5
 	_panel.offset_bottom = y * 0.5
-	_panel.pivot_offset = Vector2(w, y) * 0.5
+	UiAnim.center_pivot(_panel)
 
 ## Wählt das Feld, das als Nächstes belegt wird — und damit zugleich das Feld,
 ## das nach dem Schliessen gebaut wird.
@@ -199,12 +198,10 @@ func _process(delta: float) -> void:
 	_open_t = minf(_open_t + delta / OPEN_TIME, 1.0)
 	_apply_open()
 
-## Weiche Einblendung: die Tafel wächst einen Hauch und blendet auf.
+## Weiche Einblendung — dieselbe Kurve und dieselbe Dauer wie bei den Menüs.
 func _apply_open() -> void:
-	var t := _open_t * _open_t * (3.0 - 2.0 * _open_t)   # weiches Ein/Aus
-	_panel.modulate.a = t
-	_panel.scale = Vector2.ONE * lerpf(0.96, 1.0, t)
-	_dim.color.a = DIM * t
+	UiAnim.apply(_panel, _open_t)
+	_dim.color.a = DIM * UiAnim.ease_t(_open_t)
 
 ## 1 – 3 wählen auch im offenen Inventar das Feld. Dieselben Aktionen wie im
 ## Spiel, aus der InputMap — nicht noch einmal als Tastencode im Code.
@@ -227,17 +224,12 @@ func _label(text: String, font_size: int, x: int, y: int, width: int, height: in
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	l.add_theme_font_size_override("font_size", font_size)
 	l.add_theme_color_override("font_color", col)
-	l.add_theme_constant_override("outline_size", 4)
+	l.add_theme_constant_override("outline_size", UiTheme.OUTLINE)
 	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
 
+## Dieselbe Tafel wie in den Menüs.
 func _panel_box() -> StyleBoxFlat:
-	var box := StyleBoxFlat.new()
-	box.bg_color = Color(0.075, 0.085, 0.105, 1.0)
-	box.border_color = Palette.UI_BORDER
-	box.set_border_width_all(2)
-	box.set_corner_radius_all(12)
-	box.shadow_size = 18
-	box.shadow_color = Color(0, 0, 0, 0.5)
-	return box
+	return UiTheme.box(UiTheme.SURFACE, Palette.UI_BORDER, UiTheme.BORDER,
+		UiTheme.RADIUS_L, UiTheme.SHADOW_PANEL)

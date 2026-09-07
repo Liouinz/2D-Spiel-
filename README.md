@@ -139,21 +139,75 @@ Im Bild unten sieht man alle drei Zustände auf einmal: **Gras** gewählt,
 
 ![Inventar](docs/bilder/inventar.png)
 
+## Menüs
+
+Alle Oberflächen — Hauptmenü, Pause, Einstellungen, Rückfragen, Inventar und
+Bauleiste — sind aus denselben Bausteinen gebaut: dieselben Abstände, dieselben
+Radien, dieselbe Schriftstaffel, dieselben Farben, dieselbe Einblendung. Die
+Werte stehen an genau einer Stelle (`src/ui/ui_theme.gd`); kein Menü erfindet
+eigene. Der Selbsttest prüft, dass wirklich jede Oberfläche dasselbe Theme
+benutzt — das ging vorher still schief, weil Godot ein Theme nicht über eine
+`CanvasLayer` hinweg vererbt.
+
+Jede Schaltfläche hat vier unterscheidbare Zustände (ruhig, überfahren,
+gedrückt, Fokus) und wächst beim Überfahren einen Hauch, statt hart die Farbe
+zu wechseln. Tastatur und Maus sehen dabei gleich aus: wer mit den Pfeiltasten
+durch ein Menü geht, sieht dasselbe wie mit dem Zeiger.
+
+**Hauptmenü** — **Fortsetzen** steht nur da, wenn es eine gebaute Karte gibt.
+**Neue Welt** fragt vorher nach, wenn dabei eine verloren ginge.
+
+![Hauptmenü](docs/bilder/hauptmenue.png)
+
+**Pause** — ESC hält das Spiel an. Solange ein Menü offen ist, passiert in der
+Welt nichts: keine Bewegung, kein Bauen, keine Mausaktion. Ein Menü bleibt
+undurchlässig, bis es ganz ausgeblendet ist — der Klick auf „Fortsetzen" kann
+deshalb keinen Block setzen.
+
+![Pause](docs/bilder/pause.png)
+
+## Einstellungen
+
+Fünf Kategorien statt einer langen Liste: **Allgemein**, **Grafik**,
+**Leistung**, **Steuerung**, **Ton**. Jede Zeile ist gleich gebaut —
+Beschriftung links, Stufen rechts. Auch Schalter sind Stufen („Aus / An"),
+damit nicht Kästchen neben Auswahlfeldern stehen.
+
+![Einstellungen](docs/bilder/optionen.png)
+
+Es steht dort **nichts, was nicht wirkt**:
+
+| Einstellung | Was sie tatsächlich tut |
+|---|---|
+| **Sichtweite** 3×3 … 9×9 | setzt den Chunk-Radius; mehr Chunks werden geladen und kommen über die nächsten Bilder dazu, zu weite fliegen sofort raus |
+| **Wasser** Einfach / Mittel / Hoch | Bildrate der Wasserwirkung (8 / 16 / 24 Hz); „Einfach“ zeichnet Glitzern und Brandung gar nicht mehr |
+| **Schatten** Aus / An | der Bodenschatten der Figur |
+| **Bildratengrenze** 30 … Unbegrenzt | `Engine.max_fps` |
+| **Bildsynchronisierung** | VSync des Fensters |
+| **Vollbild**, **Hinweise**, **Leistungsanzeige**, **Musik** | wie gehabt |
+
+Eine **Mindest-Bildrate** gibt es bewusst nicht: die kann kein Spiel zusichern.
+Was eingestellt wird, ist eine Obergrenze — sie hält die Bildabstände
+gleichmäßig, statt so viele Bilder wie möglich zu erzeugen.
+
+Alles wird sofort wirksam und sofort in `user://settings.cfg` gesichert. Der
+Selbsttest prüft für jede Einstellung, dass sich das System dahinter ändert,
+und dass sie einen Neustart übersteht.
+
+Unter **Steuerung** steht die vollständige Tastenbelegung — erzeugt aus der
+tatsächlichen InputMap, sie kann also nicht veralten.
+
 ## Anzeigen
 
-Im **Optionsmenü** steht unter „Steuerung“ die vollständige Tastenbelegung —
-erzeugt aus der tatsächlichen InputMap, sie kann also nicht veralten. Dort lässt
-sich auch die **Leistungsanzeige** einschalten (FPS, Speicher, CPU- und
-GPU-Renderzeit, Zeichenaufrufe). Sie ist bei jedem Start aus, und sie zeigt nur,
-was die Engine wirklich misst — liefert sie einen Wert nicht, steht dort „—“
-statt einer erfundenen Zahl.
+Die **Leistungsanzeige** (Grafikeinstellungen → Leistung) zeigt FPS, Speicher,
+CPU- und GPU-Renderzeit und Zeichenaufrufe. Sie ist bei jedem Start aus und
+zeigt nur, was die Engine wirklich misst — liefert sie einen Wert nicht, steht
+dort „—“ statt einer erfundenen Zahl.
 
 **F3** blendet davon getrennt die Entwicklerinfo ein: Chunk, Feld, Bodentyp,
 Begehbarkeit, geladene Kollisionsformen und Zustand der Figur.
 
 ![Leistungsanzeige und Entwicklerinfo](docs/bilder/anzeigen.png)
-
-![Optionen mit Steuerungsübersicht](docs/bilder/optionen.png)
 
 ## Speichern
 
@@ -231,8 +285,9 @@ scenes/main.tscn           Einstiegsszene — alles Weitere entsteht im Code
 
 src/core/config.gd         Konstanten (Kachelgröße, Tempo, Zoom) + Tastenbelegung
 src/core/palette.gd        Die eine Farbpalette für alle Grafiken
-src/core/settings.gd       Autoload: Einstellungen, persistent
-src/core/main.gd           Zustandsautomat MENÜ / SPIEL / PAUSE / OPTIONEN / INVENTAR
+src/core/settings.gd       Autoload: Einstellungen — nur Daten und Persistenz
+src/core/graphics.gd       Autoload: wendet Bild- und Leistungseinstellungen an
+src/core/main.gd           Zustandsautomat MENÜ / SPIEL / PAUSE / OPTIONEN / INVENTAR / RÜCKFRAGE
 
 src/gfx/pixel.gd           Zeichen-Werkzeuge auf Images, mit umlaufendem Kachelrand
 src/gfx/tile_art.gd        Die drei Bodenkacheln in Varianten und Helligkeitsstufen
@@ -252,12 +307,17 @@ src/world/world.gd         Setzt die Spielwelt zusammen
 src/player/player.gd       Bewegung, Sprung, Schwimmen, Animation
 src/camera/game_camera.gd  Weiches Folgen, Weltgrenzen, pixelgenaues Runden
 
-src/ui/ui_theme.gd         Gemeinsames Theme
+src/ui/ui_theme.gd         Die Designsprache: Abstände, Farben, Schrift, Bausteine
+src/ui/ui_screen.gd        Grundgerüst jedes Vollbild-Menüs (Tafel, Ein-/Ausblenden)
+src/ui/ui_button.gd        Die eine Schaltfläche des Spiels
+src/ui/ui_choice.gd        Auswahlreihe („Aus / An", „30 / 60 / …")
+src/ui/ui_anim.gd          Eine Auf- und Abblendkurve für alle Menüs
 src/ui/menu_art.gd         Titelbild des Hauptmenüs
 src/ui/cloud_layer.gd      Ziehende Wolken im Hauptmenü
 src/ui/main_menu.gd        Startmenü
 src/ui/pause_menu.gd       Pause-Menü
-src/ui/options_menu.gd     Optionen samt Steuerungsübersicht aus der InputMap
+src/ui/options_menu.gd     Einstellungen in fünf Kategorien
+src/ui/confirm_dialog.gd   Rückfrage vor dem Überschreiben einer Karte
 src/ui/hud.gd              Chunk- und Blockanzeige, Steuerungshinweis
 src/ui/item_slot.gd        Ein Feld — für Inventar UND Bauleiste, ein Aussehen
 src/ui/build_bar.gd        Bauleiste mit drei Feldern
@@ -283,7 +343,7 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **181 Prüfungen**.
+Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **196 Prüfungen**.
 Darunter unter anderem:
 
 - genau drei Bodentypen in Aufzählung, Kachelstapel, Leiste, Inventar und Minimap
@@ -300,6 +360,12 @@ Darunter unter anderem:
 - Überfahren hebt ein Feld ab und lässt es wieder los
 - höchstens drei kurze Texte im ganzen Inventar
 - kein Feld nimmt den Tastaturfokus, jedes fängt seinen Mausklick selbst ab
+- jede Oberfläche erbt dasselbe Theme, jede Tafel ist deckend, keine
+  Schaltfläche wird auf Containerbreite gezogen, jede Einstellungsseite passt
+  in ihre Fläche
+- jede Einstellung ändert das System dahinter (Engine-Bildrate, geladene
+  Chunks, gezeichnete Wasserwirkung, Schatten der Figur) und übersteht einen
+  Neustart
 - Musik vorhanden, Klangeffekte weder im Ton noch an einer Aufrufstelle
 - keine fremde Asset-Datei im Projekt (siehe [`CREDITS.md`](CREDITS.md))
 

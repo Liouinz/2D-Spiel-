@@ -38,9 +38,16 @@ func _check(ok: bool, what: String) -> void:
 		_fails.append(what)
 		print("  [FAIL] ", what)
 
+## Bild ablegen — aber erst, wenn nichts mehr in Bewegung ist.
+##
+## Menüs und Felder blenden weich ein. Ein Bild mitten in der Einblendung zeigt
+## halbe Deckkraft und halbe Abdunkelung und taugt weder als Beleg noch für die
+## Dokumentation. Deshalb wartet JEDES Bild hier ab, statt an jeder Aufrufstelle
+## einzeln daran denken zu müssen.
 func _shot(name: String) -> void:
 	if _shot_dir == "" or DisplayServer.get_name() == "headless":
 		return
+	await _frames(14)
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	img.save_png(_shot_dir.path_join(name + ".png"))
@@ -156,6 +163,8 @@ func _run() -> void:
 	await _check_water(world, map, player)
 	await _check_toggle(world, map, player)
 	await _check_inventory_ui(world)
+	await _check_design_system(world)
+	await _check_settings(world)
 	await _check_input_lock(world, map, player)
 	await _check_input_map(world)
 	await _check_stress(world, map, player)
@@ -201,6 +210,12 @@ func _run() -> void:
 	_check(main.state == main.State.OPTIONS, "Optionen offen")
 	await _frames(4)
 	await _shot("06_optionen")
+	# Ein zweites Bild von der Grafikseite: die Kategorien sind der eigentliche
+	# Umbau, und eine Seite mit Auswahlreihen zeigt mehr als die erste.
+	main._options_menu._show_page(1)
+	await _shot("12_grafik")
+	main._options_menu._show_page(0)
+	await _frames(4)
 	main.close_options()
 	await _frames(2)
 	_check(main.state == main.State.PAUSED, "Zurück zur Pause")
@@ -806,6 +821,205 @@ func _check_toggle(world: Node2D, map: MapData, player: Player) -> void:
 	main._unhandled_input(_key("ui_cancel"))
 	await _frames(3)
 	_check(main.state == main.State.PLAYING and not inv.visible, "ESC schliesst das Inventar")
+
+# --- Einstellungen ------------------------------------------------------------
+
+## Jede Einstellung muss wirklich etwas tun — und einen Neustart überleben.
+##
+## Ein Menü voller Schalter, hinter denen nichts hängt, ist schlimmer als kein
+## Menü: es verspricht etwas. Deshalb wird hier nicht geprüft, ob ein Wert
+## gespeichert wurde, sondern ob sich das SYSTEM daran ändert, an dem er hängt.
+func _check_settings(world: Node2D) -> void:
+	var cfg := ConfigFile.new()
+	var had := cfg.load(Settings.PATH) == OK
+
+	# 1. Bildratengrenze landet in der Engine.
+	var fps_before := Settings.fps_limit
+	Settings.fps_limit = 0                       # 30
+	Settings.changed_and_save()
+	await _frames(2)
+	_check(Engine.max_fps == 30, "Bildratengrenze wirkt (Engine.max_fps = %d)" % Engine.max_fps)
+	Settings.fps_limit = Graphics.FPS_VALUES.size() - 1   # Unbegrenzt
+	Settings.changed_and_save()
+	await _frames(2)
+	_check(Engine.max_fps == 0, "Unbegrenzt heisst wirklich unbegrenzt (%d)" % Engine.max_fps)
+
+	# 2. Sichtweite lädt wirklich mehr und wieder weniger Chunks.
+	var range_before := Settings.render_range
+	var loaded_before: int = world.streamer.loaded_count()
+	Settings.render_range = 2                     # 7 x 7
+	Settings.changed_and_save()
+	await _frames(40)
+	var want := (2 * Config.LOAD_RADIUS + 1) * (2 * Config.LOAD_RADIUS + 1)
+	_check(Config.LOAD_RADIUS == 3, "Sichtweite setzt den Chunk-Radius (%d)" % Config.LOAD_RADIUS)
+	_check(world.streamer.loaded_count() == want,
+		"Grössere Sichtweite lädt mehr Chunks (%d von %d, vorher %d)"
+		% [world.streamer.loaded_count(), want, loaded_before])
+	Settings.render_range = 0                     # 3 x 3
+	Settings.changed_and_save()
+	await _frames(10)
+	_check(world.streamer.loaded_count() == 9,
+		"Kleinere Sichtweite entlädt sofort (%d)" % world.streamer.loaded_count())
+	Settings.render_range = range_before
+	Settings.changed_and_save()
+	await _frames(40)
+
+	# 3. Wasser auf der einfachsten Stufe zeichnet nichts mehr.
+	var water: WaterFx = world.get_node("WaterFx")
+	var water_before := Settings.water_detail
+	Settings.water_detail = 0
+	Settings.changed_and_save()
+	water.queue_redraw()
+	await _frames(6)
+	_check(not Graphics.water_animated() and water.prims == 0,
+		"Wasser „Einfach\" zeichnet keine Wirkung mehr (%d Rechtecke)" % water.prims)
+	Settings.water_detail = 2
+	Settings.changed_and_save()
+	_check(Graphics.water_redraw_hz() > Graphics.water_redraw_hz() - 1.0
+		and is_equal_approx(Graphics.water_redraw_hz(), 24.0),
+		"Wasser „Hoch\" zeichnet wieder mit voller Rate")
+	Settings.water_detail = water_before
+
+	# 4. Schatten lassen sich abschalten — an der Figur, nicht nur im Menü.
+	Settings.shadows = false
+	Settings.changed_and_save()
+	await _frames(4)
+	_check(not Graphics.shadows_on() and not _player_shadow(world.player).visible,
+		"Schatten aus heisst: die Figur wirft keinen mehr")
+	Settings.shadows = true
+	Settings.changed_and_save()
+	await _frames(4)
+	_check(_player_shadow(world.player).visible, "Schatten an heisst: er ist wieder da")
+
+	# 5. Alles überlebt einen Neustart. Geprüft wird über den echten Weg:
+	#    schreiben, Werte verstellen, neu laden, vergleichen.
+	Settings.render_range = 0
+	Settings.water_detail = 0
+	Settings.fps_limit = 2
+	Settings.vsync = false
+	Settings.shadows = false
+	Settings.save_settings()
+	Settings.render_range = 3
+	Settings.water_detail = 2
+	Settings.fps_limit = 5
+	Settings.vsync = true
+	Settings.shadows = true
+	Settings.load_settings()
+	_check(Settings.render_range == 0 and Settings.water_detail == 0
+		and Settings.fps_limit == 2 and not Settings.vsync and not Settings.shadows,
+		"Einstellungen überleben den Neustart")
+
+	# 6. Das Menü zeigt, was wirklich gilt.
+	main._options_menu.refresh()
+	await _frames(2)
+	var shown: int = main._options_menu._rows["fps"].index
+	_check(shown == Settings.fps_limit,
+		"Das Menü zeigt den geltenden Wert (%d)" % shown)
+
+	# Aufräumen: alles zurück auf die Voreinstellungen dieser Sitzung.
+	Settings.render_range = range_before
+	Settings.water_detail = water_before
+	Settings.fps_limit = fps_before
+	Settings.vsync = true
+	Settings.shadows = true
+	Settings.changed_and_save()
+	if not had:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(Settings.PATH))
+	await _frames(30)
+
+## Der Bodenschatten der Figur — der erste Sprite2D mit negativem z_index.
+func _player_shadow(player: Node) -> Sprite2D:
+	for child: Node in player.get_children():
+		if child is Sprite2D and (child as Sprite2D).z_index < 0:
+			return child as Sprite2D
+	return null
+
+# --- Eine Designsprache -------------------------------------------------------
+
+## Alle Oberflächen benutzen wirklich dasselbe Theme.
+##
+## Das ist kein Geschmacksthema, sondern eine Falle: Godot vererbt ein Theme nur
+## entlang der Control-Kette, und JEDE Oberfläche dieses Spiels liegt unter
+## einer CanvasLayer, die diese Kette unterbricht. Ein Theme am Fenster wirkt
+## deshalb nicht — die Tafeln bekamen still Godots graue Voreinstellung
+## (0.1, 0.1, 0.1, 0.6) und waren halb durchsichtig, ohne dass irgendwo ein
+## Fehler stand. Diese Prüfung fällt darauf herein, bevor es jemand sieht.
+func _check_design_system(world: Node2D) -> void:
+	var want: StyleBoxFlat = UiTheme.panel_style()
+	var wrong: Array[String] = []
+	for entry: Array in [["Hauptmenü", main._main_menu], ["Pause", main._pause_menu],
+			["Einstellungen", main._options_menu], ["Rückfrage", main._confirm],
+			["Inventar", world.inventory], ["Bauleiste", world.build_bar],
+			["HUD", world.hud]]:
+		var node: Node = entry[1]
+		if node == null:
+			wrong.append("%s fehlt" % entry[0])
+			continue
+		var c := _first_control(node)
+		if c == null:
+			wrong.append("%s ohne Oberfläche" % entry[0])
+			continue
+		if c.get_theme_default_font_size() != UiTheme.FONT_BODY:
+			wrong.append("%s erbt das Theme nicht" % entry[0])
+	_check(wrong.is_empty(), "Jede Oberfläche erbt dasselbe Theme%s"
+		% ("" if wrong.is_empty() else " (%s)" % ", ".join(wrong)))
+
+	# Und die Tafeln benutzen wirklich die eigene Fassung, nicht Godots graue.
+	var panels: Array[String] = []
+	for entry: Array in [["Pause", main._pause_menu], ["Einstellungen", main._options_menu],
+			["Rückfrage", main._confirm]]:
+		var node: Node = entry[1]
+		var pc := _find_node_of_type(node, "PanelContainer")
+		if pc == null:
+			panels.append("%s ohne Tafel" % entry[0])
+			continue
+		var sb := (pc as Control).get_theme_stylebox("panel", "PanelContainer")
+		if not (sb is StyleBoxFlat) or not (sb as StyleBoxFlat).bg_color.is_equal_approx(want.bg_color):
+			panels.append("%s: %s" % [entry[0],
+				(sb as StyleBoxFlat).bg_color if sb is StyleBoxFlat else "keine Flächenfassung"])
+	_check(panels.is_empty(), "Jede Tafel ist deckend und in der eigenen Fassung%s"
+		% ("" if panels.is_empty() else " (%s)" % ", ".join(panels)))
+
+	# Jede Kategorieseite passt in die Fläche, die für sie da ist.
+	var overflow: Array = main._options_menu.page_fits()
+	_check(overflow.is_empty(), "Jede Einstellungsseite passt in ihre Fläche%s"
+		% ("" if overflow.is_empty() else " (%s)" % ", ".join(overflow)))
+
+	# Schaltflächen werden nicht auf Containerbreite gezogen.
+	var stretched: Array[String] = []
+	for b: Node in _find_all_of_type(main._pause_menu, "UiButton"):
+		var btn := b as UiButton
+		if btn.size.x > btn.custom_minimum_size.x + 1.0:
+			stretched.append(btn.text)
+	_check(stretched.is_empty(), "Schaltflächen behalten ihre Breite%s"
+		% ("" if stretched.is_empty() else " (%s)" % ", ".join(stretched)))
+	await get_tree().process_frame
+
+func _first_control(node: Node) -> Control:
+	if node is Control:
+		return node as Control
+	for child: Node in node.get_children():
+		var c := _first_control(child)
+		if c != null:
+			return c
+	return null
+
+func _find_node_of_type(node: Node, type_name: String) -> Node:
+	if node.is_class(type_name):
+		return node
+	for child: Node in node.get_children():
+		var found := _find_node_of_type(child, type_name)
+		if found != null:
+			return found
+	return null
+
+func _find_all_of_type(node: Node, script_class: String) -> Array[Node]:
+	var out: Array[Node] = []
+	if node.get_script() != null and (node.get_script() as Script).get_global_name() == script_class:
+		out.append(node)
+	for child: Node in node.get_children():
+		out.append_array(_find_all_of_type(child, script_class))
+	return out
 
 # --- Inventar als Oberfläche ---------------------------------------------------
 

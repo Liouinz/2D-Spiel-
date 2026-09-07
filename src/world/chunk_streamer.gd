@@ -50,6 +50,16 @@ func setup(m: MapData, g: GroundTileSet, p: Node2D) -> void:
 	body.name = "Collision"
 	add_child(body)
 
+	# Sichtweite ist eine Einstellung. Wird sie geändert, wird die Sollmenge
+	# sofort neu bestimmt: zu weit entfernte Chunks fliegen raus, fehlende
+	# kommen in die Warteschlange und werden über die nächsten Bilder verteilt
+	# nachgeladen. Deshalb stockt das Spiel beim Umstellen nicht.
+	Graphics.applied.connect(_on_graphics_applied)
+
+func _on_graphics_applied() -> void:
+	if is_instance_valid(player):
+		_refresh_wanted()
+
 func _layer(layer_name: String, z: int, g: GroundTileSet) -> TileMapLayer:
 	var layer := TileMapLayer.new()
 	layer.name = layer_name

@@ -591,6 +591,78 @@ vollständig im Optionsmenü.
 
 **Stand:** 181 Prüfungen, alle grün.
 
+## Nachtrag: Eine Designsprache, Menüs und echte Einstellungen
+
+Nach dem Inventar war die Lage schief: EIN Fenster sah aus wie ein fertiges
+Spiel, die übrigen Menüs weiter nach Prototyp — Holzrahmen aus Pixelgrafik
+neben flachen Tafeln, drei verschiedene Radien, vier verschiedene Abstände.
+Dieser Abschnitt zieht alle Oberflächen auf dieselbe Sprache und macht aus den
+vier Schaltern ein Einstellungsmenü, hinter dem wirklich etwas hängt.
+
+**Ein Ort für die Werte.** `UiTheme` ist keine Sammlung von Hilfsfunktionen
+mehr, sondern die Designsprache: fünf Abstandsstufen (Vielfache von 4), drei
+Radien, fünf Schriftgrößen, benannte Flächen- und Rahmenfarben, drei
+Bewegungsdauern. Wer etwas braucht, das es dort nicht gibt, trägt es dort ein —
+dann haben es alle. Die Pixel-Holzrahmen (`MenuArt.button_frame()`,
+`panel_frame()`) sind ersatzlos weg; zwei Designsprachen nebeneinander waren
+genau das Problem.
+
+**Die Falle mit dem Theme.** Godot vererbt ein Theme nur entlang der
+Control-Kette. JEDE Oberfläche dieses Spiels liegt aber unter einer
+`CanvasLayer`, und die unterbricht die Kette. Ein Theme am Fenster wirkt
+deshalb nicht — die Tafeln bekamen still Godots graue Voreinstellung
+(0.1, 0.1, 0.1, 0.6) und waren halb durchsichtig, ohne dass irgendwo ein Fehler
+stand. `UiTheme.attach()` hängt das gemeinsame Theme jetzt ausdrücklich an die
+oberste Control jeder CanvasLayer, und eine Prüfung im Selbsttest fällt darauf
+herein, bevor es jemand sieht.
+
+**Ein Grundgerüst für Menüs.** `UiScreen` bringt Abdunkelung, mittige Tafel,
+Innenrand und Ein-/Ausblenden mit; ein Menü füllt nur noch `_build()`. Ein
+Menü bleibt undurchlässig für Mausklicks, SOLANGE es zu sehen ist — auch
+während es ausblendet. Dadurch kann der Klick auf „Fortsetzen" nicht in der
+Welt landen, bevor das Menü ganz weg ist.
+
+**Schaltflächen mit Zuständen.** `UiButton` animiert Überfahren und Drücken
+über dieselben Werte wie die Felder im Inventar, und behandelt Tastaturfokus
+wie Mauszeiger. `size_flags_horizontal = SHRINK_CENTER` musste sein: ohne das
+zieht ein VBoxContainer jede Schaltfläche auf die Breite der breitesten — aus
+„ZURÜCK" wurde ein Balken über die ganze Tafel. Auch dafür gibt es jetzt eine
+Prüfung.
+
+**Auswahl statt Kästchen.** `UiChoice` zeigt alle Stufen nebeneinander und hebt
+die geltende hervor. Damit sehen „Aus / An", „Einfach / Mittel / Hoch" und
+„30 / 60 / 90 / …" gleich aus, statt Kästchen neben Aufklappmenüs zu mischen.
+Die Feldbreiten kommen aus der Textbreite — „Unbegrenzt" braucht mehr Platz als
+„60", und gleich breite Felder würden entweder abschneiden oder gähnen.
+
+**Hauptmenü mit echten Wegen.** „Fortsetzen" steht nur da, wenn
+`MapData.has_save()` etwas findet. „Neue Welt" geht über eine Rückfrage, wenn
+dabei eine gebaute Karte verloren ginge — die Datei wird dabei NICHT gelöscht,
+sie wird erst beim nächsten Speichern überschrieben. `MapData.generate()` hat
+dafür ein `fresh`-Kennzeichen bekommen, das über `WorldBuilder` und `World`
+durchgereicht wird.
+
+**Einstellungen: getrennt gespeichert, getrennt angewendet.** `Settings` ist
+jetzt reine Datenhaltung plus Persistenz. Das Anwenden macht `Graphics` — ein
+zweiter Autoload, der die Auswahllisten für die Oberfläche UND die Werte
+liefert, mit denen gerechnet wird. Dadurch kann keine Beschriftung entstehen,
+hinter der kein Wert steht. `Config.LOAD_RADIUS` ist von `const` zu
+`static var` geworden, weil die Sichtweite eine Einstellung ist; der
+ChunkStreamer hängt an `Graphics.applied` und bestimmt seine Sollmenge neu,
+sobald sie sich ändert.
+
+**Was geprüft wird.** Nicht, ob ein Wert gespeichert wurde, sondern ob sich das
+System dahinter ändert: `Engine.max_fps` nach dem Umstellen der Bildratengrenze,
+die Zahl geladener Chunks nach dem Umstellen der Sichtweite (25 → 49 → 9), die
+gezeichneten Rechtecke der Wasserwirkung auf der Stufe „Einfach" (0), die
+Sichtbarkeit des Bodenschattens. Dazu ein echter Schreib-Lese-Vergleich für den
+Neustart. Eine weitere Prüfung misst jede Kategorieseite gegen die Fläche, die
+für sie da ist — sie hat sofort gefunden, dass die Leistungsseite mit ihren
+sieben Bildratenstufen 652 statt 478 Bildpunkte breit war und die Tafel beim
+Wechsel gesprungen wäre.
+
+**Stand:** 196 Prüfungen, alle grün.
+
 ## Lizenzlage
 
 Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest

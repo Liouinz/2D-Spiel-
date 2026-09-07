@@ -19,7 +19,7 @@ extends CanvasLayer
 const SLOT := ItemSlot.SLOT_SIZE      ## 72 x 72
 const GAP := 6                        ## Abstand zwischen den Feldern
 const PAD := 7                        ## Rand der Leiste um die Felder
-const MARGIN := 16                    ## Abstand zum unteren Bildrand
+const MARGIN := UiTheme.SPACE_M       ## Abstand zum unteren Bildrand
 
 ## Anfangsbelegung der drei Felder. Änderbar: im Inventar (E) lässt sich jedes
 ## Feld mit einem beliebigen Bodentyp belegen, und die Belegung bleibt
@@ -60,6 +60,7 @@ func setup(art: TileArt) -> void:
 	_root.name = "Root"
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UiTheme.attach(_root)
 	add_child(_root)
 
 	var w := int(PAD * 2 + types.size() * SLOT.x + (types.size() - 1) * GAP)
@@ -97,9 +98,9 @@ func setup(art: TileArt) -> void:
 	_message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_message.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_message.visible = false
-	_message.add_theme_font_size_override("font_size", 15)
-	_message.add_theme_color_override("font_color", Palette.UI_ACCENT)
-	_message.add_theme_constant_override("outline_size", 6)
+	_message.add_theme_font_size_override("font_size", UiTheme.FONT_SMALL)
+	_message.add_theme_color_override("font_color", UiTheme.ACCENT)
+	_message.add_theme_constant_override("outline_size", UiTheme.OUTLINE + 2)
 	_message.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	_root.add_child(_message)
 
@@ -108,14 +109,7 @@ func setup(art: TileArt) -> void:
 ## Die Fassung der Leiste. Öffentlich, weil das Inventar dieselbe verwendet —
 ## so sieht die Leiste dort genauso aus wie im Spiel.
 static func bar_frame() -> StyleBoxFlat:
-	var box := StyleBoxFlat.new()
-	box.bg_color = Color(0.06, 0.07, 0.09, 0.82)
-	box.border_color = Color(0.24, 0.22, 0.19, 0.9)
-	box.set_border_width_all(2)
-	box.set_corner_radius_all(10)
-	box.shadow_size = 8
-	box.shadow_color = Color(0, 0, 0, 0.38)
-	return box
+	return UiTheme.inset_style()
 
 ## Hebt das gewählte Feld hervor.
 func select(i: int) -> void:

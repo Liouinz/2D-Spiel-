@@ -1,13 +1,14 @@
 extends Node
 ## Einstiegspunkt und Spielzustands-Automat (§11: Game State getrennt vom Rest).
 
-enum State { MENU, PLAYING, PAUSED, OPTIONS, INVENTORY }
+## Ein Zustand zur Zeit. CONFIRM liegt über dem Hauptmenü: das bleibt sichtbar,
+## nimmt aber keine Eingaben mehr an.
+enum State { MENU, PLAYING, PAUSED, OPTIONS, INVENTORY, CONFIRM }
 
-const WorldScene := preload("res://src/world/world.gd")
 const MainMenu := preload("res://src/ui/main_menu.gd")
 const PauseMenu := preload("res://src/ui/pause_menu.gd")
 const OptionsMenu := preload("res://src/ui/options_menu.gd")
-const UiTheme := preload("res://src/ui/ui_theme.gd")
+const ConfirmDialog := preload("res://src/ui/confirm_dialog.gd")
 
 var state: State = State.MENU
 var _return_state: State = State.MENU  ## wohin die Optionen zurückführen
@@ -15,16 +16,17 @@ var _return_state: State = State.MENU  ## wohin die Optionen zurückführen
 var _world: Node2D = null
 var _ui_layer: CanvasLayer
 var _ui_root: Control
-var _main_menu: Control
-var _pause_menu: Control
-var _options_menu: Control
+var _main_menu: UiScreen
+var _pause_menu: UiScreen
+var _options_menu: UiScreen
+var _confirm: UiScreen
 var _loading: Label
 var _busy := false          ## Welt wird gerade gebaut — zweiter Klick prallt ab
 
 func _ready() -> void:
 	Config.setup_input()
-	Settings.apply()
 	process_mode = Node.PROCESS_MODE_ALWAYS
+
 
 	_ui_layer = CanvasLayer.new()
 	_ui_layer.name = "UI"
@@ -35,12 +37,13 @@ func _ready() -> void:
 	_ui_root.name = "UIRoot"
 	_ui_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_ui_root.theme = UiTheme.build()
 	_ui_root.process_mode = Node.PROCESS_MODE_ALWAYS
+	UiTheme.attach(_ui_root)
 	_ui_layer.add_child(_ui_root)
 
 	_main_menu = MainMenu.new()
-	_main_menu.play_pressed.connect(start_game)
+	_main_menu.continue_pressed.connect(func() -> void: start_game(false))
+	_main_menu.new_world_pressed.connect(ask_new_world)
 	_main_menu.options_pressed.connect(open_options)
 	_main_menu.quit_pressed.connect(quit_game)
 	_ui_root.add_child(_main_menu)
@@ -49,13 +52,19 @@ func _ready() -> void:
 	_pause_menu.resume_pressed.connect(resume_game)
 	_pause_menu.options_pressed.connect(open_options)
 	_pause_menu.menu_pressed.connect(to_main_menu)
-	_pause_menu.visible = false
 	_ui_root.add_child(_pause_menu)
 
 	_options_menu = OptionsMenu.new()
 	_options_menu.back_pressed.connect(close_options)
-	_options_menu.visible = false
 	_ui_root.add_child(_options_menu)
+
+	_confirm = ConfirmDialog.new()
+	_confirm.setup("NEUE WELT",
+		"Es gibt bereits eine gebaute Karte. Eine neue Welt überschreibt sie, "
+		+ "sobald das nächste Mal gespeichert wird.", "NEUE WELT ANFANGEN")
+	_confirm.confirmed.connect(func() -> void: start_game(true))
+	_confirm.cancelled.connect(func() -> void: _set_state(State.MENU))
+	_ui_root.add_child(_confirm)
 
 	_loading = _make_loading()
 	_ui_root.add_child(_loading)
@@ -94,6 +103,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			close_options()
 		State.INVENTORY:
 			close_inventory()
+		State.CONFIRM:
+			_set_state(State.MENU)
 		_:
 			return
 	get_viewport().set_input_as_handled()
@@ -133,20 +144,29 @@ func close_inventory() -> bool:
 ## friert das Fenster dabei ein und wirkt abgestürzt. Deshalb erst den Hinweis
 ## einblenden, zwei Bilder abwarten (eines setzt die Sichtbarkeit, das zweite
 ## zeichnet sie wirklich) und dann bauen.
-func start_game() -> void:
+## „Neue Welt" fragt nach, wenn dabei eine gebaute Karte verloren ginge.
+func ask_new_world() -> void:
+	if MapData.has_save():
+		_set_state(State.CONFIRM)
+	else:
+		start_game(true)
+
+func start_game(fresh: bool = false) -> void:
 	if _busy:
 		return
 	_busy = true
 	if is_instance_valid(_world):
 		_world.queue_free()
 		_world = null
-	_main_menu.visible = false
+	_main_menu.set_open(false)
+	_confirm.set_open(false)
 	_loading.visible = true
 	await get_tree().process_frame
 	await get_tree().process_frame
 
 	var t0 := Time.get_ticks_msec()
-	_world = WorldScene.new()
+	_world = World.new()
+	_world.fresh = fresh
 	add_child(_world)
 	print("[start] Welt bereit nach %d ms" % (Time.get_ticks_msec() - t0))
 
@@ -215,10 +235,15 @@ func _save_world() -> void:
 
 func _set_state(next: State) -> void:
 	state = next
-	var in_menu := next == State.MENU
-	_main_menu.visible = in_menu and not _busy
-	_pause_menu.visible = next == State.PAUSED
-	_options_menu.visible = next == State.OPTIONS
+	# CONFIRM liegt ÜBER dem Hauptmenü — das bleibt stehen, sonst sähe die
+	# Rückfrage aus, als käme sie aus dem Nichts.
+	var in_menu := next == State.MENU or next == State.CONFIRM
+	if in_menu:
+		_main_menu.refresh()
+	_main_menu.set_open(in_menu and not _busy)
+	_pause_menu.set_open(next == State.PAUSED)
+	_options_menu.set_open(next == State.OPTIONS)
+	_confirm.set_open(next == State.CONFIRM)
 	get_tree().paused = next != State.PLAYING
 	if is_instance_valid(_world):
 		_world.visible = next != State.MENU
@@ -241,9 +266,12 @@ func _set_state(next: State) -> void:
 		if is_instance_valid(_world.grid) and next != State.PLAYING:
 			_world.grid.cursor_block = Vector2i(-1, -1)
 			_world.grid.queue_redraw()
-	if in_menu:
-		_main_menu.focus_first()
-	elif next == State.PAUSED:
-		_pause_menu.focus_first()
-	elif next == State.OPTIONS:
-		_options_menu.focus_first()
+	match next:
+		State.MENU:
+			_main_menu.focus_first()
+		State.CONFIRM:
+			_confirm.focus_first()
+		State.PAUSED:
+			_pause_menu.focus_first()
+		State.OPTIONS:
+			_options_menu.focus_first()

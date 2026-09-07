@@ -162,7 +162,9 @@ func _update_sprite(speed: float) -> void:
 		_sprite.offset.y = -ActorArt.H + ActorArt.SWIM_SINK
 		_shadow.visible = false
 		return
-	_shadow.visible = true
+	# Schatten sind abschaltbar (Grafikeinstellungen). Im Wasser gibt es
+	# ohnehin keinen.
+	_shadow.visible = Graphics.shadows_on()
 
 	# Sprung und Fallen: Figur hoch, Schatten bleibt liegen und wird kleiner
 	# und blasser.

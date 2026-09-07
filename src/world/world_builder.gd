@@ -15,10 +15,10 @@ func _phase(name: String, started: int) -> int:
 	timings[name] = Time.get_ticks_msec() - started
 	return Time.get_ticks_msec()
 
-func build(seed_value: int) -> void:
+func build(seed_value: int, fresh: bool = false) -> void:
 	var t := Time.get_ticks_msec()
 	map = MapData.new()
-	map.generate(seed_value)
+	map.generate(seed_value, fresh)
 	t = _phase("karte", t)
 	art = TileArt.build(seed_value)
 	t = _phase("kacheln", t)

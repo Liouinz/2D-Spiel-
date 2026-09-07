@@ -25,10 +25,14 @@ const CHUNK := 16
 static var MAP_W: int = BUILD_CHUNKS.x * CHUNK
 static var MAP_H: int = BUILD_CHUNKS.y * CHUNK
 
-## Wie viele Chunks ringsum geladen bleiben. Der Bildausschnitt ist bei Zoom 1,5
-## nur rund 27 x 15 Blöcke groß; Radius 2 lässt also ringsum mindestens einen
-## ganzen Chunk Puffer. Notfalls hier heruntersetzen, nicht die Weltgröße.
-const LOAD_RADIUS := 2
+## Wie viele Chunks ringsum geladen bleiben.
+##
+## Statisch statt konstant: die Sichtweite ist eine Einstellung. `Graphics`
+## setzt den Wert aus `Settings.render_range`, der ChunkStreamer liest ihn bei
+## jeder Neuberechnung. Radius 2 (5 x 5 Chunks) ist die Voreinstellung — der
+## Bildausschnitt ist bei Zoom 1,5 nur rund 27 x 15 Blöcke groß, das lässt
+## ringsum mindestens einen ganzen Chunk Puffer.
+static var LOAD_RADIUS: int = 2
 
 ## Höchstens so viele Chunks werden je Bild nachgeladen. Ein Chunk kostet ein
 ## paar Millisekunden — auf mehrere Bilder verteilt merkt man davon nichts.

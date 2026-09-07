@@ -20,6 +20,7 @@ func _ready() -> void:
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UiTheme.attach(root)
 	add_child(root)
 
 	# Blockanzeige: Chunk, Block und Position der Figur.

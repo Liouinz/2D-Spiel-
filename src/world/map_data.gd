@@ -77,11 +77,17 @@ func is_solid(x: int, y: int) -> bool:
 	return terrain(get_tile(x, y), "solid")
 
 ## Baut die Karte auf: eine leere Grasfläche mit unsichtbarer Wand am Rand.
-## Liegt eine gespeicherte Karte vor, wird stattdessen sie geladen.
-func generate(_seed_value: int) -> void:
+##
+## `fresh` entscheidet, ob eine gespeicherte Karte geladen wird. Das Hauptmenü
+## trennt beides sauber: „Fortsetzen" lädt, „Neue Welt" fängt von vorn an. Die
+## Datei wird dabei NICHT gelöscht — sie wird erst beim nächsten Speichern
+## überschrieben, und bis dahin ist der alte Stand noch da.
+func generate(_seed_value: int, fresh: bool = false) -> void:
 	# fill() statt einer Doppelschleife: bei 4,2 Millionen Feldern wären das
 	# sonst mehrere Sekunden, so ist es ein Speicherbefehl.
 	tiles.fill(Tile.GRASS)
+	if fresh:
+		return
 	var saved := load_user()
 	if not saved.is_empty():
 		tiles = saved
@@ -190,6 +196,11 @@ static func _fit(data: PackedByteArray, sw: int, sh: int) -> PackedByteArray:
 	print("Gespeicherte Karte war %d x %d — mittig in %d x %d übernommen." % [
 		sw, sh, Config.MAP_W, Config.MAP_H])
 	return out
+
+## Gibt es überhaupt eine gebaute Karte? Das Hauptmenü zeigt „Fortsetzen" nur
+## dann an.
+static func has_save() -> bool:
+	return FileAccess.file_exists(SAVE_PATH)
 
 ## Löscht die gespeicherte Karte (der Selbsttest räumt damit hinter sich auf).
 static func clear_user() -> void:
