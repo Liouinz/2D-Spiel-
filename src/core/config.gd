@@ -124,7 +124,7 @@ const CONTROL_ROWS := [
 	["jump", "Springen"],
 	["build_place", "Block setzen"],
 	["build_remove", "Block entfernen"],
-	["build_slot_1", "Material wählen (1 Gras, 2 Sand, 3 Wasser)"],
+	["build_slot_1+build_slot_2+build_slot_3", "Material wählen: Gras, Sand, Wasser"],
 	["inventory", "Inventar öffnen und schliessen"],
 	["toggle_grid", "Blockraster ein und aus"],
 	["toggle_minimap", "Minimap ein und aus"],

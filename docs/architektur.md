@@ -509,7 +509,7 @@ Aufrufstelle im Quelltext übrig ist.
 `Layout`. Ein einziger Treffer lässt den Test fehlschlagen. Sie hat beim ersten
 Lauf zwei vergessene Kommentare gefunden.
 
-**Stand:** 154 Prüfungen, alle grün, Godot-Konsole beim Import und beim Lauf
+**Stand:** 155 Prüfungen, alle grün, Godot-Konsole beim Import und beim Lauf
 ohne Fehler. Kachelnähte: Gras 1,16, Sand 0,66, Wasser 0,82 (1,0 = so glatt wie
 das Kachelinnere). Weltaufbau 260 ms, ein Chunk in 1,5 ms, Physik 0,5 ms je
 Bild.
