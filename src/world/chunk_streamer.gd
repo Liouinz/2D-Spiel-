@@ -19,8 +19,8 @@ var map: MapData
 var ground: GroundTileSet
 var player: Node2D
 
-## Drei Bodenschichten, danach die Kantenschicht
-## (siehe GroundTileSet.STACK / LAYER_EDGE).
+## Drei Bodenschichten, danach Kanten und Streu-Dekoration
+## (siehe GroundTileSet.STACK / LAYER_EDGE / LAYER_DECOR).
 var layers: Array[TileMapLayer] = []
 var body: StaticBody2D                 ## Sammelknoten aller Kollisionsformen
 
@@ -60,6 +60,11 @@ func setup(m: MapData, g: GroundTileSet, p: Node2D) -> void:
 	# Der Index muss zu GroundTileSet.LAYER_EDGE passen.
 	layers.append(_layer("Kanten", -20, g))
 
+	# Streu-Dekoration ganz oben, aber weiterhin unter der Figur (z < 0):
+	# ein Grasbüschel gehört auf den Boden, nicht vor die Spielfigur.
+	# Der Index muss zu GroundTileSet.LAYER_DECOR passen.
+	layers.append(_layer("Dekor", -15, g))
+
 	body = StaticBody2D.new()
 	body.name = "Collision"
 	add_child(body)
@@ -71,14 +76,30 @@ func setup(m: MapData, g: GroundTileSet, p: Node2D) -> void:
 	Graphics.applied.connect(_on_graphics_applied)
 	apply_wind()
 
+var _decor_chance: int = -1
+
 func _on_graphics_applied() -> void:
 	apply_wind()
+	# Nur neu malen, wenn sich die Dichte wirklich geändert hat: `applied` kommt
+	# bei jeder Einstellung, und 25 Chunks neu zu malen kostet rund 25 ms.
+	var want := Graphics.decor_chance(MapData.Tile.GRASS)
+	if want != _decor_chance:
+		_decor_chance = want
+		repaint_all()
 	if is_instance_valid(player):
 		_refresh_wanted()
 
 ## Hängt die Bewegung an die Bodenschichten — oder ab.
 ##
 ## Öffentlich, damit der Selbsttest die drei Stufen messen kann.
+## Malt alle geladenen Chunks neu. Wird gebraucht, wenn sich die Dichte der
+## Streu-Dekoration ändert — sie steckt in den gemalten Kacheln, nicht in einem
+## Knoten, den man einfach ausblenden könnte.
+func repaint_all() -> void:
+	for chunk: Vector2i in _loaded.keys():
+		ground.erase_chunk(layers, chunk)
+		ground.paint_chunk(layers, map, chunk)
+
 func apply_wind() -> void:
 	if layers.size() < 3:
 		return

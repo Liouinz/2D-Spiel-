@@ -287,8 +287,9 @@ func _check_three_materials() -> void:
 	_check(GroundTileSet.STACK.size() == 3
 		and GroundTileSet.STACK == [MapData.Tile.GRASS, MapData.Tile.SAND, MapData.Tile.WATER],
 		"Kachelstapel hat drei Schichten")
-	_check(GroundTileSet.LAYER_COUNT == 4 and GroundTileSet.LAYER_EDGE == 3,
-		"Vier Schichten: drei Böden plus Kanten")
+	_check(GroundTileSet.LAYER_COUNT == 5 and GroundTileSet.LAYER_EDGE == 3
+		and GroundTileSet.LAYER_DECOR == 4,
+		"Fünf Schichten: drei Böden, Kanten, Streu-Dekoration")
 
 	var inv_all: Array = Inventory.ALL
 	_check(inv_all.size() == 3
@@ -352,9 +353,9 @@ func _check_tileset(world: Node2D, map: MapData, player: Player) -> void:
 	var T := Config.TILE
 
 	_check(ts.tile_size == Vector2i(T, T), "Kachelgröße im Kachelsatz ist %d × %d" % [T, T])
-	_check(ts.get_source_count() == GroundTileSet.STACK.size() + 1,
-		"Genau %d Atlasquellen: drei Böden und die Kanten (%d)"
-		% [GroundTileSet.STACK.size() + 1, ts.get_source_count()])
+	_check(ts.get_source_count() == GroundTileSet.STACK.size() + 2,
+		"Genau %d Atlasquellen: drei Böden, Kanten und Dekor (%d)"
+		% [GroundTileSet.STACK.size() + 2, ts.get_source_count()])
 
 	# Jede Quelle: Textur da, Bereichsgröße genau eine Kachel, Kacheln angelegt.
 	var bad_src: Array[String] = []

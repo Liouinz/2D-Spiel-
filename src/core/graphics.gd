@@ -96,6 +96,21 @@ func particle_count() -> int:
 		1: return 18
 		_: return 42
 
+## Wie dicht Büschel, Blumen und Kiesel stehen — als Promille der Felder.
+##
+## Auf Gras deutlich dichter als auf Sand: eine Wiese ist bewachsen, ein Strand
+## ist überwiegend leer, und ein gleichmässig bestreuter Strand sähe falsch aus.
+func decor_chance(tile: int) -> int:
+	var step := clampi(Settings.decor, 0, 2)
+	if step == 0:
+		return 0
+	match tile:
+		MapData.Tile.GRASS:
+			return 70 if step == 1 else 150
+		MapData.Tile.SAND:
+			return 25 if step == 1 else 55
+	return 0
+
 ## Schattenwurf der Figur.
 func shadows_on() -> bool:
 	return Settings.shadows

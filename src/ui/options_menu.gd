@@ -25,7 +25,7 @@ signal back_pressed
 ## Größe ändert, springt vor den Augen. Die Bildratenzeile mit ihren sieben
 ## Stufen bestimmt die Breite, die Steuerungsübersicht die Höhe — der
 ## Selbsttest misst beides nach.
-const PAGE_SIZE := Vector2(636, 330)
+const PAGE_SIZE := Vector2(636, 356)
 const RAIL_W := 176
 const RAIL_H := 38
 
@@ -148,6 +148,9 @@ func _page_video() -> Control:
 	_choice(rows, "particles", "Staub in der Luft", Graphics.STEPS,
 		func() -> int: return Settings.particles,
 		func(v: int) -> void: Settings.particles = v)
+	_choice(rows, "decor", "Bewuchs am Boden", Graphics.STEPS,
+		func() -> int: return Settings.decor,
+		func(v: int) -> void: Settings.decor = v)
 	_choice(rows, "shadows", "Schatten", Graphics.OFF_ON,
 		func() -> int: return 1 if Settings.shadows else 0,
 		func(v: int) -> void: Settings.shadows = v == 1)
@@ -347,6 +350,7 @@ func refresh() -> void:
 	_show_row("water", Settings.water_detail)
 	_show_row("wind", Settings.wind)
 	_show_row("particles", Settings.particles)
+	_show_row("decor", Settings.decor)
 	_show_row("shadows", 1 if Settings.shadows else 0)
 	_show_row("fps", Settings.fps_limit)
 	_show_row("vsync", 1 if Settings.vsync else 0)

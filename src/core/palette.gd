@@ -28,6 +28,11 @@ const WOOD_LIGHT := Color8(170, 126, 84)
 const PINE_DARK := Color8(30, 70, 58)
 const PINE := Color8(44, 96, 72)
 
+# Stein — Kiesel, Findlinge, Geröll am Ufer
+const STONE_DARK := Color8(88, 88, 96)
+const STONE := Color8(126, 126, 134)
+const STONE_LIGHT := Color8(164, 164, 170)
+
 # Blumen & Details
 const FLOWER_RED := Color8(206, 84, 78)
 const FLOWER_YELLOW := Color8(240, 206, 98)

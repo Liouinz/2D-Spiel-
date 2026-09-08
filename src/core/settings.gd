@@ -26,6 +26,7 @@ var render_range: int = 1          ## Index in Graphics.RANGE_*
 var water_detail: int = 2          ## Index in Graphics.DETAIL
 var wind: int = 2                  ## Index in Graphics.STEPS — Bewegung im Boden
 var particles: int = 2             ## Index in Graphics.STEPS — Staub in der Luft
+var decor: int = 2                 ## Index in Graphics.STEPS — Bewuchs am Boden
 var shadows: bool = true
 
 # --- Leistung ----------------------------------------------------------------
@@ -54,6 +55,7 @@ func load_settings() -> void:
 	water_detail = int(cfg.get_value("video", "water", water_detail))
 	wind = int(cfg.get_value("video", "wind", wind))
 	particles = int(cfg.get_value("video", "particles", particles))
+	decor = int(cfg.get_value("video", "decor", decor))
 	shadows = bool(cfg.get_value("video", "shadows", shadows))
 	fps_limit = int(cfg.get_value("perf", "fps", fps_limit))
 	show_hints = bool(cfg.get_value("ui", "hints", show_hints))
@@ -68,6 +70,7 @@ func save_settings() -> void:
 	cfg.set_value("video", "water", water_detail)
 	cfg.set_value("video", "wind", wind)
 	cfg.set_value("video", "particles", particles)
+	cfg.set_value("video", "decor", decor)
 	cfg.set_value("video", "shadows", shadows)
 	cfg.set_value("perf", "fps", fps_limit)
 	cfg.set_value("ui", "hints", show_hints)
