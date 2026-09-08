@@ -78,6 +78,7 @@ func _build() -> void:
 
 	_add_page("ALLGEMEIN", _page_general())
 	_add_page("GRAFIK", _page_video())
+	_add_page("EFFEKTE", _page_effects())
 	_add_page("LEISTUNG", _page_perf())
 	_add_page("STEUERUNG", _page_controls())
 	_show_page(0)
@@ -134,11 +135,31 @@ func _page_general() -> Control:
 	return _with_note(rows,
 		"Die Musik entsteht im Spiel selbst — es gibt keine Tondateien.")
 
+## Grafik: was das Bild ausmacht. Ganz oben das Profil — es setzt alle Regler
+## auf einen Schlag, und darunter kann man jeden einzeln nachziehen.
 func _page_video() -> Control:
 	var rows := _rows_box()
+	rows.add_child(_profile_row())
 	_choice(rows, "range", "Sichtweite (Chunks)", Graphics.RANGE_LABELS,
 		func() -> int: return Settings.render_range,
 		func(v: int) -> void: Settings.render_range = v)
+	_choice(rows, "light", "Beleuchtung", Graphics.LIGHT,
+		func() -> int: return Settings.light,
+		func(v: int) -> void: Settings.light = v)
+	_choice(rows, "daycycle", "Tageszeit", Graphics.DAY,
+		func() -> int: return 1 if Settings.day_cycle else 0,
+		func(v: int) -> void: Settings.day_cycle = v == 1)
+	_choice(rows, "shadows", "Schatten", Graphics.OFF_ON,
+		func() -> int: return 1 if Settings.shadows else 0,
+		func(v: int) -> void: Settings.shadows = v == 1)
+	return _with_note(rows,
+		"Die Beleuchtung ist abgestuft, weil ihre Teile unterschiedlich kosten: die\nTönung ist gemessen gratis, erst „Mittel“ und „Hoch“ kosten Füllrate.")
+
+## Effekte: was sich bewegt und was auf dem Boden liegt. Eigene Seite, damit
+## die Grafikseite nicht zu einer Liste aus neun Zeilen wird, durch die man
+## sich hindurchlesen muss.
+func _page_effects() -> Control:
+	var rows := _rows_box()
 	_choice(rows, "water", "Wasser", Graphics.DETAIL,
 		func() -> int: return Settings.water_detail,
 		func(v: int) -> void: Settings.water_detail = v)
@@ -151,14 +172,31 @@ func _page_video() -> Control:
 	_choice(rows, "decor", "Bewuchs am Boden", Graphics.STEPS,
 		func() -> int: return Settings.decor,
 		func(v: int) -> void: Settings.decor = v)
-	_choice(rows, "light", "Beleuchtung", Graphics.LIGHT,
-		func() -> int: return Settings.light,
-		func(v: int) -> void: Settings.light = v)
-	_choice(rows, "shadows", "Schatten", Graphics.OFF_ON,
-		func() -> int: return 1 if Settings.shadows else 0,
-		func(v: int) -> void: Settings.shadows = v == 1)
 	return _with_note(rows,
-		"Eine größere Sichtweite lädt mehr Chunks um die Figur — sie kommen nach und\nnach dazu. „Aus“ kostet wirklich nichts: die Wirkung wird abgehängt.")
+		"„Aus“ kostet wirklich nichts: die Wirkung wird abgehängt, nicht auf null\ngerechnet. Der Bewuchs ist eine Kachelschicht und damit fast umsonst.")
+
+## Die Profilzeile. Sie zeigt „Eigene", sobald die Regler zu keinem Profil mehr
+## passen — eine gespeicherte „aktuelle Stufe" würde irgendwann „Hoch"
+## behaupten, während drei Regler längst von Hand verstellt sind.
+func _profile_row() -> Control:
+	var labels: Array = Quality.NAMES.duplicate()
+	labels.append("Eigene")
+	var choice := UiChoice.new().setup(labels, _profile_index())
+	choice.changed.connect(func(v: int) -> void:
+		if v < Quality.NAMES.size():
+			Quality.apply(v)
+			Graphics.set_ceiling_from_settings()
+			Settings.changed_and_save()
+			refresh()
+		else:
+			# „Eigene" ist ein Zustand, kein Befehl — nichts anwenden.
+			choice.show_value(_profile_index()))
+	_rows["profile"] = choice
+	return _strip("Profil", choice)
+
+func _profile_index() -> int:
+	var c := Quality.current()
+	return c if c >= 0 else Quality.NAMES.size()
 
 func _page_perf() -> Control:
 	var rows := _rows_box()
@@ -168,11 +206,14 @@ func _page_perf() -> Control:
 	_choice(rows, "vsync", "Bildsynchronisierung", Graphics.OFF_ON,
 		func() -> int: return 1 if Settings.vsync else 0,
 		func(v: int) -> void: Settings.vsync = v == 1)
+	_choice(rows, "auto", "Automatik", Graphics.OFF_ON,
+		func() -> int: return 1 if Settings.auto_quality else 0,
+		func(v: int) -> void: Settings.auto_quality = v == 1)
 	_choice(rows, "perf", "Leistungsanzeige", Graphics.OFF_ON,
 		func() -> int: return 1 if Settings.show_perf else 0,
 		func(v: int) -> void: Settings.show_perf = v == 1)
 	return _with_note(rows,
-		"Eine Obergrenze hält die Bildabstände gleichmäßig. Eine Mindest-Bildrate\nkann kein Spiel zusichern — deshalb steht hier keine.")
+		"Die Automatik nimmt eine teure Wirkung weg, wenn es vier Sekunden lang unter\nrund 44 Bilder fällt, und gibt sie zurück, sobald wieder Luft ist — nie mehr,\nals hier eingestellt war. Eine Mindest-Bildrate kann kein Spiel zusichern.")
 
 ## Steuerungsübersicht als Tabelle über die volle Seitenbreite.
 ##
@@ -349,16 +390,19 @@ func refresh() -> void:
 	_show_music_value()
 	_show_row("hints", 1 if Settings.show_hints else 0)
 	_show_row("fullscreen", 1 if Settings.fullscreen else 0)
+	_show_row("profile", _profile_index())
 	_show_row("range", Settings.render_range)
 	_show_row("water", Settings.water_detail)
 	_show_row("wind", Settings.wind)
 	_show_row("particles", Settings.particles)
 	_show_row("decor", Settings.decor)
 	_show_row("light", Settings.light)
+	_show_row("daycycle", 1 if Settings.day_cycle else 0)
 	_show_row("shadows", 1 if Settings.shadows else 0)
 	_show_row("fps", Settings.fps_limit)
 	_show_row("vsync", 1 if Settings.vsync else 0)
 	_show_row("perf", 1 if Settings.show_perf else 0)
+	_show_row("auto", 1 if Settings.auto_quality else 0)
 
 func _show_row(key: String, value: int) -> void:
 	var row: UiChoice = _rows.get(key)

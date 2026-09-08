@@ -28,13 +28,96 @@ const OFF_ON := ["Aus", "An"]
 const DETAIL := ["Einfach", "Mittel", "Hoch"]
 const STEPS := ["Aus", "Reduziert", "Voll"]
 
-## Beleuchtung. „Fest" ist heller Vormittag, der stehen bleibt — für alle, die
-## bauen wollen, ohne dass ihnen die Nacht dazwischenkommt.
-const LIGHT := ["Aus", "Fest", "Tagesverlauf"]
+## Beleuchtung in Stufen, weil die drei Bestandteile sehr unterschiedlich
+## kosten. Gemessen (Renderzeit des Viewports, llvmpipe, 1280 x 720; die
+## Aufschläge gelten gegenüber „Aus"):
+##
+##   Einfach   nur die Tönung ............  CPU -0,10 ms   GPU -0,09 ms
+##   Mittel    + Schein um die Figur ......  CPU -0,15 ms   GPU +2,03 ms
+##   Hoch      + Sichtgrenze am Bildrand ..  CPU +2,32 ms   GPU +4,14 ms
+##
+## Die Tönung ist der Teil, der die Stimmung macht, und sie ist GRATIS: ein
+## `CanvasModulate` ist ein Multiplizieren, egal wie viele Kacheln im Bild
+## liegen. Wer auf einem schwachen Rechner spielt, bekommt mit „Einfach" also
+## den ganzen Tagesverlauf, ohne irgendetwas dafür zu bezahlen.
+##
+## Die beiden oberen Stufen kosten Füllrate — zwei grosse durchsichtige
+## Flächen über dem Bild. Deshalb stehen sie einzeln zur Wahl und nicht in
+## einem Schalter zusammengefasst.
+const LIGHT := ["Aus", "Einfach", "Mittel", "Hoch"]
+
+## Läuft die Zeit? Das ist eine Frage des Spielgefühls, keine der Leistung —
+## ein stehender Tag kostet genauso viel wie ein laufender. Deshalb eine
+## eigene Zeile statt einer weiteren Lichtstufe.
+const DAY := ["Fest", "Verlauf"]
+
+## --- Automatische Anpassung --------------------------------------------------
+##
+## Ziel sind 60 Bilder je Sekunde. Wird es dauerhaft langsamer, nimmt die
+## Automatik EINE teure Wirkung weg; ist wieder Luft, gibt sie eine zurück.
+## Immer nur eine je Schritt: mehrere gleichzeitig wären ein sichtbarer Sprung,
+## und hinterher wüsste niemand, was geholfen hat.
+const TARGET_MS := 1000.0 / 60.0
+const DOWN_MS := TARGET_MS * 1.35     ## ab hier wird weggenommen (rund 44 FPS)
+const UP_MS := TARGET_MS * 0.80       ## ab hier ist wieder Luft (rund 75 FPS)
+const HOLD := 4.0                     ## so lange muss es anhalten
+
+## Setzt Main beim Betreten und Verlassen der Welt. Im Menü wird nicht
+## geregelt: dort ist das Bild ohnehin billig, und die Automatik würde
+## fröhlich hochregeln, was in der Welt gleich wieder klemmt.
+var in_world: bool = false
+
+var _slow: float = 0.0
+var _fast: float = 0.0
+## Wohin darf wieder hochgeregelt werden? Das ist der Stand, den der Mensch
+## eingestellt hat — die Automatik darf abnehmen, aber nie mehr geben, als
+## gewollt war.
+var _ceiling: Dictionary = {}
 
 func _ready() -> void:
 	Settings.changed.connect(apply)
+	_remember_ceiling()
 	apply()
+
+func _process(delta: float) -> void:
+	if not (Settings.auto_quality and in_world):
+		return
+	var ms := Perf.smooth_ms()
+	if ms > DOWN_MS:
+		_slow += delta
+		_fast = 0.0
+	elif ms < UP_MS:
+		_fast += delta
+		_slow = 0.0
+	else:
+		_slow = 0.0
+		_fast = 0.0
+	if _slow >= HOLD:
+		_slow = 0.0
+		var gave: String = Quality.step_down()
+		if gave != "":
+			print("Automatik: %s heruntergesetzt (%.1f ms je Bild)" % [gave, ms])
+			Settings.changed_and_save()
+	elif _fast >= HOLD * 2.0:
+		# Nach oben vorsichtiger als nach unten: ein Ruckler ist schlimmer als
+		# eine Wirkung, die eine Weile fehlt.
+		_fast = 0.0
+		var back: String = Quality.step_up(_ceiling)
+		if back != "":
+			print("Automatik: %s wieder erhöht (%.1f ms je Bild)" % [back, ms])
+			Settings.changed_and_save()
+
+## Merkt sich den vom Menschen gewählten Stand als Obergrenze.
+func _remember_ceiling() -> void:
+	_ceiling = {}
+	for entry: Array in Quality.GIVE_UP:
+		var key: String = entry[0]
+		_ceiling[key] = maxi(int(_ceiling.get(key, 0)), int(Settings.get(key)))
+
+## Wird gerufen, wenn ein Mensch eine Grafikeinstellung von Hand ändert: dann
+## gilt sein Stand als neue Obergrenze.
+func set_ceiling_from_settings() -> void:
+	_remember_ceiling()
 
 ## Setzt alles, was sofort wirken kann. Wird bei jeder Änderung aufgerufen.
 func apply() -> void:
@@ -115,13 +198,17 @@ func decor_chance(tile: int) -> int:
 			return 25 if step == 1 else 55
 	return 0
 
-## Beleuchtung: 0 = aus, 1 = feste Tageszeit, 2 = Tagesverlauf.
+## Beleuchtungsstufe: 0 aus, 1 nur Tönung, 2 mit Schein, 3 mit Sichtgrenze.
 ##
 ## Auf Stufe 0 hängt sich der LightManager komplett ab — kein Tönen, kein
-## Licht, keine Vignette, kein Prozessschritt. Eine Einstellung „Aus", die
+## Schein, keine Sichtgrenze, kein Prozessschritt. Eine Einstellung „Aus", die
 ## trotzdem jeden Bildpunkt anfasst, wäre eine Lüge.
 func light_mode() -> int:
 	return clampi(Settings.light, 0, LIGHT.size() - 1)
+
+## Läuft die Tageszeit weiter? Bei „Fest" bleibt es heller Vormittag.
+func day_cycle() -> bool:
+	return Settings.day_cycle
 
 ## Schattenwurf der Figur.
 func shadows_on() -> bool:

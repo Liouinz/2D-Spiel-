@@ -99,6 +99,7 @@ func _ready() -> void:
 	light = LightManager.new()
 	light.name = "Light"
 	light.player = player
+	light.camera = camera
 	add_child(light)
 
 	# Rotes Blockraster über allem — zeigt das sonst unsichtbare Grid.
@@ -119,6 +120,7 @@ func _ready() -> void:
 		hud.debug.map = map
 		hud.debug.player = player
 		hud.debug.streamer = streamer
+		hud.debug.world = self
 
 	build_bar = BuildBar.new()
 	build_bar.name = "BuildBar"

@@ -5,21 +5,29 @@ extends Control
 ## keine „CPU 43 %"-Anzeige: Godot liefert keine Systemauslastung, sondern
 ## Renderzeiten. Die stehen deshalb auch so beschriftet da. Liefert die Engine
 ## einen Wert nicht, steht „—" statt einer erfundenen Zahl.
+##
+## Die Zahlen kommen aus `Perf` — derselben Quelle, aus der sich auch die
+## Entwicklerinfo und die automatische Qualitätsanpassung bedienen. Zwei
+## Anzeigen, die sich ihre Bildrate getrennt ausrechnen, widersprechen sich
+## irgendwann, und dann diskutiert man über Anzeigen statt über Leistung.
+##
+## Die „1 % low" steht bewusst neben der Bildrate: ein Mittelwert von 60 sagt
+## nichts darüber, ob zwischendurch Bilder mit 90 ms dabei waren — und genau
+## die spürt man.
 
 const REFRESH := 0.25          ## Sekunden zwischen zwei Aktualisierungen
 
 var _label: Label
 var _accum: float = 0.0
-var _vp_rid: RID
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	custom_minimum_size = Vector2(210, 124)
-	offset_left = -230
+	custom_minimum_size = Vector2(226, 150)
+	offset_left = -246
 	offset_right = -20
 	offset_top = 250
-	offset_bottom = 374
+	offset_bottom = 400
 
 	_label = Label.new()
 	_label.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -32,11 +40,6 @@ func _ready() -> void:
 	_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	add_child(_label)
 
-	# Ohne dieses Einschalten liefert die Engine keine Renderzeiten.
-	var vp := get_viewport()
-	if vp != null:
-		_vp_rid = vp.get_viewport_rid()
-		RenderingServer.viewport_set_measure_render_time(_vp_rid, true)
 	refresh()
 
 func _process(delta: float) -> void:
@@ -52,19 +55,18 @@ func refresh() -> void:
 	if _label == null:
 		return
 	_label.text = "\n".join([
-		"FPS   %d" % Engine.get_frames_per_second(),
-		"Speicher   %s" % _mib(OS.get_static_memory_usage()),
-		"CPU Render   %s" % _ms(_cpu_ms()),
-		"GPU Render   %s" % _ms(_gpu_ms()),
-		"Zeichenaufrufe   %s" % _count(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+		"FPS   %d   (ø %.0f)" % [Perf.fps(), Perf.fps_avg()],
+		"1 %% low   %.0f" % Perf.low1(),
+		"Bildzeit   %.2f ms" % Perf.frame_ms(),
+		"CPU Render   %s" % _ms(Perf.cpu_ms()),
+		"GPU Render   %s" % _ms(Perf.gpu_ms()),
+		"Zeichenaufrufe   %s" % _num(Perf.draw_calls()),
+		"Speicher   %s" % _mib(Perf.game_memory()),
 	])
 	queue_redraw()
 
-func _cpu_ms() -> float:
-	return RenderingServer.viewport_get_measured_render_time_cpu(_vp_rid) if _vp_rid.is_valid() else -1.0
-
-func _gpu_ms() -> float:
-	return RenderingServer.viewport_get_measured_render_time_gpu(_vp_rid) if _vp_rid.is_valid() else -1.0
+static func _num(v: int) -> String:
+	return "—" if v <= 0 else "%d" % v
 
 ## Millisekunden — oder „—", wenn die Engine hier nichts misst.
 ##
@@ -75,12 +77,6 @@ static func _ms(v: float) -> String:
 
 static func _mib(bytes: int) -> String:
 	return "%.0f MiB" % (float(bytes) / 1048576.0)
-
-## Zähler, die manche Treiber nicht füllen: dann lieber „—" als eine Null, die
-## nach „nichts los" aussieht.
-static func _count(monitor: int) -> String:
-	var v := Performance.get_monitor(monitor)
-	return "—" if v <= 0.0 else "%d" % int(v)
 
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.06, 0.07, 0.09, 0.72), true)

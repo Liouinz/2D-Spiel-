@@ -174,8 +174,10 @@ func _refresh_wanted() -> void:
 func _load(chunk: Vector2i) -> void:
 	if _loaded.has(chunk):
 		return
+	var t0 := Time.get_ticks_usec()
 	ground.paint_chunk(layers, map, chunk)
 	_loaded[chunk] = _collision_for(chunk)
+	last_load_msec = float(Time.get_ticks_usec() - t0) / 1000.0
 	loads += 1
 
 func _unload(chunk: Vector2i) -> void:
@@ -250,6 +252,20 @@ func refresh_cell(cell: Vector2i) -> void:
 		_loaded[c] = _collision_for(c)
 
 ## Anzahl geladener Chunks — für den Selbsttest.
+## Wie lange das Malen des zuletzt geladenen Chunks gedauert hat, in
+## Millisekunden. Für die Entwicklerinfo: ein Nachladeruckler hat hier seine
+## Zahl, statt nur ein Gefühl zu sein.
+var last_load_msec: float = 0.0
+
+## Wie viele der geladenen Chunks gerade im Bild liegen.
+func visible_count(view: Rect2) -> int:
+	var span := float(Config.CHUNK * Config.TILE)
+	var n := 0
+	for c: Vector2i in _loaded.keys():
+		if view.intersects(Rect2(Vector2(c) * span, Vector2(span, span))):
+			n += 1
+	return n
+
 func loaded_count() -> int:
 	return _loaded.size()
 

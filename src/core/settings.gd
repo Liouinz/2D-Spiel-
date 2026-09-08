@@ -27,7 +27,9 @@ var water_detail: int = 2          ## Index in Graphics.DETAIL
 var wind: int = 2                  ## Index in Graphics.STEPS — Bewegung im Boden
 var particles: int = 2             ## Index in Graphics.STEPS — Staub in der Luft
 var decor: int = 2                 ## Index in Graphics.STEPS — Bewuchs am Boden
-var light: int = 2                 ## Index in Graphics.LIGHT — Tageslicht
+var light: int = 3                 ## Index in Graphics.LIGHT — Beleuchtungsstufe
+var day_cycle: bool = true         ## läuft die Tageszeit?
+var auto_quality: bool = true      ## Qualität selbst nachregeln, wenn es klemmt
 var shadows: bool = true
 
 # --- Leistung ----------------------------------------------------------------
@@ -58,6 +60,8 @@ func load_settings() -> void:
 	particles = int(cfg.get_value("video", "particles", particles))
 	decor = int(cfg.get_value("video", "decor", decor))
 	light = int(cfg.get_value("video", "light", light))
+	day_cycle = bool(cfg.get_value("video", "day_cycle", day_cycle))
+	auto_quality = bool(cfg.get_value("video", "auto_quality", auto_quality))
 	shadows = bool(cfg.get_value("video", "shadows", shadows))
 	fps_limit = int(cfg.get_value("perf", "fps", fps_limit))
 	show_hints = bool(cfg.get_value("ui", "hints", show_hints))
@@ -74,6 +78,8 @@ func save_settings() -> void:
 	cfg.set_value("video", "particles", particles)
 	cfg.set_value("video", "decor", decor)
 	cfg.set_value("video", "light", light)
+	cfg.set_value("video", "day_cycle", day_cycle)
+	cfg.set_value("video", "auto_quality", auto_quality)
 	cfg.set_value("video", "shadows", shadows)
 	cfg.set_value("perf", "fps", fps_limit)
 	cfg.set_value("ui", "hints", show_hints)

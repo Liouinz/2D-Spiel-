@@ -285,13 +285,37 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 			if erase:
 				layer.erase_cell(cell)
 		else:
-			# Welche Ausführung der Maske? Der Streuwert des Feldes entscheidet:
-			# ortsfest, also gleich nach jedem Nachladen des Chunks.
+			# Welche Ausführung der Maske? Normalerweise entscheidet der
+			# Streuwert des Feldes: ortsfest, also gleich nach jedem Nachladen
+			# des Chunks.
 			var edge := Config.hash2(x, y) % TerrainAtlas.EDGE_VARIANTS
+			if mask == 15:
+				# Maske 15 ist der Sonderfall: das Feld ist RINGSUM umgeben,
+				# gehört aber selbst nicht dazu — eine Lücke also. Hier
+				# entscheidet nicht der Zufall, sondern wohin die Lücke
+				# weiterläuft; sonst stünde ein rundes Loch mitten in einem
+				# durchgehenden Spalt.
+				edge = _hole_kind(_table[base + t1] != 0, _table[base + t3] != 0,
+					_table[base + t5] != 0, _table[base + t7] != 0)
 			layer.set_cell(cell, _sources[pos],
 				(_slots[pos] as Array[Vector2i])[mask * TerrainAtlas.EDGE_VARIANTS + edge])
 
 	_paint_edges(layers, cell, t1, t3, t4, t5, t7, erase)
+
+## Wohin läuft die Lücke weiter? Danach richtet sich die Öffnung.
+##
+## Liegt der Boden links UND rechts, aber nicht oben und unten, dann ist die
+## Lücke ein senkrechter Spalt — und die Öffnung muss senkrecht durchlaufen.
+## Umgekehrt genauso. Ist es in beiden Richtungen gleich (ein einzeln
+## entferntes Feld mitten in einer Fläche), bleibt das runde Loch.
+static func _hole_kind(north: bool, west: bool, east: bool, south: bool) -> int:
+	var horizontal := west and east
+	var vertical := north and south
+	if horizontal and not vertical:
+		return TerrainAtlas.HOLE_VERTICAL
+	if vertical and not horizontal:
+		return TerrainAtlas.HOLE_HORIZONTAL
+	return TerrainAtlas.HOLE_ROUND
 
 ## Streu-Dekoration auf ein Feld.
 ##
