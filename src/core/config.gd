@@ -55,9 +55,20 @@ const JUMP_HEIGHT := 14.0             ## Scheitelhöhe in Bildpunkten
 const SWIM_SPEED := 68.0
 
 
-## Halber Zoom bei doppelter Kachelgröße = unverändertes Sichtfeld,
-## aber doppelt so feine Grafik.
-const CAMERA_ZOOM := 1.5
+## Kamerazoom. MUSS ganzzahlig sein.
+##
+## Vorher stand hier 1,5, damit das Sichtfeld bei der Verdopplung der
+## Kachelgröße gleich blieb. Der Preis dafür war hoch und fiel erst beim
+## Hineinzoomen ins Bild auf: bei Faktor 1,5 wird aus einem Weltpixel mal ein,
+## mal zwei Bildschirmpunkte. Jede Kante einer Figur war dadurch abwechselnd
+## ein und zwei Punkte dick, Augen waren unterschiedlich breit, Umrisse
+## ausgefranst — genau das, was Pixel-Art nicht sein darf, und durch keine
+## bessere Zeichnung zu heilen.
+##
+## Mit Faktor 2 ist jeder Weltpixel exakt zwei Bildschirmpunkte. Das Sichtfeld
+## wird dabei kleiner (20 x 11 statt 27 x 15 Blöcke) — das ist die Gegenleistung
+## und in etwa die Bildeinstellung, die Aufbauspiele dieser Art benutzen.
+const CAMERA_ZOOM := 2.0
 const CAMERA_SMOOTH := 6.0            ## Interpolationsgeschwindigkeit der Kamera
 
 ## Streuwert aus zwei Koordinaten — dieselbe Kachel bekommt immer denselben

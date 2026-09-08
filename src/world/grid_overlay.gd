@@ -31,6 +31,11 @@ const CURSOR_LINE := Color(1.00, 1.00, 1.00, 0.95)
 const CURSOR_GHOST := Color(1.00, 1.00, 1.00, 0.55)   ## Deckkraft des Geistbilds
 const BORDER := Color(1.00, 0.55, 0.25, 0.75)
 
+## Linienstärken sind in BILDSCHIRMpunkten gemeint, nicht in Weltpixeln: eine
+## Linie soll beim Hineinzoomen nicht mitwachsen. `_w()` rechnet sie um.
+const LINE_THIN := 1.0
+const LINE_THICK := 3.0
+
 var camera: GameCamera
 var player: Node2D
 var show_grid := Config.SHOW_BLOCK_GRID   ## nur die Linien, nicht die Vorschau
@@ -100,17 +105,17 @@ func _draw_grid(t: float, x0: int, y0: int, x1: int, y1: int) -> void:
 	# Blocklinien
 	for bx in range(x0, x1 + 1):
 		if bx % Config.CHUNK != 0:
-			draw_line(Vector2(bx * t, y0 * t), Vector2(bx * t, y1 * t), BLOCK_LINE, 1.0)
+			draw_line(Vector2(bx * t, y0 * t), Vector2(bx * t, y1 * t), BLOCK_LINE, _w(LINE_THIN))
 	for by in range(y0, y1 + 1):
 		if by % Config.CHUNK != 0:
-			draw_line(Vector2(x0 * t, by * t), Vector2(x1 * t, by * t), BLOCK_LINE, 1.0)
+			draw_line(Vector2(x0 * t, by * t), Vector2(x1 * t, by * t), BLOCK_LINE, _w(LINE_THIN))
 
 	# Chunk-Grenzen darüber
 	var cs := Config.CHUNK
 	for bx in range(x0 - x0 % cs, x1 + cs, cs):
-		draw_line(Vector2(bx * t, y0 * t), Vector2(bx * t, y1 * t), CHUNK_LINE, 3.0)
+		draw_line(Vector2(bx * t, y0 * t), Vector2(bx * t, y1 * t), CHUNK_LINE, _w(LINE_THICK))
 	for by in range(y0 - y0 % cs, y1 + cs, cs):
-		draw_line(Vector2(x0 * t, by * t), Vector2(x1 * t, by * t), CHUNK_LINE, 3.0)
+		draw_line(Vector2(x0 * t, by * t), Vector2(x1 * t, by * t), CHUNK_LINE, _w(LINE_THICK))
 
 	_draw_chunk_numbers(t, x0, y0, x1, y1)
 
@@ -127,7 +132,7 @@ func _draw_grid(t: float, x0: int, y0: int, x1: int, y1: int) -> void:
 		var b := block_at(player.global_position)
 		var cell := Rect2(b.x * t, b.y * t, t, t)
 		draw_rect(cell, PLAYER_FILL, true)
-		draw_rect(cell, PLAYER_LINE, false, 2.0)
+		draw_rect(cell, PLAYER_LINE, false, _w(2.0))
 
 ## Die Bauvorschau — unabhängig vom Raster, sonst baut man blind.
 ##
@@ -155,9 +160,14 @@ func _draw_cursor(t: float) -> void:
 		# Untergrund lesbar, auch auf hellem Sand.
 		for pass_i in 2:
 			var col: Color = Color(0, 0, 0, 0.6) if pass_i == 0 else CURSOR_LINE
-			var w: float = 4.0 if pass_i == 0 else 2.0
+			var w: float = _w(4.0 if pass_i == 0 else 2.0)
 			draw_line(p, p + Vector2(arm * dx, 0.0), col, w)
 			draw_line(p, p + Vector2(0.0, arm * dy), col, w)
+
+## Weltbreite für eine gewünschte Bildschirmbreite.
+func _w(screen_px: float) -> float:
+	var zoom := camera.zoom.x if is_instance_valid(camera) else 1.0
+	return screen_px / zoom
 
 func _draw_border(t: float, x0: int, y0: int, x1: int, y1: int) -> void:
 	var lo := t
@@ -195,5 +205,10 @@ func _draw_chunk_numbers(t: float, x0: int, y0: int, x1: int, y1: int) -> void:
 			if cx < 0 or cy < 0 or cx * cs >= Config.MAP_W or cy * cs >= Config.MAP_H:
 				continue
 			var pos := Vector2(cx * cs * t + 8.0, cy * cs * t + 26.0)
+			# Die Schrift steht in WELTkoordinaten und wird deshalb mit der
+			# Kamera vergrössert. Bei Zoom 2 wären 20 Punkt vierzig hoch —
+			# quer durch das halbe Bild. Durch den Zoom geteilt bleibt sie
+			# unabhängig davon immer gleich gross auf dem Bildschirm.
+			var zoom := camera.zoom.x if is_instance_valid(camera) else 1.0
 			draw_string(font, pos, "Chunk %d | %d" % [cx, cy],
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 20, CHUNK_TEXT)
+				HORIZONTAL_ALIGNMENT_LEFT, -1, int(round(20.0 / zoom)), CHUNK_TEXT)

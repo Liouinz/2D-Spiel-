@@ -95,7 +95,7 @@ static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 				var td := src.get_tile_data(slots[i], 0)
 				td.terrain_set = 0
 				td.terrain = terrain
-				var mask := i if i < TerrainAtlas.PARTIAL else 15
+				var mask := (i / TerrainAtlas.EDGE_VARIANTS) if i < TerrainAtlas.FULL_START else 15
 				for c in 4:
 					if mask & (1 << c):
 						td.set_terrain_peering_bit(CORNERS[c], terrain)
@@ -262,7 +262,11 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 			if erase:
 				layer.erase_cell(cell)
 		else:
-			layer.set_cell(cell, _sources[pos], (_slots[pos] as Array[Vector2i])[mask])
+			# Welche Ausführung der Maske? Der Streuwert des Feldes entscheidet:
+			# ortsfest, also gleich nach jedem Nachladen des Chunks.
+			var edge := Config.hash2(x, y) % TerrainAtlas.EDGE_VARIANTS
+			layer.set_cell(cell, _sources[pos],
+				(_slots[pos] as Array[Vector2i])[mask * TerrainAtlas.EDGE_VARIANTS + edge])
 
 	_paint_edges(layers, cell, t1, t3, t4, t5, t7, erase)
 

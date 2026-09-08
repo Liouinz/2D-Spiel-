@@ -955,6 +955,9 @@ func _check_terrain_shapes(world: Node2D, map: MapData) -> void:
 ## Die Eckmaske eines Feldes auf einer Bodenschicht.
 ##
 ## 0 – 14 sind Übergänge, 15 ist eine Vollkachel, −1 heisst: dort liegt nichts.
+##
+## Jede Maske liegt in mehreren Ausführungen hintereinander im Atlas, deshalb
+## wird der Platz durch ihre Anzahl geteilt.
 func _mask_at(world: Node2D, layer_pos: int, cell: Vector2i) -> int:
 	var layer: TileMapLayer = world.streamer.layers[layer_pos]
 	var coords := layer.get_cell_atlas_coords(cell)
@@ -964,7 +967,7 @@ func _mask_at(world: Node2D, layer_pos: int, cell: Vector2i) -> int:
 	var idx := slots.find(coords)
 	if idx < 0:
 		return -1
-	return idx if idx < TerrainAtlas.PARTIAL else 15
+	return (idx / TerrainAtlas.EDGE_VARIANTS) if idx < TerrainAtlas.FULL_START else 15
 
 func _bits(mask: int) -> int:
 	if mask < 0:

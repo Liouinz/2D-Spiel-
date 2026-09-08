@@ -6,16 +6,35 @@ extends RefCounted
 ## Godot waehlt im Modus TERRAIN_MODE_MATCH_CORNERS eine Kachel anhand der vier
 ## Ecken aus. Es gibt also 15 verwendbare Eckmasken (1..15) — Maske 0 bleibt leer.
 ## Die Form einer Teilkachel entsteht durch bilineare Interpolation der vier
-## Eckwerte; die Schwelle wird gedithert, damit die Kante ausgefranst bleibt
-## statt mathematisch glatt zu wirken.
+## Eckwerte. Die Schwelle wird dabei mit RAUSCHEN verschoben, nicht gedithert.
+##
+## Vorher lag hier eine geordnete 4x4-Bayer-Matrix. Die ist regelmässig — und
+## genau so sah die Kante auch aus: ein Schachbrett aus Einzelpixeln, quer über
+## jeden Übergang zwischen zwei Böden. Bei Zoom 1,5 ging das unter, bei Zoom 2
+## war es das Künstlichste im ganzen Bild. Zusammenhängendes Rauschen ergibt
+## stattdessen Zungen und Buchten, wie von Hand gesetzt.
+##
+## Dazu gibt es jede Maske in mehreren Ausführungen. Vorher existierte je
+## Eckmaske genau EINE Kachel; jede Küstenlinie im Spiel bestand damit aus
+## fünfzehn immer gleichen Bausteinen. Welche Ausführung ein Feld bekommt,
+## entscheidet sein Streuwert — dadurch ist es ortsfest und ändert sich nicht
+## beim Nachladen eines Chunks.
 ##
 ## Bitfolge der Maske: 0 = oben links, 1 = oben rechts, 2 = unten rechts,
 ## 3 = unten links — genau die Reihenfolge, die Godot erwartet.
 
 const T := Config.TILE
 const COLS := 8
-const PARTIAL := 15          ## Masken 0..14 belegen die Plaetze 0..14
-const FULL_START := PARTIAL  ## ab hier liegen die Vollkacheln (Maske 15)
+const PARTIAL := 15          ## Eckmasken 0..14
+
+## Ausführungen je Maske. Drei reichen: die Kante ist ohnehin nur ein Streifen
+## am Rand einer Fläche, und mehr Ausführungen kosten Atlasfläche für einen
+## Unterschied, den niemand mehr bemerkt.
+const EDGE_VARIANTS := 3
+
+## Plätze 0 .. PARTIAL * EDGE_VARIANTS - 1 sind Teilkacheln, danach kommen die
+## Vollkacheln (Maske 15).
+const FULL_START := PARTIAL * EDGE_VARIANTS
 
 ## `variants` ist TileArt.base[typ]: SHADES * VARIANTS Vollkacheln.
 ## `hard` = gebaute Fläche: eckige Quadranten statt runder Formen. Für die
@@ -23,7 +42,7 @@ const FULL_START := PARTIAL  ## ab hier liegen die Vollkacheln (Maske 15)
 ## -> {"texture", "slots": Array[Vector2i], "full_start": int}
 static func build(variants: Array, rng: RandomNumberGenerator, hard: bool = false) -> Dictionary:
 	var full_count := variants.size()
-	var total := PARTIAL + full_count
+	var total := FULL_START + full_count
 	var rows := int(ceil(float(total) / COLS))
 	var img := Pixel.make(COLS * T, rows * T)
 	var slots: Array[Vector2i] = []
@@ -32,18 +51,18 @@ static func build(variants: Array, rng: RandomNumberGenerator, hard: bool = fals
 	# Maske 0 ist die einzeln stehende Kachel — ohne sie würde eine Kachel ohne
 	# gleichartige Nachbarn schlicht verschwinden.
 	var mid := TileArt.VARIANTS  # Beginn der mittleren Stufe im flachen Array
-	for i in PARTIAL:
-		var mask := i
-		var src: Image = variants[mid + (mask * 5) % TileArt.VARIANTS]
-		var tile := _quads(src, mask, rng) if hard else _shape(src, mask, rng)
-		var pos := _slot_pos(i)
-		img.blit_rect(tile, Rect2i(Vector2i.ZERO, tile.get_size()), pos * T)
-		slots.append(pos)
+	for mask in PARTIAL:
+		for v in EDGE_VARIANTS:
+			var src: Image = variants[mid + (mask * 5 + v * 3) % TileArt.VARIANTS]
+			var tile := _quads(src, mask, rng) if hard else _shape(src, mask, rng)
+			var pos := _slot_pos(mask * EDGE_VARIANTS + v)
+			img.blit_rect(tile, Rect2i(Vector2i.ZERO, tile.get_size()), pos * T)
+			slots.append(pos)
 
 	# Vollkacheln (Maske 15) in allen Helligkeitsstufen und Varianten
 	for i in full_count:
 		var src: Image = variants[i]
-		var pos := _slot_pos(PARTIAL + i)
+		var pos := _slot_pos(FULL_START + i)
 		img.blit_rect(src, Rect2i(Vector2i.ZERO, src.get_size()), pos * T)
 		slots.append(pos)
 
@@ -52,11 +71,22 @@ static func build(variants: Array, rng: RandomNumberGenerator, hard: bool = fals
 static func _slot_pos(index: int) -> Vector2i:
 	return Vector2i(index % COLS, index / COLS)
 
+## Rauschfeld für die Kantenform. Frequenz und Stärke sind so gewählt, dass
+## eine Bucht ungefähr vier bis acht Pixel breit wird — fein genug für eine
+## 32er-Kachel, grob genug, dass man Form statt Körnung sieht.
+static func _edge_noise(seed_value: int) -> FastNoiseLite:
+	var n := FastNoiseLite.new()
+	n.seed = seed_value
+	n.frequency = 0.13
+	n.fractal_octaves = 2
+	return n
+
 ## Schneidet aus einer Vollkachel die von der Eckmaske abgedeckte Flaeche aus.
 static func _shape(src: Image, mask: int, rng: RandomNumberGenerator) -> Image:
 	var img := Pixel.make(T, T)
 	if mask == 0:
 		return _blob(src, rng)
+	var noise := _edge_noise(rng.randi())
 	var tl := float(mask & 1)
 	var tr := float((mask >> 1) & 1)
 	var br := float((mask >> 2) & 1)
@@ -66,8 +96,9 @@ static func _shape(src: Image, mask: int, rng: RandomNumberGenerator) -> Image:
 			var u := (x + 0.5) / float(T)
 			var w := (y + 0.5) / float(T)
 			var v := tl * (1.0 - u) * (1.0 - w) + tr * u * (1.0 - w) + br * u * w + bl * (1.0 - u) * w
-			# Gedithertes Schwellwertband -> gestreute Pixel statt glatter Kurve
-			var threshold := 0.5 + (Pixel.bayer(x, y) - 0.5) * 0.30 + rng.randf_range(-0.06, 0.06)
+			# Zusammenhängendes Rauschen statt geordnetem Dither: die Kante
+			# bekommt Zungen und Buchten statt eines Schachbretts.
+			var threshold := 0.5 + noise.get_noise_2d(x, y) * 0.22
 			if v > threshold:
 				img.set_pixel(x, y, src.get_pixel(x, y))
 	_rim(img)
@@ -119,10 +150,11 @@ static func _roughen(img: Image, src: Image, rng: RandomNumberGenerator) -> void
 static func _blob(src: Image, rng: RandomNumberGenerator) -> Image:
 	var img := Pixel.make(T, T)
 	var c := T * 0.5
+	var noise := _edge_noise(rng.randi())
 	for y in T:
 		for x in T:
 			var d := Vector2(x + 0.5 - c, y + 0.5 - c).length() / (T * 0.42)
-			var threshold := 1.0 + (Pixel.bayer(x, y) - 0.5) * 0.34 + rng.randf_range(-0.06, 0.06)
+			var threshold := 1.0 + noise.get_noise_2d(x, y) * 0.26
 			if d < threshold:
 				img.set_pixel(x, y, src.get_pixel(x, y))
 	_rim(img)

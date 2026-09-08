@@ -59,8 +59,10 @@ func _new_mote(area: Rect2, anywhere: bool) -> Dictionary:
 		"phase": _rng.randf_range(0.0, TAU),
 		"rise": _rng.randf_range(0.35, 1.1),      ## wie stark er auf und ab schwebt
 		"drift": _rng.randf_range(0.6, 1.5),      ## wie schnell er treibt
-		"size": 2.0 if _rng.randf() < 0.72 else 3.0,
-		"alpha": _rng.randf_range(0.34, 0.72),
+		# In WELTpixeln. Bei Zoom 2 sind das zwei bzw. vier Bildschirmpunkte —
+		# mehr wirkt nicht wie Staub, sondern wie Schmutz auf dem Bildschirm.
+		"size": 1.0 if _rng.randf() < 0.72 else 2.0,
+		"alpha": _rng.randf_range(0.30, 0.62),
 	}
 
 func _visible_rect() -> Rect2:
