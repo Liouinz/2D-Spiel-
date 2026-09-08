@@ -30,6 +30,12 @@ var decor: int = 2                 ## Index in Graphics.STEPS — Bewuchs am Bod
 var light: int = 3                 ## Index in Graphics.LIGHT — Beleuchtungsstufe
 var day_cycle: bool = true         ## läuft die Tageszeit?
 var auto_quality: bool = true      ## Qualität selbst nachregeln, wenn es klemmt
+
+## Tastenbelegung: Aktion -> Liste von Ablagestrings („taste:87", „maus:1").
+## Leer heisst: Auslieferungszustand. Verwaltet wird das von `Keybinds`.
+var keybinds: Dictionary = {}
+
+var zoom: int = Config.ZOOM_DEFAULT   ## Index in Config.ZOOM_STEPS
 var shadows: bool = true
 
 # --- Leistung ----------------------------------------------------------------
@@ -62,6 +68,10 @@ func load_settings() -> void:
 	light = int(cfg.get_value("video", "light", light))
 	day_cycle = bool(cfg.get_value("video", "day_cycle", day_cycle))
 	auto_quality = bool(cfg.get_value("video", "auto_quality", auto_quality))
+	zoom = int(cfg.get_value("video", "zoom", zoom))
+	keybinds = {}
+	for action: String in cfg.get_section_keys("steuerung") if cfg.has_section("steuerung") else []:
+		keybinds[action] = Array(cfg.get_value("steuerung", action, PackedStringArray()))
 	shadows = bool(cfg.get_value("video", "shadows", shadows))
 	fps_limit = int(cfg.get_value("perf", "fps", fps_limit))
 	show_hints = bool(cfg.get_value("ui", "hints", show_hints))
@@ -80,6 +90,9 @@ func save_settings() -> void:
 	cfg.set_value("video", "light", light)
 	cfg.set_value("video", "day_cycle", day_cycle)
 	cfg.set_value("video", "auto_quality", auto_quality)
+	cfg.set_value("video", "zoom", zoom)
+	for action: String in keybinds:
+		cfg.set_value("steuerung", action, PackedStringArray(keybinds[action]))
 	cfg.set_value("video", "shadows", shadows)
 	cfg.set_value("perf", "fps", fps_limit)
 	cfg.set_value("ui", "hints", show_hints)

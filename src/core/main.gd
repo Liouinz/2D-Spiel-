@@ -96,7 +96,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if toggle_inventory():
 			get_viewport().set_input_as_handled()
 		return
-	if not event.is_action_pressed("ui_cancel"):
+	# „pause" ist die belegbare Aktion, `ui_cancel` bleibt daneben stehen: die
+	# Menüs von Godot hängen daran, und Esc soll dort weiter zurückführen, auch
+	# wenn jemand Pause auf eine andere Taste legt.
+	if not (event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel")):
 		return
 	match state:
 		State.PLAYING:

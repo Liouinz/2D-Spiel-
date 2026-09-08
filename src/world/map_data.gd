@@ -86,11 +86,13 @@ func generate(_seed_value: int, fresh: bool = false) -> void:
 	# fill() statt einer Doppelschleife: bei 4,2 Millionen Feldern wären das
 	# sonst mehrere Sekunden, so ist es ein Speicherbefehl.
 	tiles.fill(Tile.GRASS)
+	torches = []
 	if fresh:
 		return
 	var saved := load_user()
 	if not saved.is_empty():
 		tiles = saved
+		torches = loaded_torches.duplicate()
 
 ## Sucht ausgehend von `start` das nächste freie, begehbare Feld.
 func find_free_near(start: Vector2i) -> Vector2i:
@@ -108,7 +110,12 @@ func find_free_near(start: Vector2i) -> Vector2i:
 
 const SAVE_PATH := "user://karte.dat"
 const SAVE_MAGIC := 0x484C4154   ## "TALH"
-const SAVE_VERSION := 3          ## 1 = roh, 2 = Zstd, 3 = nur noch drei Typen
+const SAVE_VERSION := 4          ## 1 = roh, 2 = Zstd, 3 = drei Typen, 4 = Fackeln
+
+## Gesetzte Fackeln, als Feldkoordinaten. Sie gehören zur gebauten Welt und
+## werden deshalb mit ihr gespeichert — eine Fackel, die nach dem Neustart weg
+## ist, hätte man sich sparen können.
+var torches: Array[Vector2i] = []
 
 ## Alte Karten weiterverwenden.
 ##
@@ -132,9 +139,21 @@ func save_user() -> bool:
 	f.store_32(Config.MAP_W)
 	f.store_32(Config.MAP_H)
 	f.store_32(tiles.size())
+	# Ab Fassung 4 steht die Länge des gepackten Blocks dabei. Vorher wurde
+	# einfach bis zum Dateiende gelesen — dahinter passte nichts mehr, und
+	# genau das brauchen die Fackeln.
+	f.store_32(packed.size())
 	f.store_buffer(packed)
+	f.store_32(torches.size())
+	for t: Vector2i in torches:
+		f.store_32(t.x)
+		f.store_32(t.y)
 	f.close()
 	return true
+
+## Die Fackeln der zuletzt geladenen Karte. Getrennt von `load_user()`, weil
+## das eine Bytes liefert und das andere Koordinaten.
+static var loaded_torches: Array[Vector2i] = []
 
 ## Liest die gespeicherte Karte und passt sie notfalls an Weltgrösse und
 ## Bodentypen von heute an. Nur bei kaputten Dateien kommt nichts zurück.
@@ -152,13 +171,22 @@ static func load_user() -> PackedByteArray:
 		print("Gespeicherte Karte nicht lesbar (Fassung %d) — sie wird übergangen." % version)
 		return PackedByteArray()
 
+	loaded_torches = []
 	var data := PackedByteArray()
 	if version == 1:
 		data = f.get_buffer(sw * sh)
 	else:
 		var raw := f.get_32()
-		data = f.get_buffer(f.get_length() - f.get_position()).decompress(
-			raw, FileAccess.COMPRESSION_ZSTD)
+		var packed_size := f.get_32() if version >= 4 \
+			else (f.get_length() - f.get_position())
+		data = f.get_buffer(packed_size).decompress(raw, FileAccess.COMPRESSION_ZSTD)
+		if version >= 4:
+			var count := f.get_32()
+			# Gegen kaputte Dateien: eine Zahl, die grösser ist als das, was
+			# noch in der Datei steht, wird nicht geglaubt.
+			var room := (f.get_length() - f.get_position()) / 8
+			for i in mini(count, room):
+				loaded_torches.append(Vector2i(f.get_32(), f.get_32()))
 	f.close()
 	if data.size() != sw * sh:
 		print("Gespeicherte Karte unvollständig — sie wird übergangen.")

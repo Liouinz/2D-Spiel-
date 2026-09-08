@@ -27,6 +27,7 @@ var camera: GameCamera
 var water: WaterFx              ## Brandung neu berechnen, wenn Wasser entsteht
 var minimap: Control            ## sofort nachziehen statt erst beim nächsten Takt
 var fx: BuildFx                 ## kurzes Zeichen auf dem gesetzten Block
+var torches: Torches            ## gesetzte Fackeln
 var main: Node                  ## öffnet und schliesst das Inventar
 
 ## Weiter als so viele Felder wird beim Ziehen nicht aufgefüllt. Springt der
@@ -74,6 +75,22 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 	if event.is_action_pressed("save_map"):
 		save()
+		get_viewport().set_input_as_handled()
+		return
+	# Fackel setzen oder wieder wegnehmen — auf dem Feld unter dem Zeiger,
+	# also dort, wo auch gebaut wird. Zwei verschiedene Zielpunkte für zwei
+	# Arten des Setzens wären eine unnötige Regel zum Merken.
+	if event.is_action_pressed("place_torch"):
+		var cell := _hovered()
+		if is_instance_valid(torches) and _world_cell(cell):
+			if torches.toggle(cell) and is_instance_valid(fx):
+				fx.flash(cell)
+		get_viewport().set_input_as_handled()
+		return
+	# Zoom: wenige feste Stufen, siehe Config.ZOOM_STEPS.
+	if event.is_action_pressed("zoom_in") or event.is_action_pressed("zoom_out"):
+		if is_instance_valid(camera):
+			camera.step_zoom(1 if event.is_action_pressed("zoom_in") else -1)
 		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventKey:

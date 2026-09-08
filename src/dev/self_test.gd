@@ -106,8 +106,17 @@ func _run() -> void:
 	var counts := _count_tiles(map, GridOverlay.block_at(player.position), 40)
 	_check(counts.size() == 1 and counts.has(MapData.Tile.GRASS),
 		"Karte startet leer (nur Gras)")
-	_check(world.get_node("Sorted").get_child_count() == 1,
-		"Keine Requisiten auf der Karte")
+	# Unter „Sorted" hängen nur die Figur und der (leere) Behälter für Fackeln.
+	# Requisiten gibt es in diesem Spiel nicht mehr, und wenn wieder welche
+	# auftauchen, fällt es hier auf.
+	var sorted := world.get_node("Sorted")
+	var unexpected: Array[String] = []
+	for child: Node in sorted.get_children():
+		if not (child is Player or child is Torches):
+			unexpected.append(child.name)
+	_check(unexpected.is_empty() and world.torches.count() == 0,
+		"Keine Requisiten auf der Karte%s"
+		% ("" if unexpected.is_empty() else " (%s)" % ", ".join(unexpected)))
 	_check(map.is_solid(0, 10) and map.is_solid(Config.MAP_W - 1, 10),
 		"Unsichtbare Wand am Kartenrand")
 	var g: GridOverlay = world.grid
@@ -181,6 +190,7 @@ func _run() -> void:
 	await _check_quality()
 	await _check_light(world)
 	await _check_figure(world)
+	await _check_torch_and_zoom(world)
 	await _check_input_lock(world, map, player)
 	await _check_input_map(world)
 	await _check_stress(world, map, player)
@@ -233,7 +243,8 @@ func _run() -> void:
 	# JEDE Kategorieseite wird abgelichtet. Eine Seite, die nie jemand ansieht,
 	# ist eine Seite, auf der etwas verrutschen kann, ohne dass es auffällt —
 	# und genau das ist hier schon zweimal passiert.
-	for entry: Array in [[1, "12_grafik"], [2, "13_leistung"], [3, "14_steuerung"]]:
+	for entry: Array in [[1, "12_grafik"], [2, "13_effekte"], [3, "14_leistung"],
+			[4, "15_steuerung"]]:
 		main._options_menu._show_page(entry[0])
 		await _shot(entry[1])
 	main._options_menu._show_page(0)
@@ -749,6 +760,21 @@ func _check_water(world: Node2D, map: MapData, player: Player) -> void:
 	player.velocity = Vector2.ZERO
 	await _frames(6)
 	_check(player.is_swimming(), "Figur schwimmt im Teich")
+
+	# Kielwellen: wer sich im Wasser bewegt, zieht eine Spur. Und sie hört
+	# wieder auf — eine Spur, die stehen bleibt, wäre ein Leck.
+	var water_fx: WaterFx = world.get_node("WaterFx")
+	water_fx._splashes.clear()
+	await _drive("move_right", 30)
+	_check(not water_fx._splashes.is_empty(),
+		"Durchs Wasser laufen zieht eine Spur (%d Wellen)" % water_fx._splashes.size())
+	_check(water_fx._splashes.size() <= WaterFx.MAX_WAVES,
+		"Und die Spur bleibt gedeckelt (%d von höchstens %d)"
+		% [water_fx._splashes.size(), WaterFx.MAX_WAVES])
+	player.velocity = Vector2.ZERO
+	await _frames(70)
+	_check(water_fx._splashes.is_empty(),
+		"Im Stehen läuft sie aus (%d übrig)" % water_fx._splashes.size())
 	await _drive("move_right", 20)
 	_check(player.velocity.length() <= Config.SWIM_SPEED + 1.0,
 		"Im Wasser höchstens Schwimmgeschwindigkeit (%.0f)" % player.velocity.length())
@@ -1355,9 +1381,9 @@ func _check_light(world: Node2D) -> void:
 	# 5. Nachts brennt der Schein, mittags nicht — und mittags ist die ganze
 	#    Nachtschicht unsichtbar, kostet also nichts.
 	var at_night := light.light_energy()
-	await _shot("15_nacht")
+	await _shot("20_nacht")
 	light.set_time(0.79)
-	await _shot("16_abend")
+	await _shot("21_abend")
 	light.set_time(0.5)
 	await _frames(4)
 	var at_noon := light.light_energy()
@@ -1442,6 +1468,90 @@ func _check_light(world: Node2D) -> void:
 	Settings.light = before
 	Settings.changed_and_save()
 	await _frames(6)
+
+# --- Fackel und Zoom ----------------------------------------------------------
+
+## Die Fackel muss Licht machen, wieder verschwinden und einen Neustart
+## überstehen. Der Zoom muss GANZZAHLIG bleiben — daran hing schon einmal die
+## Schärfe des ganzen Bildes.
+func _check_torch_and_zoom(world: Node2D) -> void:
+	var tool: BuildTool = world.build_tool
+	var torches: Torches = world.torches
+	var light: LightManager = world.light
+	var map: MapData = world.map
+	var cell := GridOverlay.block_at(world.player.global_position) + Vector2i(2, 0)
+
+	# 1. Setzen: Bild in der Welt UND Licht auf der Nachtschicht.
+	var lights_before := light.source_count()
+	var on := torches.toggle(cell)
+	await _frames(3)
+	_check(on and torches.has_torch(cell), "Eine Fackel lässt sich setzen")
+	_check(light.source_count() == lights_before + 1,
+		"Und sie bringt eine Lichtquelle mit (%d -> %d)"
+		% [lights_before, light.source_count()])
+	_check(map.torches.has(cell), "Sie steht in der Karte, nicht nur im Bild")
+
+	# 2. Und sie ist KEIN echtes Licht — sonst wäre die zehnte Fackel nicht
+	#    mehr bezahlbar. Das ist die eigentliche Prüfung an dieser Stelle.
+	_check(_find_all_of_class(world, "Light2D").is_empty(),
+		"Auch mit Fackel gibt es kein echtes 2D-Licht")
+
+	# 3. Nochmal drücken nimmt sie wieder weg.
+	var off := torches.toggle(cell)
+	await _frames(3)
+	_check(not off and not torches.has_torch(cell), "Nochmal drücken nimmt sie weg")
+	_check(light.source_count() == lights_before, "Und das Licht geht mit")
+	_check(not map.torches.has(cell), "Auch aus der Karte")
+
+	# 4. Sie übersteht Speichern und Laden — über den echten Weg.
+	torches.toggle(cell)
+	await _frames(2)
+	map.save_user()
+	map.torches = []
+	MapData.loaded_torches = []
+	var reloaded := MapData.load_user()
+	_check(not reloaded.is_empty() and MapData.loaded_torches.has(cell),
+		"Fackeln überstehen Speichern und Laden (%d gefunden)"
+		% MapData.loaded_torches.size())
+	map.torches = [cell]
+	torches.toggle(cell)
+	await _frames(2)
+
+	# 5. Zoom: genau drei Stufen, alle ganzzahlig.
+	var crooked: Array[String] = []
+	for z: float in Config.ZOOM_STEPS:
+		if not is_equal_approx(z, floorf(z)):
+			crooked.append("%.2f" % z)
+	_check(crooked.is_empty(),
+		"Jede Zoomstufe ist ganzzahlig — sonst wären die Pixel wieder krumm%s"
+		% ("" if crooked.is_empty() else " (%s)" % ", ".join(crooked)))
+
+	var cam: GameCamera = world.camera
+	var zoom_before := Settings.zoom
+	Settings.zoom = 0
+	Settings.changed_and_save()
+	await _frames(3)
+	var wide := cam.visible_world_rect().size
+	Settings.zoom = 2
+	Settings.changed_and_save()
+	await _frames(3)
+	var close := cam.visible_world_rect().size
+	_check(is_equal_approx(cam.zoom.x, 3.0) and close.x < wide.x,
+		"Näher heran zeigt weniger Welt (%.0f gegen %.0f Pixel breit)" % [close.x, wide.x])
+
+	# 6. Und die Grenzen sind hart: kein Schritt über die Enden hinaus.
+	cam.step_zoom(1)
+	await _frames(2)
+	_check(Settings.zoom == 2, "Über die nächste Stufe hinaus geht es nicht")
+	Settings.zoom = 0
+	Settings.changed_and_save()
+	cam.step_zoom(-1)
+	await _frames(2)
+	_check(Settings.zoom == 0, "Und unter die weiteste auch nicht")
+
+	Settings.zoom = zoom_before
+	Settings.changed_and_save()
+	await _frames(4)
 
 # --- Die Figur ----------------------------------------------------------------
 
@@ -1999,15 +2109,82 @@ func _check_input_lock(world: Node2D, map: MapData, player: Player) -> void:
 
 ## Eingaben zentral, Steuerungsübersicht ehrlich, Anzeigen wie verlangt.
 func _check_input_map(world: Node2D) -> void:
-	# 1. Jede Aktion der Übersicht existiert wirklich und hat eine Taste.
+	# 1. Jede belegbare Aktion existiert wirklich und hat eine Eingabe.
 	var missing: Array[String] = []
-	for entry: Array in Config.CONTROL_ROWS:
-		for one: String in String(entry[0]).split("+"):
-			if not InputMap.has_action(one) or Config.keys_for(one) == "—":
-				missing.append(one)
+	for entry: Array in Keybinds.ACTIONS:
+		var one: String = entry[0]
+		if not InputMap.has_action(one) or Config.keys_for(one) == "—":
+			missing.append(one)
 	_check(missing.is_empty(),
-		"Steuerungsübersicht zeigt nur Aktionen, die es gibt%s"
+		"Die Steuerungsseite zeigt nur Aktionen, die es gibt%s"
 		% ("" if missing.is_empty() else " (fehlt: %s)" % ", ".join(missing)))
+
+	# 2. Die SPIELLOGIK hängt an keiner festen Taste. Das ist der Kern der
+	#    freien Belegung: wer `KEY_W` in Welt, Figur oder Kamera stehen lässt,
+	#    macht jede Umbelegung zur Lüge.
+	#
+	#    Geprüft wird Welt, Figur, Kamera und Kern — nicht die Oberfläche. Ein
+	#    Menü darf Esc kennen: dass die Abbruchtaste Esc ist, ist eine Regel des
+	#    Betriebssystems und keine Spielsteuerung. `keybinds.gd` ist ohnehin
+	#    ausgenommen, dort STEHT die Belegung.
+	var hard_coded: Array[String] = []
+	for path: String in _gd_files("res://src"):
+		var logic := path.contains("/world/") or path.contains("/player/") \
+			or path.contains("/camera/") or path.contains("/core/")
+		if not logic or path.ends_with("keybinds.gd"):
+			continue
+		var text := FileAccess.get_file_as_string(path)
+		for line: String in text.split("\n"):
+			if line.split("#")[0].contains("KEY_"):
+				hard_coded.append(path.get_file())
+				break
+	_check(hard_coded.is_empty(), "Keine feste Taste in der Spiellogik%s"
+		% ("" if hard_coded.is_empty() else " (%s)" % ", ".join(hard_coded)))
+
+	# 3. Umbelegen wirkt wirklich — geprüft am echten Weg: belegen, nachsehen,
+	#    zurücksetzen.
+	var before_text := Config.keys_for("move_up")
+	var ev := InputEventKey.new()
+	ev.physical_keycode = KEY_I
+	var problem := Keybinds.replace("move_up", 0, ev)
+	_check(problem == "" and Config.keys_for("move_up").begins_with("I"),
+		"Vorwärts lässt sich auf I legen (%s)" % Config.keys_for("move_up"))
+	_check(InputMap.event_is_action(ev, "move_up"), "Und die Engine kennt die neue Taste")
+
+	# Konflikte werden erkannt, statt zwei Aktionen auf eine Taste zu legen.
+	var clash := InputEventKey.new()
+	clash.physical_keycode = KEY_I
+	var refused := Keybinds.add("jump", clash)
+	_check(refused != "" and refused.contains("Vorwärts"),
+		"Eine schon belegte Taste wird abgelehnt (%s)" % refused)
+
+	# Mehrere Eingaben je Aktion: die zweite bleibt, die letzte lässt sich nicht
+	# wegnehmen — eine Aktion ohne Eingabe wäre unerreichbar.
+	_check(Keybinds.events_of("move_up").size() >= 2,
+		"Eine Aktion trägt mehrere Eingaben (%d)" % Keybinds.events_of("move_up").size())
+	while Keybinds.events_of("move_up").size() > 1:
+		Keybinds.remove_at("move_up", 0)
+	_check(Keybinds.remove_at("move_up", 0) != "",
+		"Die letzte Eingabe lässt sich nicht wegnehmen")
+
+	# Und alles geht auf Standard zurück.
+	Keybinds.reset_all()
+	_check(Config.keys_for("move_up") == before_text,
+		"„Standard wiederherstellen\" holt die Auslieferung zurück (%s)"
+		% Config.keys_for("move_up"))
+
+	# Gespeichert wird die Belegung wirklich: schreiben, verstellen, neu laden.
+	ev = InputEventKey.new()
+	ev.physical_keycode = KEY_J
+	Keybinds.replace("move_left", 0, ev)
+	Settings.save_settings()
+	Keybinds.reset_all()
+	Settings.load_settings()
+	Keybinds.setup()
+	_check(Config.keys_for("move_left").begins_with("J"),
+		"Die eigene Belegung übersteht einen Neustart (%s)" % Config.keys_for("move_left"))
+	Keybinds.reset_all()
+	Settings.save_settings()
 
 	# 2. Die Tasten stimmen mit der tatsächlichen Belegung überein.
 	_check(Config.keys_for("inventory") == "E", "E öffnet das Inventar")
@@ -2017,6 +2194,7 @@ func _check_input_map(world: Node2D) -> void:
 	_check(Config.keys_for("build_slot_3") == "3", "Feld 3 liegt auf der 3")
 	_check(Config.keys_for("build_slot_1+build_slot_2+build_slot_3") == "1 2 3",
 		"Materialwahl steht als eine Zeile: 1 2 3")
+	_check(Config.keys_for("pause") == "Esc", "Pause liegt auf Esc und ist belegbar")
 	_check(not InputMap.has_action("build_slot_4"),
 		"Es gibt nur drei Materialtasten")
 	_check(Config.keys_for("save_map") == "F5", "F5 speichert")

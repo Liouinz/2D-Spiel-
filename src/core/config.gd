@@ -76,6 +76,27 @@ const SWIM_SPEED := 68.0
 ## wird dabei kleiner (20 x 11 statt 27 x 15 Blöcke) — das ist die Gegenleistung
 ## und in etwa die Bildeinstellung, die Aufbauspiele dieser Art benutzen.
 const CAMERA_ZOOM := 2.0
+
+## Die wählbaren Zoomstufen. GANZZAHLIG, und das ist keine Bequemlichkeit.
+##
+## Bei einem Zoom von 1,5 wird aus einem Weltpixel mal ein, mal zwei
+## Bildschirmpunkte — dieselbe Ursache, die weiter oben beschrieben ist und
+## wegen der der Zoom überhaupt auf 2 gesetzt wurde. Stufen wie „85 %" oder
+## „70 %" würden diesen Fehler zurückholen, und zwar sichtbar an jeder
+## Figurenkante. Deshalb gibt es drei ganze Stufen statt Prozentwerten:
+##
+##   1x   weit    40 x 22 Blöcke im Bild
+##   2x   normal  20 x 11 Blöcke
+##   3x   nah     13 x 7 Blöcke
+##
+## Mehr braucht es nicht, und ein stufenloses Zoomen gäbe es hier nur um den
+## Preis unsauberer Pixel.
+const ZOOM_STEPS := [1.0, 2.0, 3.0]
+const ZOOM_NAMES := ["Weit", "Normal", "Nah"]
+const ZOOM_DEFAULT := 1        ## Index in ZOOM_STEPS
+
+static func zoom_of(step: int) -> float:
+	return float(ZOOM_STEPS[clampi(step, 0, ZOOM_STEPS.size() - 1)])
 const CAMERA_SMOOTH := 6.0            ## Interpolationsgeschwindigkeit der Kamera
 
 ## Streuwert aus zwei Koordinaten — dieselbe Kachel bekommt immer denselben
@@ -95,97 +116,13 @@ static func world_size_px() -> Vector2i:
 static func spawn_block() -> Vector2i:
 	return Vector2i(MAP_W / 2, MAP_H / 2)
 
-## Legt die Tastenbelegung zur Laufzeit an (hält project.godot schlank).
+## Legt die Tastenbelegung an. Was dabei worauf liegt, entscheidet `Keybinds` —
+## hier steht nur noch der Aufruf, damit es genau eine Stelle gibt.
 static func setup_input() -> void:
-	var actions := {
-		"move_up": [KEY_W, KEY_UP],
-		"move_down": [KEY_S, KEY_DOWN],
-		"move_left": [KEY_A, KEY_LEFT],
-		"move_right": [KEY_D, KEY_RIGHT],
-		"run": [KEY_SHIFT],
-		"jump": [KEY_SPACE],
-		"inventory": [KEY_E],
-		"toggle_grid": [KEY_G],
-		"toggle_minimap": [KEY_M],
-		"toggle_info": [KEY_H],
-		"debug_info": [KEY_F3],
-		"save_map": [KEY_F5],
-		"build_slot_1": [KEY_1],
-		"build_slot_2": [KEY_2],
-		"build_slot_3": [KEY_3],
-	}
-	for action: String in actions:
-		if not InputMap.has_action(action):
-			InputMap.add_action(action)
-		for key: Key in actions[action]:
-			var ev := InputEventKey.new()
-			ev.physical_keycode = key
-			InputMap.action_add_event(action, ev)
+	Keybinds.setup()
 
-	# Maustasten gehören genauso in die InputMap wie Tasten — sonst steht die
-	# Belegung an zwei Orten und die Steuerungsübersicht kennt nur die Hälfte.
-	var mouse := {
-		"build_place": MOUSE_BUTTON_LEFT,
-		"build_remove": MOUSE_BUTTON_RIGHT,
-	}
-	for action: String in mouse:
-		if not InputMap.has_action(action):
-			InputMap.add_action(action)
-		var ev := InputEventMouseButton.new()
-		ev.button_index = mouse[action]
-		InputMap.action_add_event(action, ev)
-
-## Reihenfolge und Beschriftung der Steuerungsübersicht.
-##
-## Hier stehen NUR die Beschriftungen. Welche Taste eine Aktion auslöst, holt
-## die Anzeige aus der InputMap — dadurch kann dort nie eine veraltete oder
-## erfundene Taste stehen.
-const CONTROL_ROWS := [
-	["move_up+move_left+move_down+move_right", "Laufen (auch Pfeiltasten)"],
-	["run", "Rennen"],
-	["jump", "Springen"],
-	["build_place", "Block setzen"],
-	["build_remove", "Block entfernen"],
-	["build_slot_1+build_slot_2+build_slot_3", "Material wählen: Gras, Sand, Wasser"],
-	["inventory", "Inventar öffnen und schliessen"],
-	["toggle_grid", "Blockraster ein und aus"],
-	["toggle_minimap", "Minimap ein und aus"],
-	["toggle_info", "Anzeige oben links ein und aus"],
-	["save_map", "Karte speichern"],
-	["debug_info", "Entwicklerinfo ein und aus"],
-	["ui_cancel", "Pause / zurück"],
-]
-
-## Lesbare Tastennamen einer Aktion, direkt aus der InputMap.
-##
-## Mausrad und weitere Sonderfälle sind bewusst mit aufgeführt: was die Engine
-## kennt, soll auch dastehen.
+## Lesbare Tastennamen einer Aktion. Die Arbeit macht `Keybinds`; das hier ist
+## der Name, unter dem der Rest des Spiels danach fragt.
 static func keys_for(action: String) -> String:
-	# Mehrere Aktionen mit „+" verbunden ergeben eine Zeile: bei der Bewegung
-	# soll „W A S D" dastehen und nicht viermal dieselbe Zeile.
-	if action.contains("+"):
-		var parts: Array[String] = []
-		for one: String in action.split("+"):
-			var k := keys_for(one)
-			parts.append(k.split(" / ")[0])
-		return " ".join(parts)
-	if not InputMap.has_action(action):
-		return "—"
-	var names: Array[String] = []
-	for ev: InputEvent in InputMap.action_get_events(action):
-		if ev is InputEventKey:
-			var k := ev as InputEventKey
-			var code := k.physical_keycode if k.physical_keycode != 0 else k.keycode
-			names.append(OS.get_keycode_string(code))
-		elif ev is InputEventMouseButton:
-			names.append(MOUSE_NAMES.get((ev as InputEventMouseButton).button_index,
-				"Maustaste"))
-	return " / ".join(names) if not names.is_empty() else "—"
+	return Keybinds.describe_action(action)
 
-const MOUSE_NAMES := {
-	MOUSE_BUTTON_LEFT: "Linke Maustaste",
-	MOUSE_BUTTON_RIGHT: "Rechte Maustaste",
-	MOUSE_BUTTON_MIDDLE: "Mausrad-Klick",
-	MOUSE_BUTTON_WHEEL_UP: "Mausrad hoch",
-	MOUSE_BUTTON_WHEEL_DOWN: "Mausrad runter",
-}

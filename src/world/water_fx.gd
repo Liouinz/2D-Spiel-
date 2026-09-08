@@ -10,6 +10,13 @@ extends Node2D
 const T := Config.TILE
 const FOAM_SEG := 4          ## Segmentbreite des Schaums in Pixeln
 const SPLASH_TIME := 0.55    ## Lebensdauer eines Wellenrings
+const WAKE_TIME := 0.9       ## Lebensdauer einer Kielwelle — länger, sie ist leiser
+const WAKE_EVERY := 0.16     ## Abstand zwischen zwei Kielwellen in Sekunden
+
+## Wie viele Wellen höchstens gleichzeitig leben. Beim Durchqueren eines
+## grossen Teichs entstünden sonst hunderte; ab einem Dutzend sieht man ohnehin
+## keine einzelne mehr, sondern nur noch eine helle Spur.
+const MAX_WAVES := 18
 
 ## Bits der Uferrichtungen je Kachel
 const UP := 1
@@ -55,7 +62,21 @@ func refresh(_cell: Vector2i) -> void:
 
 ## Ein Wellenring, wenn jemand eintaucht.
 func splash(pos: Vector2) -> void:
-	_splashes.append({"pos": pos, "age": 0.0})
+	_add_wave({"pos": pos, "age": 0.0, "life": SPLASH_TIME, "dir": Vector2.ZERO})
+
+## Eine Kielwelle hinter jemandem, der sich im Wasser bewegt.
+##
+## Getrennt vom Eintauchring, weil sie etwas anderes erzählt: der Ring sagt
+## „hier ist gerade jemand hineingefallen", die Kielwelle sagt „hier zieht
+## jemand durch". Sie ist deshalb schwächer, länger sichtbar und in die
+## Gegenrichtung der Bewegung gezogen.
+func wake(pos: Vector2, dir: Vector2) -> void:
+	_add_wave({"pos": pos, "age": 0.0, "life": WAKE_TIME, "dir": dir.normalized()})
+
+func _add_wave(w: Dictionary) -> void:
+	if _splashes.size() >= MAX_WAVES:
+		_splashes.pop_front()
+	_splashes.append(w)
 	queue_redraw()
 
 func _process(delta: float) -> void:
@@ -68,7 +89,8 @@ func _process(delta: float) -> void:
 	if not _splashes.is_empty():
 		for sp: Dictionary in _splashes:
 			sp["age"] += delta
-		_splashes = _splashes.filter(func(sp: Dictionary) -> bool: return sp["age"] < SPLASH_TIME)
+		_splashes = _splashes.filter(func(sp: Dictionary) -> bool:
+			return sp["age"] < float(sp["life"]))
 		queue_redraw()
 	_accum += delta
 	if _accum >= 1.0 / Graphics.water_redraw_hz():
@@ -104,16 +126,40 @@ func _draw() -> void:
 ## Kreis sähe in Pixelgrafik falsch aus.
 func _draw_splashes() -> void:
 	for sp: Dictionary in _splashes:
-		var f: float = sp["age"] / SPLASH_TIME
-		var r: float = 5.0 + f * 20.0
-		var a: float = (1.0 - f) * 0.8
+		var life: float = sp["life"]
+		var f: float = sp["age"] / life
 		var center: Vector2 = sp["pos"]
-		for i in 14:
-			var ang := TAU * (float(i) + (0.5 if (i % 2) else 0.0)) / 14.0
-			var dir := Vector2(cos(ang), sin(ang) * 0.55)
-			var p := center + dir * r
-			draw_rect(Rect2(p.x - 1.5, p.y, 3.0, 1.0), Color(Palette.WATER_FOAM, a), true)
-			prims += 1
+		var dir: Vector2 = sp["dir"]
+		if dir == Vector2.ZERO:
+			# Eintauchen: ein geschlossener Ring, der schnell aufgeht.
+			var r: float = 5.0 + f * 20.0
+			var a: float = (1.0 - f) * 0.8
+			for i in 14:
+				var ang := TAU * (float(i) + (0.5 if (i % 2) else 0.0)) / 14.0
+				var d := Vector2(cos(ang), sin(ang) * 0.55)
+				var p := center + d * r
+				draw_rect(Rect2(p.x - 1.5, p.y, 3.0, 1.0), Color(Palette.WATER_FOAM, a), true)
+				prims += 1
+			continue
+		# Kielwelle: zwei Bögen, die schräg nach hinten auseinanderlaufen — die
+		# Form, die ein Körper im Wasser wirklich hinterlässt. Ein zweiter
+		# runder Ring sähe aus, als wäre die Figur nochmal hineingefallen.
+		var back := -dir
+		var side := Vector2(-dir.y, dir.x)
+		var spread: float = 4.0 + f * 15.0
+		var drift: float = f * 11.0
+		var a2: float = (1.0 - f) * (1.0 - f) * 0.45
+		if a2 <= 0.02:
+			continue
+		for s: float in [-1.0, 1.0]:
+			for i in 3:
+				var along := float(i) * 0.34
+				var p := center + back * (drift + along * spread) \
+					+ side * s * (spread * (0.45 + along))
+				# Flach gedrückt: das Wasser wird von oben gesehen.
+				draw_rect(Rect2(p.x - 1.5, p.y * 1.0, 3.0, 1.0),
+					Color(Palette.WATER_FOAM, a2), true)
+				prims += 1
 
 func _glint(x: int, y: int) -> void:
 	var h := (x * 73856093) ^ (y * 19349663)

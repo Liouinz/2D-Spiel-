@@ -897,6 +897,99 @@ Mal zeichnen lässt.
 
 **Stand:** 251 Prüfungen, alle grün.
 
+## Nachtrag: messen statt raten
+
+Der Auftrag hiess: die Nacht kostet auf einem echten Rechner zwei Drittel der
+Bildrate, findet den Engpass, und zwar durch Profilieren statt Raten.
+
+**Die erste Erkenntnis war, dass die letzte Messung keine war.** Die Kosten der
+Beleuchtung wurden mit `Performance.TIME_PROCESS` bestimmt. Das ist die Zeit im
+`_process`-Schritt der Hauptschleife; das Zeichnen läuft danach und steckt
+nicht darin. Herausgekommen war deshalb, die Beleuchtung koste nichts — „aus"
+sogar teurer als „voll". Die Zahl war nicht ungenau, sie war das falsche Mass.
+
+Es gibt jetzt einen Messharness (`--profile`), der die Engine selbst fragt:
+`viewport_get_measured_render_time_cpu` und `…_gpu`. Damit steht der Engpass
+in einer Tabelle statt in einer Vermutung:
+
+    Beleuchtung aus      CPU  6,07 ms   GPU 2,66 ms
+    nur Toenung          CPU  6,06 ms   GPU 2,75 ms    <- gratis
+    + Figurenlicht       CPU  9,48 ms   GPU 2,57 ms    <- +3,43 ms CPU
+    + Vignette           CPU 11,58 ms   GPU 4,72 ms    <- +1,69 / +1,80
+
+Zwei Ursachen: ein `Light2D` zwingt den Canvas-Renderer in den beleuchteten
+Pfad und lässt jedes Element in seinem Umkreis ein zweites Mal einreihen — und
+weil das Licht der Figur jedes Bild nachgeführt wird, fällt diese Arbeit auch
+jedes Bild neu an. Dazu ein Vollbild-Fragment-Shader über 921 600 Bildpunkte.
+
+Ersetzt durch: `CanvasModulate` (gemessen gratis, bleibt), ein additives Sprite
+je Lichtquelle, und eine einmal gebackene Verlaufstextur. Am Tag hängt die
+ganze Nachtschicht ab. Der Selbsttest hält fest, dass **kein einziges
+`Light2D`** in der Welt existiert — das ist die Prüfung, die den Aufschlag
+fernhält, und sie ist wichtiger als jede Millisekundenmessung, weil
+Millisekunden auf dieser Maschine zwischen zwei Läufen um mehr als das Doppelte
+schwanken.
+
+**Vier Stufen statt eines Schalters.** Der Nutzer wollte mehrere Möglichkeiten
+für schwache Rechner. Weil die drei Mittel sehr unterschiedlich kosten, sind
+sie einzeln abstufbar: „Einfach" behält den vollen Tagesverlauf (gratis) und
+verliert nur die beiden Flächen, die Füllrate kosten.
+
+## Nachtrag: eine Lücke, die keine war
+
+    [SAND][SAND][ leer ][SAND][SAND]
+
+Das leere Feld hat ringsum Sand, also Eckmaske 15 — und die Tabelle der
+Teilkacheln endete bei 14. Maske 15 griff damit hinter die Teilkacheln in die
+Vollkacheln: das leere Feld bekam eine volle Sandkachel, und die Lücke war weg.
+
+Derselbe Fehler traf jeden einzeln entfernten Block mitten in einer Fläche:
+acht Nachbarn ringsum, Maske 15, Vollkachel. Man klickte, der Block war in der
+Karte weg — und man sah es nicht. Gemessen: **0 von 1024 Bildpunkten offen**.
+
+Maske 15 hat jetzt eine eigene Form mit Öffnung, und wohin die Öffnung läuft,
+entscheiden die echten Nachbarn: liegt der Boden links und rechts, läuft die
+Lücke senkrecht weiter und die Öffnung ist ein senkrechter Schlitz. Ein rundes
+Loch stünde dort mitten in einem durchgehenden Spalt. Jetzt: **468 von 1024**.
+
+Der Test dazu prüft nicht die Maske — die ist in beiden Fällen 15 — sondern ob
+wirklich eine Vollkachel gesetzt wurde und wie viele Bildpunkte der Kachel
+durchsichtig sind. Eine Prüfung auf die Maske wäre an genau diesem Fehler
+vorbeigelaufen.
+
+## Nachtrag: die Steuerung gehört dem Spieler
+
+`W` `A` `S` `D` ist der Auslieferungszustand, nicht die Steuerung. Die
+Spiellogik fragte schon vorher Aktionen ab statt Tasten; was fehlte, war das
+Menü, das Speichern und die Konflikterkennung.
+
+Zwei Entscheidungen, die nicht offensichtlich sind:
+
+**Gespeichert werden PHYSISCHE Tastencodes.** Auf einer französischen Tastatur
+liegt an der Stelle von `W` ein `Z`, und genau die Taste soll dann vorwärts
+laufen — sonst müsste jeder mit einer anders angeordneten Tastatur die
+Steuerung von Hand neu belegen. Angezeigt wird trotzdem der Buchstabe, der
+wirklich auf der Taste steht.
+
+**Die letzte Eingabe einer Aktion lässt sich nicht wegnehmen.** Eine Aktion
+ohne Eingabe wäre unerreichbar, und im Menü sähe man ihr das nicht an.
+
+Der Selbsttest prüft nicht, dass das Menü Knöpfe hat, sondern dass in Welt,
+Figur, Kamera und Kern **kein einziger `KEY_`-Code** steht. Wer dort eine feste
+Taste stehen lässt, macht jede Umbelegung zur Lüge.
+
+## Nachtrag: was nicht gemacht wurde
+
+**Die Wasserkante ist noch blockgenau.** Wasser bekommt als einzige Schicht
+keine weichen Übergangskacheln — das Eck-Autotiling legt die Geländegrenze eine
+halbe Kachel versetzt zum Blockraster, Uferband und Brandung sitzen aber am
+Block. Mit weichem Auslauf landete die Brandung auf dem Sand. Das sauber zu
+lösen heisst, die Uferzeichnung auf dasselbe Eckraster umzustellen; das ist
+eine eigene Runde und keine Zeile nebenbei. Was stattdessen dazukam: eine
+Kielwelle hinter jedem, der sich durchs Wasser bewegt.
+
+**Stand:** 297 Prüfungen, alle grün.
+
 ## Lizenzlage
 
 Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest

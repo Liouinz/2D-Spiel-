@@ -5,7 +5,8 @@ extends Camera2D
 var target: Node2D
 
 func setup(world_size: Vector2i) -> void:
-	zoom = Vector2(Config.CAMERA_ZOOM, Config.CAMERA_ZOOM)
+	apply_zoom()
+	Settings.changed.connect(apply_zoom)
 	limit_left = 0
 	limit_top = 0
 	limit_right = world_size.x
@@ -47,6 +48,21 @@ func pixel_step() -> float:
 	return 4.0
 
 ## Sichtbarer Weltausschnitt — für sparsames Zeichnen der Wasser-Effekte.
+## Setzt die gewählte Zoomstufe. Ganzzahlig — siehe Config.ZOOM_STEPS.
+func apply_zoom() -> void:
+	var z := Config.zoom_of(Settings.zoom)
+	if not is_equal_approx(zoom.x, z):
+		zoom = Vector2(z, z)
+
+## Eine Stufe näher heran oder weiter weg. Die Grenzen sind hart: es gibt genau
+## die drei Stufen und nichts dazwischen.
+func step_zoom(delta: int) -> void:
+	var want := clampi(Settings.zoom + delta, 0, Config.ZOOM_STEPS.size() - 1)
+	if want == Settings.zoom:
+		return
+	Settings.zoom = want
+	Settings.changed_and_save()
+
 func visible_world_rect() -> Rect2:
 	var vp := get_viewport_rect().size / zoom
 	return Rect2(get_screen_center_position() - vp * 0.5, vp)

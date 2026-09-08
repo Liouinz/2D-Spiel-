@@ -12,6 +12,9 @@ signal splashed(pos: Vector2)
 ## Wird beim Aufkommen nach einem Sprung gemeldet — für die Staubwolke.
 signal landed(pos: Vector2)
 
+## Wird beim Durchwaten gemeldet: hier zieht jemand durchs Wasser.
+signal waded(pos: Vector2, dir: Vector2)
+
 ## Halbe Kantenlänge des Fussabdrucks. Schmaler als eine Kachel, damit die
 ## Figur durch eine ein Feld breite Lücke passt.
 const FOOT := Vector2(12.0, 12.0)
@@ -25,6 +28,7 @@ var _anim_time: float = 0.0
 var _was_moving: bool = false
 var _jump_time: float = -1.0   ## < 0 = am Boden, sonst Fortschritt in Sekunden
 var _swimming: bool = false
+var _wake_timer: float = 0.0
 var map: MapData               ## um zu wissen, worauf die Figur steht
 
 ## Schwimmt die Figur gerade?
@@ -90,11 +94,28 @@ func _physics_process(delta: float) -> void:
 	_jump(delta)
 
 	var moving := velocity.length() > 6.0
+	_trail(delta, moving)
 	_anim_time += delta * (WALK_FPS if moving else IDLE_FPS)
 	if not moving and _was_moving:
 		_anim_time = 0.0
 	_was_moving = moving
 	_update_sprite(velocity.length())
+
+## Kielwellen hinter der Figur, solange sie sich im Wasser bewegt.
+##
+## In festem Abstand statt jedes Bild: bei 60 Bildern je Sekunde entstünden
+## sonst sechzig Wellen je Sekunde, und die Spur wäre ein heller Balken statt
+## einzelner Wellen. Alle 0,16 Sekunden ergibt eine Kette, in der man die
+## einzelne Welle noch sieht.
+func _trail(delta: float, moving: bool) -> void:
+	if not (_swimming and moving):
+		_wake_timer = 0.0
+		return
+	_wake_timer -= delta
+	if _wake_timer > 0.0:
+		return
+	_wake_timer = WaterFx.WAKE_EVERY
+	waded.emit(global_position, velocity)
 
 ## Im flachen Wasser wird geschwommen: langsamer, ohne Rennen und Springen.
 ## Wasser hält niemanden auf — es wird durchschwommen.
