@@ -18,14 +18,27 @@ const NAMES := MapData.NAMES
 ## Gebaute Flächen bekämen eckige Übergänge — davon gibt es zurzeit keine.
 const HARD := []
 
-## Wasser verläuft nicht, es belegt genau seine Felder.
+## Schichten, deren Fläche sich an der Grenze ZURÜCKZIEHT, statt in den
+## Nachbarn hineinzuwachsen.
 ##
-## Das Eck-Autotiling legt die Geländegrenze auf das Eckraster — eine halbe
-## Kachel versetzt zum Blockraster. Für Sand ist das richtig, der soll weich in
-## Gras übergehen. Für die Uferlinie nicht: Uferband und Brandung sitzen am
-## Block, der weiche Auslauf aber darüber hinaus, und die Brandung landete auf
-## dem Sand statt im Wasser.
-const SHARP := [MapData.Tile.WATER]
+## Für Sand auf Gras ist Hineinwachsen richtig: die beiden Böden sollen
+## ineinander übergehen. Für Wasser nicht — und zwar aus zwei Gründen.
+##
+## 1. Die Karte weiss, welches Feld Wasser ist, und daran hängt das Schwimmen.
+##    Wüchse das Wasser eine halbe Kachel auf das Nachbarfeld, liefe die Figur
+##    sichtbar auf Wasser, ohne zu schwimmen.
+## 2. Uferband und Brandung sitzen am Block. Ein weicher Auslauf darüber hinaus
+##    legte die Brandung auf den Sand.
+##
+## Vorher war die Antwort darauf, die Wasserkante ganz hart zu lassen — und
+## genau das sah man: rechteckige Becken mit lineargezogenen Ufern.
+##
+## Jetzt zieht sich das Wasser innerhalb SEINES EIGENEN Feldes zurück. Eine
+## Ecke gilt nur, wenn alle drei dort anliegenden Felder Wasser sind; sonst
+## frisst dieselbe Rauschkante wie überall sonst ein Stück davon weg. Darunter
+## liegt Sand, der dabei zum Vorschein kommt — daraus wird eine geschwungene
+## Uferlinie, ohne dass Karte und Bild auseinanderlaufen.
+const SHRINK := [MapData.Tile.WATER]
 
 ## Gehört ein Bodentyp zu einer Schicht des Stapels?
 ##
@@ -54,21 +67,31 @@ var _slots: Array = []                 ## Array[Vector2i] je Stapelposition
 var _full_count: int = 0               ## Vollkacheln je Bodentyp
 var _table := PackedByteArray()
 var _shade: FastNoiseLite               ## grossflaechige Bodenhelligkeit
-var edges: EdgeArt                      ## Uferkanten
 
 ## Streu-Dekoration: Quelle im Kachelsatz und die Plätze je Bodentyp.
 var decor_source: int = -1
 var decor_slots: Array = []
 var decor_grass: Array = []
 var decor_sand: Array = []
-var _sharp: Array[bool] = []            ## Schichten ohne weichen Übergang
+var _shrink: Array[bool] = []           ## Schichten, die sich zurückziehen
 
-## Hinter den drei Bodenschichten liegt die Kantenschicht (Uferband und
-## Tiefenband). Die Reihenfolge muss zu ChunkStreamer.setup() passen.
+## Hinter den drei Bodenschichten lag einmal eine Kantenschicht mit Uferband
+## und Tiefenband. Sie ist weg.
+##
+## Beides sass am BLOCKRAND — und genau davon zieht sich das Wasser jetzt
+## zurück. Auf dem Bild war das Ergebnis eindeutig: um jeden Teich lief ein
+## schnurgerades dunkles Rechteck durch den Sand, während die Wasserlinie
+## daneben geschwungen verlief. Zwei Beschreibungen derselben Küste, die sich
+## widersprechen, und die falsche war die gerade.
+##
+## Schaum und Tiefe stehen jetzt in der Wasserkachel selbst
+## (`TerrainAtlas.Rim.SHORE`). Eine Quelle, kein Widerspruch.
+##
+## Der Platz bleibt frei: die Schicht selbst existiert weiter (leer), damit die
+## Indizes von Boden und Dekoration nicht wandern.
 const LAYER_EDGE := 3
 
-## Ganz oben die Streu-Dekoration: Büschel, Blumen, Kiesel. Sie liegt über den
-## Kanten, damit ein Grasbüschel am Ufer nicht vom Uferband durchschnitten wird.
+## Ganz oben die Streu-Dekoration: Büschel, Blumen, Kiesel.
 const LAYER_DECOR := 4
 const LAYER_COUNT := 5
 
@@ -87,7 +110,13 @@ static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 
 	for pos in STACK.size():
 		var tile_type: int = STACK[pos]
-		var atlas := TerrainAtlas.build(art.base[tile_type], rng, HARD.has(tile_type))
+		# Wasser trägt seine Uferlinie in der Kachel: aussen Schaum, nach innen
+		# ein Tiefenband. Zwei getrennt erzeugte Bilder können sich sonst
+		# widersprechen, und genau das ist hier schon passiert.
+		var rim: int = TerrainAtlas.Rim.SHORE if SHRINK.has(tile_type) \
+			else TerrainAtlas.Rim.SOFT
+		var atlas := TerrainAtlas.build(art.base[tile_type], rng,
+			HARD.has(tile_type), rim)
 		var slots: Array[Vector2i] = atlas["slots"]
 		g._full_count = slots.size() - TerrainAtlas.FULL_START
 
@@ -125,10 +154,9 @@ static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 	g.decor_grass = decor["grass"]
 	g.decor_sand = decor["sand"]
 
-	g.edges = EdgeArt.build(ts)
 	g._build_table()
 	for pos in STACK.size():
-		g._sharp.append(SHARP.has(STACK[pos]))
+		g._shrink.append(SHRINK.has(STACK[pos]))
 	g._shade = FastNoiseLite.new()
 	g._shade.seed = seed_value + 809
 	g._shade.frequency = 0.030
@@ -257,15 +285,30 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 		var layer := layers[pos]
 		var base := pos * TABLE_STRIDE
 
-		# Ein gesetzter Block füllt sein Feld — immer.
+		# Ein gesetzter Block füllt sein Feld — ausser er gehört zu einer
+		# Schicht, die sich an der Grenze zurückzieht.
 		if _table[base + t4] != 0:
 			if variant < 0:
 				variant = variant_at(x, y)
-			layer.set_cell(cell, _sources[pos], _full(pos, variant))
+			if _shrink[pos]:
+				# Die Eckmaske ist hier ANDERSHERUM gemeint als beim Übergang:
+				# dort gilt eine Ecke, sobald EINES der drei Felder dazugehört
+				# (die Fläche wächst heraus), hier nur, wenn ALLE drei
+				# dazugehören (die Fläche zieht sich zurück).
+				var keep := 0
+				if _all3(base, t0, t1, t3): keep |= 1     # oben links
+				if _all3(base, t1, t2, t5): keep |= 2     # oben rechts
+				if _all3(base, t5, t7, t8): keep |= 4     # unten rechts
+				if _all3(base, t3, t6, t7): keep |= 8     # unten links
+				layer.set_cell(cell, _sources[pos], _shrunk(pos, keep, x, y, variant))
+			else:
+				layer.set_cell(cell, _sources[pos], _full(pos, variant))
 			continue
 
-		# Wasser bekommt keinen Saum, seine Kante sitzt hart am Block.
-		if _sharp[pos]:
+		# Wasser zieht sich zurück, statt hinauszuwachsen: auf einem Feld ohne
+		# Wasser liegt kein Wasser, Punkt. Die weiche Kante entsteht im
+		# Wasserfeld selbst, siehe oben beim Setzen der Vollkachel.
+		if _shrink[pos]:
 			if erase:
 				layer.erase_cell(cell)
 			continue
@@ -300,7 +343,21 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 			layer.set_cell(cell, _sources[pos],
 				(_slots[pos] as Array[Vector2i])[mask * TerrainAtlas.EDGE_VARIANTS + edge])
 
-	_paint_edges(layers, cell, t1, t3, t4, t5, t7, erase)
+	# Die Kantenschicht bleibt leer — siehe LAYER_EDGE.
+	if erase and layers.size() > LAYER_EDGE:
+		layers[LAYER_EDGE].erase_cell(cell)
+
+## Die zurückgezogene Form eines Wasserfeldes zu einer Eckmaske. Dieselben
+## Kacheln und dieselbe Rauschkante wie bei jedem anderen Übergang — nur die
+## Frage, wann eine Ecke gilt, ist umgekehrt (siehe Aufrufstelle).
+func _shrunk(pos: int, mask: int, x: int, y: int, variant: int) -> Vector2i:
+	if mask == 15:
+		return _full(pos, variant)               # ringsum Wasser: volle Kachel
+	var edge := Config.hash2(x, y) % TerrainAtlas.EDGE_VARIANTS
+	return (_slots[pos] as Array[Vector2i])[mask * TerrainAtlas.EDGE_VARIANTS + edge]
+
+func _all3(base: int, a: int, b: int, c: int) -> bool:
+	return _table[base + a] != 0 and _table[base + b] != 0 and _table[base + c] != 0
 
 ## Wohin läuft die Lücke weiter? Danach richtet sich die Öffnung.
 ##
@@ -342,36 +399,6 @@ func _paint_decor(layers: Array[TileMapLayer], cell: Vector2i, tile: int, erase:
 		return
 	var pick: int = choices[Config.hash2(cell.y * 5 + 3, cell.x * 11 + 9) % choices.size()]
 	layer.set_cell(cell, decor_source, decor_slots[pick])
-
-## Uferkanten: das Land hört sichtbar auf, im Wasser fällt der Grund weg.
-func _paint_edges(layers: Array[TileMapLayer], cell: Vector2i,
-		north: int, west: int, here: int, east: int, south: int, erase: bool) -> void:
-	var edge_layer := layers[LAYER_EDGE]
-	var mask := 0
-	var slots: Array[Vector2i] = []
-	if _is_water(here):
-		# Tiefenband: gezählt wird, wo Land liegt.
-		if not _is_water(north): mask |= EdgeArt.N
-		if not _is_water(east): mask |= EdgeArt.E
-		if not _is_water(south): mask |= EdgeArt.S
-		if not _is_water(west): mask |= EdgeArt.W
-		slots = edges.depth
-	else:
-		# Uferkante auf dem Land: gezählt wird, wo Wasser liegt.
-		if _is_water(north): mask |= EdgeArt.N
-		if _is_water(east): mask |= EdgeArt.E
-		if _is_water(south): mask |= EdgeArt.S
-		if _is_water(west): mask |= EdgeArt.W
-		slots = edges.bank
-
-	if mask == 0:
-		if erase:
-			edge_layer.erase_cell(cell)
-	else:
-		edge_layer.set_cell(cell, edges.source, slots[mask])
-
-static func _is_water(t: int) -> bool:
-	return t == MapData.Tile.WATER
 
 ## Die Vollkacheln aller Schichten für eine Kachel ohne abweichende Nachbarn.
 func _full_for(tile: int, x: int, y: int) -> Array:

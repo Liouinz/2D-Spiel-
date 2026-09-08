@@ -11,6 +11,8 @@ extends Node
 
 var main: Node
 var _fails: Array[String] = []
+var _settings_backup := PackedByteArray()
+var _had_settings := false
 var _shot_dir: String = ""
 var _save_backup := PackedByteArray()
 var _had_save := false
@@ -61,6 +63,31 @@ func _run() -> void:
 	# Der Test baut selbst und speichert dabei. Eine vorhandene Karte des
 	# Spielers wird deshalb beiseitegelegt und am Ende zurückgeschrieben —
 	# ein Testlauf darf niemandem seine Arbeit löschen.
+	# Der Lauf startet auf einem BEKANNTEN Stand.
+	#
+	# Vorher erbte er die Einstellungen des letzten Laufs aus der
+	# settings.cfg — und ein früherer Lauf hatte dort den Staub auf 0 stehen
+	# lassen. Die Prüfung „Mit Staub rechnet er wieder" schlug seitdem in jedem
+	# Lauf fehl, ohne dass sich am Code etwas geändert hätte. Ein Test, dessen
+	# Ergebnis vom letzten Test abhängt, prüft nicht mehr den Code.
+	if FileAccess.file_exists(Settings.PATH):
+		_settings_backup = FileAccess.get_file_as_bytes(Settings.PATH)
+		_had_settings = true
+	# Die Werte kommen aus einer FRISCHEN Instanz derselben Datei. Damit steht
+	# hier keine zweite Liste, die irgendwann von den echten Vorgaben abweicht:
+	# ändert jemand eine Voreinstellung, ändert sich der Teststart mit.
+	var fresh_settings: Node = load("res://src/core/settings.gd").new()
+	for key: String in ["render_range", "water_detail", "wind", "particles",
+			"decor", "shadows", "light", "day_cycle", "zoom", "fps_limit",
+			"vsync", "show_perf", "show_hints", "music_volume"]:
+		Settings.set(key, fresh_settings.get(key))
+	fresh_settings.free()
+	# Ohne Automatik: sie regelt nach der gemessenen Bildzeit, und auf dieser
+	# Maschine ist die schlecht genug, dass sie mitten im Lauf den Staub
+	# abschaltet — genau den Wert, den kurz darauf geprüft wird. Ihre eigene
+	# Wirkung prüft `_check_quality()` direkt.
+	Settings.auto_quality = false
+	Settings.changed.emit()
 	_had_save = FileAccess.file_exists(MapData.SAVE_PATH)
 	if _had_save:
 		_save_backup = FileAccess.get_file_as_bytes(MapData.SAVE_PATH)
@@ -191,6 +218,8 @@ func _run() -> void:
 	await _check_light(world)
 	await _check_figure(world)
 	await _check_torch_and_zoom(world)
+	await _check_jump_and_torch(world)
+	await _check_shore(world)
 	await _check_input_lock(world, map, player)
 	await _check_input_map(world)
 	await _check_stress(world, map, player)
@@ -293,6 +322,7 @@ func _run() -> void:
 	MapData.clear_user()
 	_check(MapData.load_user().is_empty(), "Ohne Datei wird nichts geladen")
 	_restore_save()
+	_restore_settings()
 
 	print("=== ERGEBNIS: %s (%d Fehler) ===" % ["OK" if _fails.is_empty() else "FEHLER", _fails.size()])
 	for f: String in _fails:
@@ -380,9 +410,12 @@ func _check_tileset(world: Node2D, map: MapData, player: Player) -> void:
 	var T := Config.TILE
 
 	_check(ts.tile_size == Vector2i(T, T), "Kachelgröße im Kachelsatz ist %d × %d" % [T, T])
-	_check(ts.get_source_count() == GroundTileSet.STACK.size() + 2,
-		"Genau %d Atlasquellen: drei Böden, Kanten und Dekor (%d)"
-		% [GroundTileSet.STACK.size() + 2, ts.get_source_count()])
+	# Drei Böden und die Dekoration. Die Kantenschicht hat KEINE eigene Quelle
+	# mehr: Schaum und Tiefe stehen in der Wasserkachel selbst, seit sich das
+	# Wasser in seinem Feld zurückzieht.
+	_check(ts.get_source_count() == GroundTileSet.STACK.size() + 1,
+		"Genau %d Atlasquellen: drei Böden und Dekor (%d)"
+		% [GroundTileSet.STACK.size() + 1, ts.get_source_count()])
 
 	# Jede Quelle: Textur da, Bereichsgröße genau eine Kachel, Kacheln angelegt.
 	var bad_src: Array[String] = []
@@ -907,15 +940,19 @@ func _check_idle_cost(world: Node2D) -> void:
 	await _frames(40)
 	_check(not fx.is_processing(), "Und hört von selbst wieder auf")
 
+	# Beide Richtungen mit festen Werten, nicht mit dem, was gerade eingestellt
+	# ist: sonst hängt das Ergebnis daran, womit der Lauf gestartet wurde.
 	var part_before := Settings.particles
 	Settings.particles = 0
 	Settings.changed_and_save()
 	await _frames(4)
 	_check(not ambient.is_processing(), "Ohne Staub rechnet der Staub nicht")
-	Settings.particles = part_before
+	Settings.particles = 2
 	Settings.changed_and_save()
 	await _frames(4)
 	_check(ambient.is_processing(), "Mit Staub rechnet er wieder")
+	Settings.particles = part_before
+	Settings.changed_and_save()
 
 	var water_before := Settings.water_detail
 	Settings.water_detail = 0
@@ -982,19 +1019,38 @@ func _check_terrain_shapes(world: Node2D, map: MapData) -> void:
 		% [_bits(inner), inner])
 	_check(inner == 11, "Die Innenecke lässt genau die abgewandte Ecke frei (Maske %d)" % inner)
 
-	# --- Übergang zu Wasser: hart am Block, kein Saum im Nachbarfeld ---
+	# --- Wasser zieht sich zurück, statt hinauszuwachsen ---
+	#
+	# Das ist die Antwort auf „die Wasserbecken sind zu kantig". Wasser wächst
+	# NICHT in die Nachbarfelder (sonst liefe die Figur sichtbar auf Wasser,
+	# ohne zu schwimmen), sondern frisst in seinem EIGENEN Feld eine Rauschkante
+	# hinein. Darunter liegt Sand, der dabei zum Vorschein kommt.
 	for c: Vector2i in l_cells:
 		tool.place(origin + c, MapData.Tile.GRASS)
 	var pond := origin + Vector2i(6, 0)
 	tool.place(pond, MapData.Tile.WATER)
-	await _frames(2)
-	_check(_mask_at(world, 2, pond) == 15, "Wasser füllt sein Feld ganz")
+	await _frames(3)
+	_check(_mask_at(world, 2, pond) == 0,
+		"Ein einzelnes Wasserfeld wird eine runde Pfütze, kein Quadrat (Maske %d)"
+		% _mask_at(world, 2, pond))
 	_check(_mask_at(world, 2, pond + Vector2i(0, -1)) < 0,
-		"Neben dem Wasser liegt kein Wassersaum — seine Kante sitzt am Block")
+		"Und es läuft nicht auf das Nachbarfeld über — Karte und Bild bleiben einig")
 	_check(_mask_at(world, 1, pond) == 15,
-		"Unter dem Wasser liegt Sand, damit die Brandung auf Sand trifft")
-	tool.place(pond, MapData.Tile.GRASS)
-	await _frames(2)
+		"Unter dem Wasser liegt Sand, der an der zurückgezogenen Kante zu sehen ist")
+
+	# Die Mitte einer Fläche bleibt voll, ihre Ecke zieht sich zurück.
+	for oy in range(-1, 2):
+		for ox in range(-1, 2):
+			tool.place(pond + Vector2i(ox, oy), MapData.Tile.WATER)
+	await _frames(3)
+	_check(_mask_at(world, 2, pond) == 15, "Die Mitte einer Wasserfläche bleibt voll")
+	var w_corner := _mask_at(world, 2, pond + Vector2i(-1, -1))
+	_check(w_corner >= 0 and w_corner < 15,
+		"Die Ecke einer Wasserfläche zieht sich zurück (Maske %d)" % w_corner)
+	for oy in range(-1, 2):
+		for ox in range(-1, 2):
+			tool.place(pond + Vector2i(ox, oy), MapData.Tile.GRASS)
+	await _frames(3)
 
 ## Eine echte Lücke muss eine sichtbare Lücke bleiben.
 ##
@@ -1468,6 +1524,136 @@ func _check_light(world: Node2D) -> void:
 	Settings.light = before
 	Settings.changed_and_save()
 	await _frames(6)
+
+# --- Sprung, Handfackel, Ufer -------------------------------------------------
+
+## Der Sprung muss eine Bewegung sein, keine Verschiebung; die Handfackel muss
+## bei Nacht da sein und am Tag weg; das Ufer muss Schaum tragen.
+func _check_jump_and_torch(world: Node2D) -> void:
+	var player: Player = world.player
+	var light: LightManager = world.light
+	var frames: Dictionary = player._frames
+
+	# 1. Drei wirklich verschiedene Sprungstellungen je Richtung.
+	var same: Array[String] = []
+	for dir in 3:
+		var set: Array = frames["jump"][dir]
+		var seen: Array[PackedByteArray] = []
+		for f: Texture2D in set:
+			var data := f.get_image().get_data()
+			if not seen.has(data):
+				seen.append(data)
+		if seen.size() < 3:
+			same.append("Richtung %d: %d Stellungen" % [dir, seen.size()])
+	_check(same.is_empty(), "Der Sprung hat drei verschiedene Stellungen je Richtung%s"
+		% ("" if same.is_empty() else " (%s)" % ", ".join(same)))
+	# Und sie unterscheiden sich vom Stand — sonst wäre es doch nur eine
+	# Verschiebung, nur mit mehr Code.
+	var standing: PackedByteArray = (frames["idle"][0][0] as Texture2D).get_image().get_data()
+	var rising: PackedByteArray = (frames["jump"][0][ActorArt.JUMP_RISE] as Texture2D) \
+		.get_image().get_data()
+	_check(standing != rising, "Die Sprungstellung ist nicht das Standbild")
+
+	# 2. Im Sprung wird sie auch wirklich benutzt.
+	player.velocity = Vector2.ZERO
+	await _frames(4)
+	var before: Texture2D = player._sprite.texture
+	Input.action_press("jump")
+	await _frames(2)
+	Input.action_release("jump")
+	await _frames(6)
+	_check(player.is_jumping() and player._sprite.texture != before,
+		"Beim Springen wechselt die Figur wirklich die Stellung")
+	await _frames(50)
+
+	# 3. Die Handfackel: nachts da, tags weg.
+	var before_light := Settings.light
+	Settings.light = 3
+	Settings.changed_and_save()
+	light.set_time(0.5)                       # Mittag
+	await _frames(4)
+	player._update_torch(0.0)
+	var torch: Sprite2D = player.get_node("Handfackel")
+	_check(not torch.visible, "Am Mittag trägt die Figur keine Fackel")
+	light.set_time(0.0)                       # Mitternacht
+	await _frames(4)
+	player._update_torch(0.0)
+	_check(torch.visible and torch.texture != null,
+		"Nachts hält sie eine Fackel in der Hand")
+
+	# 4. Und die Flamme steht nicht still.
+	var flame := torch.texture
+	var moved := false
+	for i in 30:
+		player._update_torch(0.05)
+		if torch.texture != flame:
+			moved = true
+			break
+	_check(moved, "Die Flamme bewegt sich")
+	_check((frames["torch"] as Array).size() >= 3,
+		"Sie hat mehrere Bilder (%d)" % (frames["torch"] as Array).size())
+
+	# 5. Sie ist kleiner als eine gesetzte Fackel — sie wird getragen, nicht
+	#    aufgestellt.
+	_check(LightManager.PLAYER_RADIUS < Torches.RADIUS,
+		"Die Handfackel leuchtet kürzer als eine gesetzte (%.0f gegen %.0f)"
+		% [LightManager.PLAYER_RADIUS, Torches.RADIUS])
+
+	Settings.light = before_light
+	Settings.changed_and_save()
+	await _frames(4)
+
+## Die Uferkante trägt ihren Schaum selbst.
+##
+## Vorher lag die Brandung in einer zweiten Schicht daneben, am Blockrand — und
+## das Wasser war deshalb ein Rechteck. Jetzt steckt beides in derselben
+## Kachel, und zwei getrennt erzeugte Bilder können sich nicht mehr
+## widersprechen.
+func _check_shore(world: Node2D) -> void:
+	var tool: BuildTool = world.build_tool
+	var origin := GridOverlay.block_at(world.player.global_position) + Vector2i(0, -6)
+	# Am hellen Tag: ein Ufer im Dunkeln kann man nicht beurteilen, und dieses
+	# Bild landet in der Dokumentation.
+	world.light.set_time(0.4)
+	for oy in range(-2, 3):
+		for ox in range(-2, 3):
+			tool.place(origin + Vector2i(ox, oy), MapData.Tile.WATER)
+	await _frames(3)
+
+	# Das Randfeld trägt Schaum, das Innenfeld nicht.
+	var edge_foam := _foam_pixels(world, 2, origin + Vector2i(-2, 0))
+	var mid_foam := _foam_pixels(world, 2, origin)
+	_check(edge_foam > 12,
+		"Die Wasserkante trägt einen Schaumsaum (%d Punkte)" % edge_foam)
+	_check(mid_foam < edge_foam / 2,
+		"Mitten in der Fläche gibt es keinen (%d gegen %d)" % [mid_foam, edge_foam])
+
+	# Und sie ist zurückgezogen: das Randfeld ist nicht ganz gefüllt.
+	var open_px := _open_pixels(world, 2, origin + Vector2i(-2, 0))
+	_check(open_px > 40,
+		"Am Rand kommt der Sand darunter zum Vorschein (%d Punkte)" % open_px)
+
+	await _shot("22_ufer")
+	for oy in range(-2, 3):
+		for ox in range(-2, 3):
+			tool.place(origin + Vector2i(ox, oy), MapData.Tile.GRASS)
+	await _frames(3)
+
+## Wie viele Punkte der Kachel deutlich heller sind als das Wasser — also Schaum.
+func _foam_pixels(world: Node2D, layer_pos: int, cell: Vector2i) -> int:
+	var layer: TileMapLayer = world.streamer.layers[layer_pos]
+	var coords := layer.get_cell_atlas_coords(cell)
+	if coords.x < 0:
+		return 0
+	var src := layer.tile_set.get_source(layer.get_cell_source_id(cell)) as TileSetAtlasSource
+	var img := src.texture.get_image()
+	var n := 0
+	for y in Config.TILE:
+		for x in Config.TILE:
+			var c := img.get_pixel(coords.x * Config.TILE + x, coords.y * Config.TILE + y)
+			if c.a > 0.5 and c.get_luminance() > 0.66:
+				n += 1
+	return n
 
 # --- Fackel und Zoom ----------------------------------------------------------
 
@@ -2228,6 +2414,13 @@ func _check_input_map(world: Node2D) -> void:
 		if (line.contains("CPU") or line.contains("GPU")) and line.contains("%"):
 			fake = true
 	_check(not fake, "Keine erfundene Auslastung in Prozent")
+	# Auch hier: der Rahmen muss den Inhalt fassen. Vorher lag die letzte Zeile
+	# („Speicher 51 MiB") halb ausserhalb.
+	var p_panel: Vector2 = perf.panel_size()
+	var p_content: Vector2 = perf.content_size()
+	_check(p_panel.x + 0.5 >= p_content.x and p_panel.y + 0.5 >= p_content.y,
+		"Die Leistungsanzeige passt in ihren Rahmen (%.0f x %.0f für %.0f x %.0f)"
+		% [p_panel.x, p_panel.y, p_content.x, p_content.y])
 	_check(OS.get_static_memory_usage() > 0 and Engine.get_frames_per_second() >= 0,
 		"Speicher und FPS liefern echte Werte (%s)" % [OS.get_static_memory_usage()])
 	Settings.show_perf = false
@@ -2264,6 +2457,21 @@ func _check_input_map(world: Node2D) -> void:
 		if (line.contains("CPU") or line.contains("GPU")) and line.contains("%"):
 			made_up = true
 	_check(not made_up, "Keine erfundene Auslastung in der Entwicklerinfo")
+
+	# Und sie passt in ihren Rahmen. Genau das war kaputt: die Tafel hatte eine
+	# feste Grösse, der Text war höher, und die letzten drei Abschnitte standen
+	# ungerahmt über der Welt.
+	var panel: Vector2 = dbg.panel_size()
+	var content: Vector2 = dbg.content_size()
+	_check(panel.x + 0.5 >= content.x and panel.y + 0.5 >= content.y,
+		"Die Entwicklerinfo passt in ihren Rahmen (%.0f x %.0f für %.0f x %.0f)"
+		% [panel.x, panel.y, content.x, content.y])
+	# Und auf den Bildschirm. Das Spiel rechnet immer in 1280 x 720, auch auf
+	# einem 1366 x 768 grossen Notebook — deshalb reicht diese eine Prüfung.
+	var screen := get_viewport().get_visible_rect().size
+	_check(dbg.position.x + panel.x <= screen.x and dbg.position.y + panel.y <= screen.y,
+		"Und sie passt auf den Bildschirm (%.0f | %.0f + %.0f x %.0f in %.0f x %.0f)"
+		% [dbg.position.x, dbg.position.y, panel.x, panel.y, screen.x, screen.y])
 	Settings.show_perf = true
 	Settings.changed.emit()
 	await _frames(6)
@@ -2533,6 +2741,17 @@ func _find_assets(path: String) -> Array[String]:
 	return found
 
 ## Legt die Karte des Spielers wieder so ab, wie sie vor dem Test war.
+## Gibt dem Spieler seine Einstellungen zurück. Ein Testlauf darf niemandem
+## seine Grafikstufen umstellen.
+func _restore_settings() -> void:
+	if _had_settings:
+		var f := FileAccess.open(Settings.PATH, FileAccess.WRITE)
+		if f != null:
+			f.store_buffer(_settings_backup)
+			f.close()
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(Settings.PATH))
+
 func _restore_save() -> void:
 	MapData.clear_user()
 	if not _had_save:

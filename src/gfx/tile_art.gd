@@ -172,10 +172,26 @@ func _sand_tile(rng: RandomNumberGenerator) -> Image:
 ## unregelmässigen Bändern, darauf helle Glanzkanten. Die Bänder laufen
 ## waagerecht — dadurch liest man eine Oberfläche und nicht ein gesprenkeltes
 ## Feld. Die Bewegung kommt darüber aus dem Shader und der Wasserwirkung.
+## Wasserfläche.
+##
+## Vier Farbschichten übereinander, jede mit einer anderen Aufgabe — eine
+## einzelne blaue Fläche mit ein paar Strichen darauf las sich als „blaues
+## Rechteck mit Deko":
+##
+##   1. weiche Tiefenbänder  — die grosse Form, wo es tiefer wird
+##   2. eine mittlere Lage   — bricht die Bänder auf, damit keine Streifen
+##                             über die Kachel laufen
+##   3. Glanzkanten          — kurze helle Striche MIT Schatten darunter; erst
+##                             der Schatten macht daraus eine Welle
+##   4. Funkeln              — einzelne Punkte, sehr sparsam
+##
+## Alles bleibt schwach. Wasser, das in jeder Kachel deutlich anders aussieht,
+## flimmert über eine Fläche hinweg; die Unterschiede sollen man erst bemerken,
+## wenn man hinsieht.
 func _water_tile(bg: Color, hi: Color, deep: Color, rng: RandomNumberGenerator) -> Image:
 	var img := Pixel.filled(T, T, bg)
 
-	# Tiefenwirkung: breite, weiche Bänder in der dunklen Farbe.
+	# 1. Tiefenwirkung: breite, weiche Bänder in der dunklen Farbe.
 	for i in 3:
 		var y := rng.randi_range(0, T - 1)
 		var h := rng.randi_range(3, 7)
@@ -183,8 +199,13 @@ func _water_tile(bg: Color, hi: Color, deep: Color, rng: RandomNumberGenerator) 
 			var a := 0.16 * (1.0 - absf(float(dy) - h * 0.5) / (h * 0.5)) + 0.06
 			Pixel.hline(img, 0, y + dy, T, Color(deep, a))
 
-	# Glanzkanten: kurze helle Striche mit einem dunkleren Schatten darunter.
-	# Der Schatten ist das, was sie als Welle statt als Strich lesbar macht.
+	# 2. Eine mittlere Lage aus weichen Flecken. Ohne sie liegen die Bänder aus
+	#    Schritt 1 als waagerechte Streifen über der ganzen Fläche.
+	var mid := bg.lerp(hi, 0.35)
+	_mottle(img, rng, 3, mid, 0.13)
+	_mottle(img, rng, 2, deep, 0.10)
+
+	# 3. Glanzkanten: kurze helle Striche mit einem dunkleren Schatten darunter.
 	for i in 4:
 		var y := rng.randi_range(1, T - 3)
 		var x := rng.randi_range(-6, T - 4)
@@ -199,7 +220,18 @@ func _water_tile(bg: Color, hi: Color, deep: Color, rng: RandomNumberGenerator) 
 			Pixel.px(img, x + s2, y + wave, Color(hi, a))
 			Pixel.px(img, x + s2, y + wave + 1, Color(deep, a * 0.5))
 
-	# Feines Funkeln, sehr sparsam.
+	# 3b. Ein einzelner heller Reflex je Kachel, deutlich schwächer als die
+	#     Glanzkanten und ohne Schatten: das ist Licht auf der Oberfläche, keine
+	#     Welle. Er sitzt oben links, weil das Licht in dieser Welt von dort
+	#     kommt — bei jeder Kachel, bei jedem Grashalm, an der Figur.
+	if rng.randf() < 0.7:
+		var rx := rng.randi_range(2, T / 2)
+		var ry := rng.randi_range(2, T / 2)
+		for k in 3:
+			Pixel.px(img, rx + k, ry - (k % 2),
+				Color(Palette.WATER_FOAM, 0.16 - k * 0.04))
+
+	# 4. Feines Funkeln, sehr sparsam.
 	for p: Vector2i in _scatter(rng, 4, 1.5):
 		if rng.randf() < 0.45:
 			Pixel.px(img, p.x, p.y, Color(Palette.WATER_FOAM, 0.22))

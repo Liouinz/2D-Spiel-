@@ -95,8 +95,12 @@ const RAMP := [
 ## Laterne am Knöchel. Achtzehn Pixel liegen auf Höhe der Brust.
 const LIGHT_LIFT := 18.0
 
-## Radius des Grundscheins um die Figur, in Weltpixeln.
-const PLAYER_RADIUS := 110.0
+## Radius des Scheins um die Figur, in Weltpixeln.
+##
+## KLEINER als eine gesetzte Welt-Fackel (96): die Figur trägt eine Handfackel,
+## keine Laterne auf einem Mast. Vorher war es umgekehrt, und eine gesetzte
+## Fackel leuchtete weniger weit als die Figur, die daneben stand.
+const PLAYER_RADIUS := 76.0
 
 ## Kantenlänge der gebackenen Scheintextur. 128 reicht: sie wird ohnehin weich
 ## skaliert, und ein Verlauf hat keine Details, die eine höhere Auflösung
@@ -134,6 +138,11 @@ var _time: float = START_TIME
 var _mode: int = -1
 var _dark: float = 0.0
 var _cycled: bool = true       ## lief die Zeit im letzten Bild?
+
+## Wie lange ein Lichtdurchgang dauert, geglättet, in Millisekunden. Für die
+## Entwicklerinfo — und damit die Behauptung „das kostet fast nichts" eine Zahl
+## hat, die man nachsehen kann, statt nur ein Satz zu sein.
+var _update_ms: float = 0.0
 
 ## Eine Lichtquelle: ein weicher Schein an einer Stelle der Welt.
 ##
@@ -189,7 +198,9 @@ func _ready() -> void:
 	_night.add_child(_glow_root)
 	_glow_tex = _glow_texture()
 
-	_player_light = add_source(PLAYER_RADIUS, Color(1.0, 0.88, 0.66), 1.0, 0.0)
+	# Leichtes Flackern: eine Fackel in der Hand steht nicht still. 0,45 ist
+	# spürbar, ohne dass die halbe Szene mitzuckt.
+	_player_light = add_source(PLAYER_RADIUS, Color(1.0, 0.86, 0.60), 1.0, 0.45)
 	_player_light.node = player
 	_player_light.lift = LIGHT_LIFT
 
@@ -309,6 +320,7 @@ func _process(delta: float) -> void:
 func _refresh(delta: float = 0.0) -> void:
 	if _mode <= 0:
 		return
+	var t0 := Time.get_ticks_usec()
 	var tint := tint_at(_time)
 	_modulate.color = tint
 
@@ -327,6 +339,7 @@ func _refresh(delta: float = 0.0) -> void:
 	if _mode >= 3:
 		_vignette.modulate = Color(0.05, 0.06, 0.12, _dark * 0.52)
 	_update_glows(delta)
+	_measure(t0)
 
 ## Setzt die Scheine auf ihre Bildschirmposition.
 ##
@@ -374,6 +387,17 @@ static func tint_at(time: float) -> Color:
 			var f: float = 0.0 if span <= 0.0 else (t - a[0]) / span
 			return (a[1] as Color).lerp(b[1] as Color, f)
 	return RAMP[0][1]
+
+## Gleitender Mittelwert statt Rohwert: der Rohwert schwankt je Bild um ein
+## Vielfaches, und eine Anzeige, die vierzigmal je Sekunde springt, liest
+## niemand.
+func _measure(t0: int) -> void:
+	var ms := float(Time.get_ticks_usec() - t0) / 1000.0
+	_update_ms = lerpf(_update_ms, ms, 0.1)
+
+## Wie lange ein Lichtdurchgang dauert, in Millisekunden.
+func update_msec() -> float:
+	return _update_ms
 
 ## Läuft die Beleuchtung überhaupt? Auf Stufe „Aus" ist alles abgehängt.
 func active() -> bool:

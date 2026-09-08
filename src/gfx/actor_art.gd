@@ -17,11 +17,23 @@ const SWIM_SINK := 16
 const EYE := Color8(46, 40, 52)
 const EYE_WHITE := Color8(236, 232, 226)
 
-## -> {"idle": [dir][2], "walk": [dir][4], "swim": [dir][2], "shadow": Texture}
+## Bilder des Sprungs: 0 gehockt (Absprung und Landung), 1 gestreckt
+## (Aufstieg), 2 fallend. Drei reichen — mehr sieht man in einer halben
+## Sekunde nicht, weniger liest sich als verschobenes Bild.
+const JUMP_CROUCH := 0
+const JUMP_RISE := 1
+const JUMP_FALL := 2
+
+## Wie viele Bilder die Flamme der Handfackel hat.
+const FLAME_FRAMES := 4
+
+## -> {"idle": [dir][2], "walk": [dir][4], "swim": [dir][2], "jump": [dir][3],
+##     "torch": [4], "shadow": Texture}
 static func build() -> Dictionary:
 	var idle: Array = []
 	var walk: Array = []
 	var swim: Array = []
+	var jump: Array = []
 	for dir in 3:
 		var i_frames: Array[Texture2D] = []
 		i_frames.append(Pixel.tex(_frame(dir, 0, 0, 0)))
@@ -36,7 +48,15 @@ static func build() -> Dictionary:
 		s_frames.append(Pixel.tex(_swim_frame(dir, 0)))
 		s_frames.append(Pixel.tex(_swim_frame(dir, 1)))
 		swim.append(s_frames)
-	return {"idle": idle, "walk": walk, "swim": swim, "shadow": Pixel.tex(_shadow())}
+		var j_frames: Array[Texture2D] = []
+		for phase in 3:
+			j_frames.append(Pixel.tex(_jump_frame(dir, phase)))
+		jump.append(j_frames)
+	var torch: Array[Texture2D] = []
+	for f in FLAME_FRAMES:
+		torch.append(Pixel.tex(_torch_frame(f)))
+	return {"idle": idle, "walk": walk, "swim": swim, "jump": jump,
+		"torch": torch, "shadow": Pixel.tex(_shadow())}
 
 ## Schwimmbild: dasselbe Laufbild, nur eingetaucht.
 ##
@@ -100,6 +120,64 @@ static func _collar(img: Image, line: int, phase: int) -> void:
 				continue
 			img.set_pixel(x, y, Color(col, a))
 
+## Ein Sprungbild.
+##
+## Der Sprung war vorher NUR eine Verschiebung: dasselbe Standbild, ein Stück
+## weiter oben. Das liest sich als Objekt, das jemand hochhebt, nicht als
+## Figur, die springt. Drei Stellungen genügen, um daraus eine Bewegung zu
+## machen:
+##
+##   gehockt    Beine angezogen, Körper tief — Absprung UND Landung
+##   gestreckt  Beine zusammen, Körper hoch, Arme oben — der Aufstieg
+##   fallend    Beine auseinander, Arme aussen — der Fall
+##
+## Absprung und Landung teilen sich ein Bild: in beiden geht die Figur in die
+## Knie, und die paar Zehntel dazwischen sieht ohnehin niemand doppelt.
+static func _jump_frame(dir: int, phase: int) -> Image:
+	var img := Pixel.make(W, H)
+	match phase:
+		JUMP_RISE:
+			# Angezogen und gestreckt: Beine hoch, Körper und Kopf zwei Pixel
+			# höher als im Stand.
+			_draw_legs(img, dir, 0, 5)
+			_draw_body(img, dir, 2, -3)
+			_draw_head(img, dir, 2)
+		JUMP_FALL:
+			_draw_legs(img, dir, 1, 2)
+			_draw_body(img, dir, 3, 3)
+			_draw_head(img, dir, 3)
+		_:
+			# Gehockt: Körper tief, Beine kurz, Arme unten.
+			_draw_legs(img, dir, 0, 3)
+			_draw_body(img, dir, 7, 1)
+			_draw_head(img, dir, 7)
+	Pixel.outline(img, Palette.OUTLINE)
+	return img
+
+## Die Handfackel: ein kurzer Stiel mit einer Flamme, die sich bewegt.
+##
+## Vier Bilder, und in jedem ist die Flamme eine Spur anders hoch, anders breit
+## und anders hell. Eine Flamme, die stillsteht, ist kein Feuer — und eine, die
+## in jedem Bild komplett anders aussieht, flackert wie eine kaputte Leuchte.
+static func _torch_frame(f: int) -> Image:
+	var img := Pixel.make(9, 15)
+	# Stiel
+	Pixel.rect(img, 4, 7, 2, 8, Palette.WOOD_DARK)
+	Pixel.vline(img, 4, 7, 8, Palette.WOOD)
+	Pixel.rect(img, 3, 5, 4, 3, Palette.WOOD_LIGHT.darkened(0.25))
+	Pixel.rect(img, 3, 5, 4, 1, Palette.WOOD_LIGHT)
+	# Flamme: je Bild eine andere Höhe und Breite.
+	var tall: Array = [0.0, 1.0, 0.4, 1.4]
+	var wide: Array = [0.0, -0.3, 0.4, -0.2]
+	var h: float = 3.6 + float(tall[f % FLAME_FRAMES])
+	var w: float = 2.6 + float(wide[f % FLAME_FRAMES])
+	var cy: float = 4.2 - h * 0.25
+	Pixel.ellipse(img, 4.5, cy, w, h, Color8(214, 84, 28))
+	Pixel.ellipse(img, 4.5, cy + 0.5, w * 0.62, h * 0.66, Color8(244, 156, 44))
+	Pixel.ellipse(img, 4.5, cy + 0.9, w * 0.34, h * 0.38, Color8(252, 224, 140))
+	Pixel.outline(img, Palette.OUTLINE)
+	return img
+
 ## Bodenschatten: drei Ellipsen ineinander, von aussen nach innen dunkler.
 ##
 ## Er sitzt leicht nach UNTEN RECHTS versetzt. Das Licht kommt in dieser Welt
@@ -124,7 +202,10 @@ static func _frame(dir: int, leg: int, bob: int, arm: int) -> Image:
 	Pixel.outline(img, Palette.OUTLINE)
 	return img
 
-static func _draw_legs(img: Image, dir: int, leg: int) -> void:
+## `tuck` zieht die Beine an: der Ansatz bleibt, die Füsse kommen hoch. Damit
+## wird aus derselben Zeichnung eine gehockte und eine gestreckte Stellung,
+## ohne dass ein zweites Beinpaar gemalt werden müsste.
+static func _draw_legs(img: Image, dir: int, leg: int, tuck: int = 0) -> void:
 	var lit := Palette.PANTS.lightened(0.18)
 	var dark := Palette.PANTS.darkened(0.24)
 	var boot := Palette.BOOTS
@@ -133,25 +214,25 @@ static func _draw_legs(img: Image, dir: int, leg: int) -> void:
 		var front := 11 + leg * 3
 		var back := 14 - leg * 3
 		# hinteres Bein
-		Pixel.rect(img, back, 37, 7, 7, dark)
-		Pixel.rect(img, back, 43, 8, 5, boot_dark)
-		Pixel.rect(img, back, 43, 8, 1, Palette.BOOTS.lightened(0.1))
+		Pixel.rect(img, back, 37, 7, maxi(7 - tuck, 2), dark)
+		Pixel.rect(img, back, 43 - tuck, 8, 5, boot_dark)
+		Pixel.rect(img, back, 43 - tuck, 8, 1, Palette.BOOTS.lightened(0.1))
 		# vorderes Bein
-		Pixel.rect(img, front, 37, 7, 7, lit)
-		Pixel.rect(img, front, 37, 2, 7, Palette.PANTS.lightened(0.3))
-		Pixel.rect(img, front, 43, 9, 5, boot)
-		Pixel.rect(img, front, 43, 9, 1, Palette.BOOTS.lightened(0.22))
+		Pixel.rect(img, front, 37, 7, maxi(7 - tuck, 2), lit)
+		Pixel.rect(img, front, 37, 2, maxi(7 - tuck, 2), Palette.PANTS.lightened(0.3))
+		Pixel.rect(img, front, 43 - tuck, 9, 5, boot)
+		Pixel.rect(img, front, 43 - tuck, 9, 1, Palette.BOOTS.lightened(0.22))
 		return
 	var l_dy := 2 if leg > 0 else 0
 	var r_dy := 2 if leg < 0 else 0
 	# linkes Bein im Licht, rechtes im Schatten
-	Pixel.rect(img, 10, 37 + l_dy, 6, 7 - l_dy, lit)
-	Pixel.rect(img, 10, 37 + l_dy, 2, 7 - l_dy, Palette.PANTS.lightened(0.32))
-	Pixel.rect(img, 10, 44, 6, 4, boot)
-	Pixel.rect(img, 10, 44, 6, 1, Palette.BOOTS.lightened(0.22))
-	Pixel.rect(img, 17, 37 + r_dy, 6, 7 - r_dy, dark)
-	Pixel.rect(img, 17, 44, 6, 4, boot_dark)
-	Pixel.rect(img, 17, 44, 6, 1, Palette.BOOTS)
+	Pixel.rect(img, 10, 37 + l_dy, 6, maxi(7 - l_dy - tuck, 2), lit)
+	Pixel.rect(img, 10, 37 + l_dy, 2, maxi(7 - l_dy - tuck, 2), Palette.PANTS.lightened(0.32))
+	Pixel.rect(img, 10, 44 - tuck, 6, 4, boot)
+	Pixel.rect(img, 10, 44 - tuck, 6, 1, Palette.BOOTS.lightened(0.22))
+	Pixel.rect(img, 17, 37 + r_dy, 6, maxi(7 - r_dy - tuck, 2), dark)
+	Pixel.rect(img, 17, 44 - tuck, 6, 4, boot_dark)
+	Pixel.rect(img, 17, 44 - tuck, 6, 1, Palette.BOOTS)
 
 static func _draw_body(img: Image, dir: int, top: int, arm: int) -> void:
 	var y := top + 18

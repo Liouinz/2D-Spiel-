@@ -103,6 +103,9 @@ func _ready() -> void:
 	light.player = player
 	light.camera = camera
 	add_child(light)
+	# Die Figur fragt die Beleuchtung, ob es dunkel genug für die Handfackel
+	# ist — sie hält keine eigene Uhr.
+	player.light = light
 
 	# Fackeln: Bild in der Welt, Licht auf der Nachtschicht.
 	torches = Torches.new()

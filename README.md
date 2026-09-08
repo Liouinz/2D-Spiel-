@@ -146,6 +146,38 @@ Autotiling fällt damit sofort auf.
 
 ![Bauen mit der Leiste](docs/bilder/bauen.png)
 
+### Das Wasser zieht sich zurück
+
+Wasser war die einzige Schicht mit einer harten Kante — und das sah man:
+rechteckige Becken mit lineargezogenen Ufern. Weiche Übergänge wie bei Sand
+gingen aber nicht, aus zwei Gründen: die Karte weiss, welches Feld Wasser ist,
+und daran hängt das Schwimmen (die Figur liefe sichtbar auf Wasser, ohne zu
+schwimmen); und Uferband und Brandung sassen am Blockrand.
+
+Jetzt zieht sich das Wasser **innerhalb seines eigenen Feldes zurück**. Eine
+Ecke gilt nur, wenn alle drei dort anliegenden Felder Wasser sind — sonst
+frisst dieselbe Rauschkante wie überall sonst ein Stück davon weg. Darunter
+liegt Sand, der dabei zum Vorschein kommt.
+
+![Ufer](docs/bilder/ufer.png)
+
+Ein einzelnes Wasserfeld wird dadurch eine **runde Pfütze** statt eines
+Quadrats, und ein Becken bekommt geschwungene Ufer und weiche Ecken — ohne dass
+Karte und Bild auseinanderlaufen.
+
+Schaum und Tiefe stehen dabei **in der Wasserkachel selbst**: aussen ein heller
+Schaumsaum, nach innen ein dunkleres Tiefenband. Vorher lagen sie in einer
+zweiten Schicht am Blockrand, und das Ergebnis war eindeutig: um jeden Teich
+lief ein schnurgerades dunkles Rechteck durch den Sand, während die Wasserlinie
+daneben geschwungen verlief. Zwei Beschreibungen derselben Küste, die sich
+widersprechen — und die falsche war die gerade. Die Kantenschicht ist deshalb
+weg; es gibt nur noch eine Quelle.
+
+Die Wasserfläche selbst hat vier Lagen: weiche Tiefenbänder, eine mittlere Lage,
+die sie aufbricht, Glanzkanten mit Schatten darunter (erst der Schatten macht
+daraus eine Welle) und sparsames Funkeln. Dazu ein einzelner heller Reflex je
+Kachel, oben links — dort, wo in dieser Welt das Licht herkommt.
+
 Gesetztes **Wasser lässt sich durchschwimmen** — die Figur sinkt ein, wird
 langsamer und bekommt einen Wellenkragen. Unter der Wasserlinie wird sie nicht
 abgeschnitten, sondern **eingetaucht**: durchscheinend und zur Wasserfarbe hin
@@ -404,10 +436,36 @@ Nacht, sondern nur die beiden Flächen, die Füllrate kosten. Die **Tageszeit**
 ist eine eigene Zeile: ein stehender Tag kostet genauso viel wie ein laufender,
 das ist eine Frage des Spielgefühls.
 
+## Der Sprung ist eine Bewegung
+
+Der Sprung war vorher **nur eine Verschiebung**: dasselbe Standbild, ein Stück
+weiter oben. Das liest sich als Objekt, das jemand hochhebt. Jetzt gibt es drei
+Stellungen — gehockt (Absprung *und* Landung), gestreckt (der Aufstieg, Beine
+angezogen) und fallend (Beine auseinander) — und nach dem Aufkommen federt die
+Figur ein Sechstel einer Sekunde nach.
+
+Gezeichnet, nicht skaliert: eine Figur, die man auf 1,08 streckt, hat an dieser
+Stelle ungleich breite Pixel, und genau das ist der Fehler, wegen dem der Zoom
+ganzzahlig ist.
+
 ## Fackeln
+
+**Nachts trägt die Figur eine Fackel in der Hand.** Sie erscheint, sobald es
+wirklich dämmert (ab 22 % Dunkelheit), verschwindet im Wasser, und ihre Flamme
+läuft über vier Bilder mit wechselnder Höhe, Breite und Helligkeit — eine
+Flamme, die stillsteht, ist kein Feuer.
+
+Sie hängt an derselben Dunkelheit wie die Beleuchtung, nicht an einer eigenen
+Uhr: sonst hielte die Figur bei abgeschalteter Beleuchtung mitten am Tag eine
+brennende Fackel.
 
 **F** setzt eine Fackel auf das Feld unter dem Zeiger, **F** nimmt sie wieder
 weg. Sie leuchtet warm, flackert leicht und wird mit der Karte gespeichert.
+
+Gesetzte Fackeln flackern genauso, und ihr Schein reicht weiter als die
+Handfackel (96 gegen 76 Pixel): eine gesetzte Fackel steht fest und leuchtet
+einen Platz aus, die Figur trägt nur ein Licht mit sich. Bewegt wird dabei nur,
+was gerade im Bild liegt.
 
 Dass es Fackeln überhaupt geben kann, hängt an der Messung oben: ein einziges
 echtes 2D-Licht kostete +3,43 ms CPU-Renderzeit. Zehn Fackeln wären damit nicht
@@ -606,7 +664,6 @@ src/gfx/tile_art.gd        Die drei Bodenkacheln in Varianten und Helligkeitsstu
 src/gfx/tile_icon.gd       Materialbild der Oberfläche aus echten Bodenkacheln
 src/gfx/world_shaders.gd   Wind über dem Gras, Licht auf dem Wasser
 src/gfx/terrain_atlas.gd   Übergangskacheln für das Eck-Autotiling
-src/gfx/edge_art.gd        Uferband auf dem Land, Tiefenband im Wasser
 src/gfx/actor_art.gd       Spielerfigur (Idle, Laufzyklus, Schwimmen, Bodenschatten)
 src/gfx/decor_art.gd       Streu-Dekoration: Büschel, Blumen, Kiesel, Treibholz
 
@@ -663,7 +720,14 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **297 Prüfungen**.
+Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **313 Prüfungen**.
+
+Der Lauf startet dabei auf den **Auslieferungswerten**, nicht auf dem, was der
+letzte Lauf hinterlassen hat. Vorher erbte er die `settings.cfg` — und ein
+früherer Lauf hatte dort den Staub auf 0 stehen lassen, worauf die Prüfung „Mit
+Staub rechnet er wieder" in jedem folgenden Lauf fehlschlug, ohne dass sich am
+Code etwas geändert hätte. Ein Test, dessen Ergebnis vom letzten Test abhängt,
+prüft nicht mehr den Code.
 Darunter unter anderem:
 
 - genau drei Bodentypen in Aufzählung, Kachelstapel, Leiste, Inventar und Minimap
@@ -705,6 +769,14 @@ Darunter unter anderem:
 - Fackeln setzen, wegnehmen und speichern; jede Zoomstufe ist ganzzahlig und
   die Grenzen halten
 - durchs Wasser laufen zieht eine Spur, sie bleibt gedeckelt und läuft aus
+- ein einzelnes Wasserfeld wird eine runde Pfütze, die Mitte einer Fläche bleibt
+  voll, ihre Ecke zieht sich zurück, und die Kante trägt ihren Schaum selbst
+- der Sprung hat drei verschiedene Stellungen je Richtung, und sie sind nicht
+  das Standbild
+- die Handfackel ist nachts da, am Mittag weg, ihre Flamme bewegt sich, und sie
+  leuchtet kürzer als eine gesetzte Fackel
+- **beide Anzeigen passen in ihren Rahmen und auf den Bildschirm** — genau das
+  war kaputt
 - die Figur: drei verschiedene Stellungen je Laufrichtung, der Körper bleibt
   unter Wasser zu ahnen, der Wellenkragen ist ein Ring und kein Brett, der
   Bodenschatten fällt nach unten rechts
@@ -741,15 +813,6 @@ godot --path . -- --selftest --shots=/tmp/shots
 Die Architektur ist auf Erweiterung ausgelegt, aber bewusst schlank. Naheliegend
 wären weitere Materialien (dann aber einzeln und geprüft), Figurenskins,
 mehrere Speicherstände und Wetter.
-
-**Die Wasserkante ist noch eckig, und das ist Absicht mit Ablaufdatum.** Wasser
-bekommt als einzige Schicht keine weichen Übergangskacheln: das Eck-Autotiling
-legt die Geländegrenze eine halbe Kachel versetzt zum Blockraster, Uferband und
-Brandung sitzen aber am Block — mit weichem Auslauf landete die Brandung auf
-dem Sand. Das sauber zu lösen heisst, die Uferzeichnung auf dasselbe
-Eckraster umzustellen, und das ist eine eigene Runde wert, keine Zeile
-nebenbei. Bis dahin ist die Wasserfläche selbst abwechslungsreich (zehn
-Ausführungen in drei Helligkeitsstufen), ihre Aussenkante aber blockgenau.
 
 Was es bewusst **noch nicht** gibt, damit hier nichts versprochen wird, das
 nicht da ist: NPCs, Gegner, aufsammelbare Gegenstände, Fische, Feuer und Rauch,

@@ -990,6 +990,79 @@ Kielwelle hinter jedem, der sich durchs Wasser bewegt.
 
 **Stand:** 297 Prüfungen, alle grün.
 
+## Nachtrag: eine Anzeige, die sich selbst misst
+
+Auf einem Bildschirmfoto vom Spieler war es eindeutig: die Entwicklerinfo hatte
+eine feste Grösse (452 x 340), der Text war höher, und die letzten drei
+Abschnitte standen ungerahmt über der Welt. Bei der Leistungsanzeige lag die
+letzte Zeile („Speicher 51 MiB") halb ausserhalb.
+
+Eine feste Zahl kann das nicht lösen: die Höhe hängt an der Schriftgrösse, an
+der Sprache und daran, wie viele Zeilen gerade Sinn ergeben. Der Inhalt steht
+jetzt in echten Containern, und die Tafel übernimmt deren Mindestgrösse. Passt
+sie trotzdem nicht auf den Bildschirm, wird die Schrift eine Stufe kleiner —
+abschneiden ist keine Antwort.
+
+Der Selbsttest vergleicht seither die Rahmengrösse mit der Inhaltsgrösse. Das
+ist die Prüfung, die vorher gefehlt hat: dass die Anzeige die richtigen Zahlen
+NENNT, wurde geprüft, dass man sie SIEHT, nicht.
+
+## Nachtrag: das Wasser zieht sich zurück
+
+Wasser war die einzige Schicht mit harter Kante, und der Auftrag hiess: „keine
+perfekten rechteckigen Wasserbecken". Weiche Übergänge wie bei Sand gingen
+nicht, aus zwei Gründen — die Karte weiss, welches Feld Wasser ist, und daran
+hängt das Schwimmen; und Uferband und Brandung sassen am Blockrand.
+
+Die Lösung dreht die Frage um. Beim normalen Übergang gilt eine Ecke, sobald
+EINES der drei dort anliegenden Felder dazugehört: die Fläche wächst heraus.
+Beim Wasser gilt sie nur, wenn ALLE drei dazugehören: die Fläche zieht sich
+zurück. Dieselben Kacheln, dieselbe Rauschkante, nur die Frage ist umgekehrt.
+Darunter liegt Sand, der dabei zum Vorschein kommt.
+
+Damit stimmen Karte und Bild weiterhin überein — Wasser liegt nie auf einem
+Feld, das keines ist —, und ein einzelnes Wasserfeld wird eine runde Pfütze
+statt eines Quadrats.
+
+**Und dann musste die Kantenschicht weg.** Uferband und Tiefenband sassen am
+Blockrand, genau dort, wovon sich das Wasser jetzt zurückzieht. Auf dem ersten
+Bild danach lief um jeden Teich ein schnurgerades dunkles Rechteck durch den
+Sand, während die Wasserlinie daneben geschwungen verlief: zwei Beschreibungen
+derselben Küste, die sich widersprechen. Schaum und Tiefe stehen seither in der
+Wasserkachel selbst (`TerrainAtlas.Rim.SHORE`) — eine Quelle, kein Widerspruch.
+`EdgeArt` ist gelöscht.
+
+## Nachtrag: der Sprung war eine Verschiebung
+
+Dasselbe Standbild, ein Stück weiter oben. Jetzt gibt es drei gezeichnete
+Stellungen: gehockt (Absprung UND Landung — in beiden geht die Figur in die
+Knie), gestreckt, fallend. Gezeichnet und nicht skaliert: eine Figur, die auf
+1,08 gestreckt wird, hat ungleich breite Pixel, und genau dieser Fehler war der
+Grund, den Zoom ganzzahlig zu machen.
+
+Die Handfackel hängt an derselben Dunkelheit wie die Beleuchtung, nicht an
+einer eigenen Uhr — sonst hielte die Figur bei abgeschalteter Beleuchtung
+mitten am Tag eine brennende Fackel.
+
+## Nachtrag: ein Test, der vom letzten Test abhing
+
+Die Prüfung „Mit Staub rechnet er wieder" schlug in jedem Lauf fehl, ohne dass
+sich am Code etwas geändert hätte. Ursache: der Lauf erbte die `settings.cfg`,
+und ein früherer Lauf hatte dort den Staub auf 0 stehen lassen — die Prüfung
+stellte ihn also auf 0 zurück und erwartete, dass er an ist.
+
+Der Lauf startet jetzt auf den Auslieferungswerten, geholt aus einer frischen
+Instanz von `settings.gd`. Damit steht im Test keine zweite Liste, die
+irgendwann von den echten Vorgaben abweicht. Am Ende bekommt der Spieler seine
+Datei zurück: ein Testlauf darf niemandem seine Grafikstufen umstellen.
+
+Dabei fiel noch etwas auf: die automatische Qualitätsanpassung regelte MITTEN
+im Testlauf herunter, weil die Bildzeit auf dieser Maschine schlecht genug ist.
+Sie ist für den Lauf abgeschaltet; ihre eigene Wirkung prüft `_check_quality()`
+direkt, ohne auf eine langsame Maschine zu warten.
+
+**Stand:** 313 Prüfungen, alle grün.
+
 ## Lizenzlage
 
 Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest
