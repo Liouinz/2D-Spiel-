@@ -14,6 +14,7 @@ var inventory: Inventory
 var streamer: ChunkStreamer
 var ambient: AmbientFx
 var build_fx: BuildFx
+var light: LightManager
 
 const HudScene := preload("res://src/ui/hud.gd")
 
@@ -91,6 +92,14 @@ func _ready() -> void:
 	ambient.name = "AmbientFx"
 	ambient.camera = camera
 	add_child(ambient)
+
+	# Tageslicht, ein weicher Schein um die Figur, dunklere Bildränder.
+	# Muss nach der Kamera kommen: die Vignette liegt auf einer eigenen
+	# CanvasLayer über der Welt, aber unter jeder Oberfläche.
+	light = LightManager.new()
+	light.name = "Light"
+	light.player = player
+	add_child(light)
 
 	# Rotes Blockraster über allem — zeigt das sonst unsichtbare Grid.
 	grid = GridOverlay.new()

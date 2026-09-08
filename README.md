@@ -63,12 +63,18 @@ Quelltext danach und schlägt fehl, sobald noch einer auftaucht.
 
 ## Die Welt
 
-Das Spiel startet mit einer **leeren Karte und sichtbarem Blockraster**. Das
-Raster ist das technische Skelett der Welt und wird gezeigt, damit sich planen
-lässt, wie viele Blöcke etwas belegt — aber sehr zurückhaltend. Vorher waren
-die Blocklinien kräftig rot und die Chunk-Linien kräftig gelb; über den ganzen
-Bildschirm gelegt sah die Welt damit aus wie Millimeterpapier. Zum Planen
-reicht eine Linie, die man sieht, wenn man sie sucht.
+Das Spiel startet mit einer **leeren Karte** — und ohne Raster. Das Raster ist
+das technische Skelett der Welt und hilft beim Planen, aber es ist ein
+Werkzeug, kein Teil der Welt: eingeschaltet legt es ein gelbes Kreuz über den
+ganzen Bildschirm und schreibt „Chunk 64 | 64" quer neben die Figur. Wer das
+Spiel zum ersten Mal startete, sah genau das — eine Karte mit Gitternetz, keinen
+Ort. **G** schaltet es an, die Steuerungshilfe sagt das in der ersten Zeile, und
+die Minimap zeigt Gebautes auch ohne Raster.
+
+Eingeschaltet ist es bewusst zurückhaltend. Vorher waren die Blocklinien
+kräftig rot und die Chunk-Linien kräftig gelb; über den ganzen Bildschirm
+gelegt sah die Welt damit aus wie Millimeterpapier. Zum Planen reicht eine
+Linie, die man sieht, wenn man sie sucht.
 
 - **Ein Block = 32 × 32 Pixel.** Die Karte ist **2048 × 2048 Blöcke** groß —
   65 536 × 65 536 Pixel. Einmal quer durchzulaufen dauert rennend rund vier
@@ -82,6 +88,13 @@ reicht eine Linie, die man sieht, wenn man sie sucht.
 - **G** schaltet nur die **Rasterlinien** um. Die Bauvorschau unter dem Zeiger
   bleibt immer sichtbar — sie zeigt die gewählte Kachel halbdurchsichtig im
   Block, damit man sieht, *wohin* und *was* man setzt.
+- **Bodenmarken liegen unter der Figur.** Bauvorschau und das markierte Feld
+  werden auf einer eigenen Ebene unter der Spielfigur gezeichnet, Rasterlinien
+  und Chunk-Nummern darüber. Vorher lag alles zusammen ganz oben — und weil das
+  Zielfeld fast immer an die Figur grenzt, lag ein halbdurchsichtiger Schleier
+  über ihrer unteren Hälfte und die weißen Eckwinkel liefen quer durchs
+  Gesicht. Die Figur sah durchsichtig aus. Eine Markierung auf dem Boden gehört
+  auf den Boden: sie darf von dem verdeckt werden, was darauf steht.
 
 ![Blockraster am Kartenrand](docs/bilder/raster.png)
 
@@ -134,7 +147,13 @@ Autotiling fällt damit sofort auf.
 ![Bauen mit der Leiste](docs/bilder/bauen.png)
 
 Gesetztes **Wasser lässt sich durchschwimmen** — die Figur sinkt ein, wird
-langsamer und bekommt einen Wellenkragen:
+langsamer und bekommt einen Wellenkragen. Unter der Wasserlinie wird sie nicht
+abgeschnitten, sondern **eingetaucht**: durchscheinend und zur Wasserfarbe hin
+verschoben, nach unten hin immer weniger. Vorher wurde alles darunter gelöscht,
+und das sah aus, als steckte sie in einem gestanzten Loch. Der Wellenkragen ist
+ein **Ring** statt dreier waagerechter Reihen — er läuft vorn über den Körper
+und verschwindet hinten dahinter, und daran erkennt man, dass die Figur *im*
+Wasser ist und nicht davor:
 
 ![Schwimmen](docs/bilder/schwimmen.png)
 
@@ -215,6 +234,10 @@ daneben.
 
 ![Einstellungen](docs/bilder/optionen.png)
 
+Unter **Grafik** stehen die sieben Stufen, die wirklich etwas am Bild ändern:
+
+![Grafik](docs/bilder/grafik.png)
+
 Unter **Steuerung** steht die vollständige Tastenbelegung als Tabelle über die
 volle Seitenbreite:
 
@@ -228,6 +251,8 @@ Es steht dort **nichts, was nicht wirkt**:
 | **Wasser** Einfach / Mittel / Hoch | Bildrate der Wasserwirkung (8 / 16 / 24 Hz); „Einfach“ zeichnet Glitzern und Brandung gar nicht mehr |
 | **Bewegung** Aus / Reduziert / Voll | Wind über dem Gras und Licht auf dem Wasser; „Aus“ hängt die Materialien ab, statt sie auf null zu rechnen |
 | **Staub in der Luft** Aus / Reduziert / Voll | 0 / 18 / 42 schwebende Punkte im sichtbaren Ausschnitt |
+| **Bewuchs am Boden** Aus / Reduziert / Voll | Dichte der Streu-Dekoration (Gras 0 / 70 / 150 ‰, Sand 0 / 25 / 55 ‰); „Aus“ lädt die Schicht gar nicht erst |
+| **Beleuchtung** Aus / Fest / Tagesverlauf | Tageslicht, Schein um die Figur und Vignette; „Aus“ hängt alle drei ab und stellt den Prozessschritt ein |
 | **Schatten** Aus / An | der Bodenschatten der Figur |
 | **Bildratengrenze** 30 … Unbegrenzt | `Engine.max_fps` |
 | **Bildsynchronisierung** | VSync des Fensters |
@@ -289,12 +314,81 @@ vorher verdeckt hatte: sie sind von 3,5 % auf 1,8 % zurückgenommen. Die große
 Helligkeitsbewegung kommt jetzt ohnehin vom Wind, und die läuft über
 Kachelkanten hinweg weich durch.
 
+### Die Welt hat Dinge
+
+Auf Gras und Sand liegt **Streu-Dekoration**: Grasbüschel, rote, gelbe und
+weiße Blumen, Klee, Steine, Kiesel, Muscheln und Treibholz. Sie liegen in einer
+**eigenen Kachelschicht** unter der Kantenschicht — nicht als einzelne Knoten.
+Ein Knoten je Büschel wäre bei 5 × 5 geladenen Chunks sechsstellig; eine
+Kachelschicht kostet dasselbe wie der Boden darunter, also fast nichts.
+
+Wo etwas liegt, entscheidet der **ortsfeste Streuwert des Feldes**, nicht der
+Zufall beim Laden: derselbe Fleck Wiese sieht nach dem Nachladen eines Chunks
+wieder genauso aus. Auf Gras steht deutlich mehr als auf Sand — eine Wiese ist
+bewachsen, ein Strand ist überwiegend leer, und ein gleichmäßig bestreuter
+Strand sähe falsch aus.
+
+## Licht und Tageszeit
+
+Bis hierher war die Welt völlig flach ausgeleuchtet: jede Kachel zu jeder Zeit
+gleich hell. Das ist der Unterschied zwischen einer Textur und einem Ort. Jetzt
+läuft ein **Tag** von acht Minuten durch, und die Welt läuft mit — Morgenrot,
+heller Vormittag, Mittag, Abendgold, Dämmerung, blaue Nacht.
+
+![Abend](docs/bilder/abend.png)
+
+Drei Mittel, alle billig:
+
+- **`CanvasModulate`** färbt und dunkelt die ganze Welt. Das ist das Tageslicht
+  selbst — ein Knoten, ein Multiplizieren, unabhängig davon, wie viele Kacheln
+  im Bild sind.
+- **`PointLight2D`** ist ein weicher Schein um die Figur, auf Brusthöhe statt am
+  Knöchel. Er blendet **nach Helligkeit auf, nicht nach Uhrzeit**: gerechnet
+  wird aus der geltenden Tönung, also passt er automatisch, wenn sich der
+  Tagesverlauf einmal ändert.
+- Eine **Vignette** dunkelt die Bildränder ab, am Tag kaum wahrnehmbar, nachts
+  deutlich. Eine Vignette, die man am hellen Mittag bemerkt, ist ein Filter und
+  keine Beleuchtung.
+
+![Nacht](docs/bilder/nacht.png)
+
+Der Verlauf ist bewusst **zahm**. Eine Nacht, in der man nichts mehr sieht, ist
+in einem Bauspiel keine Atmosphäre, sondern eine Zwangspause: der dunkelste
+Punkt liegt bei knapp der halben Helligkeit, und die Figur bringt ihr eigenes
+Licht mit. Wer trotzdem lieber durchgehend Vormittag hätte, stellt die
+Beleuchtung auf **„Fest"**.
+
+Das Licht liegt auf der **Welt**, nicht auf der Oberfläche: `CanvasModulate`
+wirkt nur in seiner eigenen `CanvasLayer`, und HUD (5), Bauleiste (6) und
+Inventar (8) liegen auf eigenen. Die Vignette hängt auf Ebene 1 — über der
+Welt, unter jeder Anzeige. Ein abendlich oranges Menü wäre ein Fehler, keine
+Stimmung.
+
+**„Aus" kostet wirklich nichts.** Ein `CanvasModulate` in Weiß und eine
+Vignette mit Stärke 0 sehen aus wie „aus", werden aber weiterhin über jeden
+Bildpunkt gerechnet. Auf Stufe 0 werden alle drei Knoten unsichtbar geschaltet
+und der Prozessschritt abgestellt; der Selbsttest prüft genau das.
+
+Was die Beleuchtung kostet, lässt sich auf dem Software-Rasterizer der
+Testmaschine **nicht** in Millisekunden messen — dort kam „aus" mit 49,45 ms
+teurer heraus als „voll" mit 41,77 ms, weil die Bildzeit zwischen zwei Läufen
+um mehr als das Doppelte schwankt. Zählbar ist dagegen, was die eigentliche
+Gefahr wäre: ein 2D-Licht lässt jeden Knoten in seinem Umkreis ein zweites Mal
+zeichnen. Gemessen wurden **53 Zeichenaufrufe ohne und 56 mit Beleuchtung** —
+der Selbsttest schlägt fehl, wenn daraus mehr als 20 zusätzliche werden.
+
 ## Anzeigen
 
 Die **Leistungsanzeige** (Grafikeinstellungen → Leistung) zeigt FPS, Speicher,
 CPU- und GPU-Renderzeit und Zeichenaufrufe. Sie ist bei jedem Start aus und
 zeigt nur, was die Engine wirklich misst — liefert sie einen Wert nicht, steht
 dort „—“ statt einer erfundenen Zahl.
+
+Oben links steht **eine** Zeile: Block, Chunk und Position im Chunk. Darunter
+stand früher noch „32 px je Block · 2048 × 2048 Blöcke = 128 × 128 Chunks" —
+Zahlen, die eine ganze Sitzung lang dieselben bleiben und die Engine
+beschreiben statt den Ort, an dem die Figur steht. Wer sie sehen will, drückt
+**F3**.
 
 **F3** blendet davon getrennt die Entwicklerinfo ein: Chunk, Feld, Bodentyp,
 Begehbarkeit, geladene Kollisionsformen und Zustand der Figur.
@@ -318,7 +412,7 @@ statt zu stürzen.
 | **Shift** | Rennen (nicht im Wasser) |
 | **Leertaste** | Springen |
 | **E** | Inventar öffnen / schliessen |
-| **G** | Blockraster ein / aus |
+| **G** | Blockraster ein / aus (beim Start aus) |
 | **M** | Minimap ein / aus |
 | **H** | Anzeige oben links ein / aus |
 | **F3** | Entwicklerinfo ein / aus |
@@ -387,7 +481,8 @@ src/gfx/tile_icon.gd       Materialbild der Oberfläche aus echten Bodenkacheln
 src/gfx/world_shaders.gd   Wind über dem Gras, Licht auf dem Wasser
 src/gfx/terrain_atlas.gd   Übergangskacheln für das Eck-Autotiling
 src/gfx/edge_art.gd        Uferband auf dem Land, Tiefenband im Wasser
-src/gfx/actor_art.gd       Spielerfigur (Idle, Laufzyklus, Schwimmen)
+src/gfx/actor_art.gd       Spielerfigur (Idle, Laufzyklus, Schwimmen, Bodenschatten)
+src/gfx/decor_art.gd       Streu-Dekoration: Büschel, Blumen, Kiesel, Treibholz
 
 src/world/map_data.gd      Kartendaten: drei Bodentypen, Begehbarkeit, Speichern
 src/world/ground_tileset.gd TileSet mit Terrains, bemalt die Schichten
@@ -397,6 +492,8 @@ src/world/build_tool.gd    Blöcke setzen und entfernen, Speichern
 src/world/water_fx.gd      Glitzern und Uferschaum (nur im Sichtbereich)
 src/world/ambient_fx.gd    Staub und Pollen in der Luft (nur im Sichtbereich)
 src/world/build_fx.gd      Kurze Rückmeldung: gesetzter Block, Landung
+src/world/light_manager.gd Tageslicht, Schein um die Figur, Vignette
+src/world/grid_overlay.gd  Raster darüber, Bodenmarken darunter
 src/world/world.gd         Setzt die Spielwelt zusammen
 
 src/player/player.gd       Bewegung, Sprung, Schwimmen, Animation
@@ -411,9 +508,9 @@ src/ui/menu_art.gd         Titelbild des Hauptmenüs
 src/ui/cloud_layer.gd      Ziehende Wolken im Hauptmenü
 src/ui/main_menu.gd        Startmenü
 src/ui/pause_menu.gd       Pause-Menü
-src/ui/options_menu.gd     Einstellungen in fünf Kategorien
+src/ui/options_menu.gd     Einstellungen in vier Kategorien
 src/ui/confirm_dialog.gd   Rückfrage vor dem Überschreiben einer Karte
-src/ui/hud.gd              Chunk- und Blockanzeige, Steuerungshinweis
+src/ui/hud.gd              Blockanzeige, Steuerungshinweis, Minimap und Anzeigen
 src/ui/item_slot.gd        Ein Feld — für Inventar UND Bauleiste, ein Aussehen
 src/ui/build_bar.gd        Bauleiste mit drei Feldern
 src/ui/inventory.gd        Inventar: Material auf ein Feld der Leiste legen
@@ -438,7 +535,7 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **233 Prüfungen**.
+Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **250 Prüfungen**.
 Darunter unter anderem:
 
 - genau drei Bodentypen in Aufzählung, Kachelstapel, Leiste, Inventar und Minimap
@@ -463,6 +560,14 @@ Darunter unter anderem:
   Neustart
 - Bewegung „Aus“ hängt die Materialien wirklich ab, die Wellen laufen im
   Vertex-Schritt, und die Bewegung kostet keine Größenordnung
+- Beleuchtung: der Tagesverlauf springt nirgends, der Schein sitzt auf
+  Brusthöhe bei der Figur und blendet nachts auf, „Fest“ hält die Zeit an,
+  „Aus“ hängt alles ab, und das Licht bleibt bei den Zeichenaufrufen bescheiden
+- die Figur: drei verschiedene Stellungen je Laufrichtung, der Körper bleibt
+  unter Wasser zu ahnen, der Wellenkragen ist ein Ring und kein Brett, der
+  Bodenschatten fällt nach unten rechts
+- Bodenmarken liegen unter der Figur, Rasterlinien darüber — und das Raster ist
+  beim Start aus
 - Einzelfeld, gerade Kante, Außenecke, Innenecke und der Übergang zu Wasser
   bekommen jeweils die richtige Eckmaske
 - jeder gesetzte Block bekommt ein Zeichen, es verschwindet wieder, und beim
@@ -474,11 +579,14 @@ Darunter unter anderem:
 - Musik vorhanden, Klangeffekte weder im Ton noch an einer Aufrufstelle
 - keine fremde Asset-Datei im Projekt (siehe [`CREDITS.md`](CREDITS.md))
 
-Weltaufbau rund 210 ms bei 2048 × 2048 Blöcken. Ein Chunk ist in 1,1 ms gemalt,
-die Minimap in 0,8 ms, die Physik braucht 0,7 ms je Bild. Die Bildzeit im Test
-(rund 16 ms) stammt von einem **Software-Rasterizer** ohne Grafikkarte und sagt
-nichts über einen echten Rechner — sie ist als Vergleichswert gedacht, nicht als
-Versprechen.
+Weltaufbau rund 320 ms bei 2048 × 2048 Blöcken. Ein Chunk ist in 1,6 ms gemalt,
+die Physik braucht 0,7 ms je Schritt. Die Bildzeit im Test stammt von einem
+**Software-Rasterizer** ohne Grafikkarte und sagt nichts über einen echten
+Rechner — sie schwankt dort zwischen zwei Läufen um mehr als das Doppelte (20
+bis 55 ms) und ist als Vergleichswert gedacht, nicht als Versprechen. Genau
+deshalb wird die Physikzeit auf **einen Schritt** umgerechnet statt auf ein
+Bild: Godot holt die feste Schrittrate nach, und ungeteilt misst die Zahl die
+Auslastung der Maschine statt der Physik.
 
 Mit einer echten Anzeige lassen sich zusätzlich Screenshots ablegen:
 
@@ -490,7 +598,13 @@ godot --path . -- --selftest --shots=/tmp/shots
 
 Die Architektur ist auf Erweiterung ausgelegt, aber bewusst schlank. Naheliegend
 wären weitere Materialien (dann aber einzeln und geprüft), Figurenskins,
-mehrere Speicherstände und ein Tag-/Nacht-Zyklus.
+mehrere Speicherstände und Wetter.
+
+Was es bewusst **noch nicht** gibt, damit hier nichts versprochen wird, das
+nicht da ist: NPCs, Gegner, aufsammelbare Gegenstände, Feuer und Rauch,
+Wettereffekte und eine Parallaxe im Hintergrund — das Spiel ist von oben
+gesehen und hat keine Hintergrundebene, in der eine Parallaxe stattfinden
+könnte.
 
 ---
 

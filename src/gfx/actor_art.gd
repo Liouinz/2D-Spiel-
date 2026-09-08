@@ -38,43 +38,80 @@ static func build() -> Dictionary:
 		swim.append(s_frames)
 	return {"idle": idle, "walk": walk, "swim": swim, "shadow": Pixel.tex(_shadow())}
 
-## Schwimmbild: dasselbe Laufbild, aber unterhalb der Wasserlinie abgeschnitten
-## und darunter ein paar Wellen.
+## Schwimmbild: dasselbe Laufbild, nur eingetaucht.
 ##
-## Abschneiden statt einer eigenen Figur: so bleibt sie in jeder Blickrichtung
+## Dieselbe Figur statt einer eigenen: so bleibt sie in jeder Blickrichtung
 ## dieselbe Person, und die Wasserlinie sitzt garantiert an derselben Stelle
 ## wie der Versatz, mit dem player.gd die Figur einsinken lässt.
 static func _swim_frame(dir: int, phase: int) -> Image:
 	var img := _frame(dir, 0, phase, 1 if phase == 0 else -1)
 	var line := H - SWIM_SINK
-	# Alles unter der Wasserlinie verschwindet.
-	for y in range(line, H):
-		for x in W:
-			img.set_pixel(x, y, Color(0, 0, 0, 0))
-	# Wellenkragen: drei Reihen, die zu den Seiten hin auslaufen. Er ist
-	# breiter als die Figur, sonst sieht sie aus wie in ein Loch gesteckt.
-	for i in 3:
-		var y := line - 2 + i
-		if y < 0 or y >= H:
-			continue
-		for x in range(2, W - 2):
-			# Zu den Rändern hin ausdünnen — eine durchgezogene Linie sähe aus
-			# wie ein Brett.
-			var edge := minf(float(x - 2), float(W - 3 - x)) / 6.0
-			if (x * 7 + i * 11 + phase * 5) % 5 == 0 and edge < 1.0:
-				continue
-			if edge < 0.35:
-				continue
-			var c := Palette.WATER_FOAM if i == 1 else Palette.WATER_LIGHT
-			var a := (0.90 if i == 1 else 0.55) * minf(edge, 1.0)
-			img.set_pixel(x, y, Color(c, a))
+	_submerge(img, line)
+	_collar(img, line, phase)
 	return img
 
+## Unter der Wasserlinie wird die Figur nicht ABGESCHNITTEN, sondern
+## eingetaucht: durchscheinend und zur Wasserfarbe hin verschoben, nach unten
+## hin immer weniger.
+##
+## Vorher wurde alles darunter gelöscht. Das sah aus, als steckte die Figur in
+## einem gestanzten Loch — man sah einen Oberkörper auf einer Fläche, keinen
+## Körper im Wasser. Sichtbar bleiben heisst hier: man ahnt die Beine, ohne sie
+## zu erkennen, und genau so sieht ein Körper unter Wasser aus.
+static func _submerge(img: Image, line: int) -> void:
+	for y in range(line, H):
+		var depth := float(y - line) / float(maxi(H - line, 1))
+		var fade := lerpf(0.38, 0.08, depth)
+		for x in W:
+			var c := img.get_pixel(x, y)
+			if c.a <= 0.0:
+				continue
+			img.set_pixel(x, y, Color(c.lerp(Palette.WATER_DEEP, 0.60), c.a * fade))
+
+## Wellenkragen: ein Ring um die Taille, keine gerade Linie.
+##
+## Vorher waren es drei waagerechte Reihen über die ganze Bildbreite. Über
+## einer 32 Pixel breiten Figur liest sich das als Brett, auf dem sie steht.
+## Ein Ring hat eine Vorder- und eine Rückseite: vorne läuft er über den
+## Körper, hinten verschwindet er dahinter — daran erkennt man, dass die Figur
+## IM Wasser ist und nicht davor.
+static func _collar(img: Image, line: int, phase: int) -> void:
+	var cx := W * 0.5
+	var cy := float(line) + 0.5
+	for y in range(line - 4, mini(line + 6, H)):
+		if y < 0:
+			continue
+		for x in W:
+			var dx := (x + 0.5 - cx) / 13.0
+			var dy := (y + 0.5 - cy) / 3.6
+			var d := sqrt(dx * dx + dy * dy)
+			if d > 1.0 or d < 0.60:
+				continue
+			# Hinter der Figur verdeckt der Rücken die Welle.
+			if y < line and img.get_pixel(x, y).a > 0.5:
+				continue
+			# Lücken je Phase — ein geschlossener Ring wäre ein Reifen.
+			if (x * 5 + y * 3 + phase * 7) % 9 == 0:
+				continue
+			var near := float(y) + 0.5 > cy
+			var col := Palette.WATER_FOAM if near else Palette.WATER_LIGHT
+			var a := (0.88 if near else 0.46) * (1.0 - absf(d - 0.80) * 1.8)
+			if a <= 0.02:
+				continue
+			img.set_pixel(x, y, Color(col, a))
+
+## Bodenschatten: drei Ellipsen ineinander, von aussen nach innen dunkler.
+##
+## Er sitzt leicht nach UNTEN RECHTS versetzt. Das Licht kommt in dieser Welt
+## von oben links — bei jeder Kachel, bei jedem Grashalm, an der Figur selbst.
+## Ein mittig gesetzter Schatten widerspräche dem und läse sich als Mittagssonne
+## im Zenit; ein Pixel Versatz genügt, damit die Figur auf dem Boden steht,
+## statt darüber zu schweben.
 static func _shadow() -> Image:
 	var img := Pixel.make(30, 14)
-	Pixel.ellipse(img, 15, 7.0, 14.0, 6.6, Color(0, 0, 0, 0.13))
-	Pixel.ellipse(img, 15, 7.0, 10.8, 5.0, Color(0, 0, 0, 0.22))
-	Pixel.ellipse(img, 14, 6.6, 6.8, 3.0, Color(0, 0, 0, 0.14))
+	Pixel.ellipse(img, 15.6, 7.6, 13.2, 6.2, Color(0, 0, 0, 0.11))
+	Pixel.ellipse(img, 15.6, 7.6, 9.8, 4.5, Color(0, 0, 0, 0.18))
+	Pixel.ellipse(img, 15.2, 7.2, 6.2, 2.8, Color(0, 0, 0, 0.22))
 	return img
 
 ## leg: -1/0/1 = Beinstellung, bob: 0/1 = Auf-und-ab, arm: Armschwung

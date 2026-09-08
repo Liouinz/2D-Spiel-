@@ -97,12 +97,15 @@ func _process(delta: float) -> void:
 		var b := GridOverlay.block_at(player.global_position)
 		var c := GridOverlay.chunk_of(b)
 		var ic := GridOverlay.block_in_chunk(b)
-		var on := is_instance_valid(grid) and grid.show_grid
-		_blocks.text = "Chunk  %d | %d      ·      Block  %d | %d      ·      im Chunk  %d | %d\n%d px je Block   ·   %d × %d Blöcke   =   %d × %d Chunks   ·   G – Raster %s" % [
-			c.x, c.y, b.x, b.y, ic.x, ic.y,
-			Config.TILE, Config.MAP_W, Config.MAP_H,
-			Config.MAP_W / Config.CHUNK, Config.MAP_H / Config.CHUNK,
-			"aus" if on else "an"]
+		# Eine Zeile, und darin nur, was sich ändert.
+		#
+		# Vorher standen hier zwei: darunter „32 px je Block · 2048 × 2048
+		# Blöcke = 128 × 128 Chunks". Das sind Zahlen, die eine ganze Sitzung
+		# lang dieselben bleiben — sie beschreiben die Engine, nicht den Ort,
+		# an dem die Figur steht. Wer sie sehen will, drückt F3; dort stehen
+		# sie zusammen mit Bodentyp, Begehbarkeit und Kollisionsformen.
+		_blocks.text = "Block  %d | %d      ·      Chunk  %d | %d      ·      im Chunk  %d | %d" % [
+			b.x, b.y, c.x, c.y, ic.x, ic.y]
 
 	if _label == null:
 		return

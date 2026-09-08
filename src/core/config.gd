@@ -17,7 +17,14 @@ const WORLD_SEED := 20260904          ## fester Seed -> reproduzierbare Welt
 const BUILD_CHUNKS := Vector2i(128, 128)
 
 ## Blockraster beim Start sichtbar. Im Spiel mit G umschaltbar.
-const SHOW_BLOCK_GRID := true
+##
+## AUS beim Start. Das Raster ist ein Werkzeug zum Planen, kein Teil der Welt:
+## eingeschaltet legt es ein gelbes Kreuz über den ganzen Bildschirm und
+## schreibt „Chunk 64 | 64" quer neben die Figur. Wer das Spiel zum ersten Mal
+## startet, sah bisher genau das — eine Karte mit Gitternetz, kein Ort. Es ist
+## keine Zeile Funktion verloren: G schaltet es an, die Steuerungshilfe sagt
+## das in der ersten Zeile, und die Minimap zeigt Gebautes auch ohne Raster.
+const SHOW_BLOCK_GRID := false
 
 ## Kantenlänge eines Chunks in Blöcken — dieselbe Größe wie in Minecraft.
 const CHUNK := 16

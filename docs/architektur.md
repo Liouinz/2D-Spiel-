@@ -807,6 +807,96 @@ Weltansicht und einem Spiel.
 
 **Stand:** 233 Prüfungen, alle grün.
 
+## Nachtrag: die visuelle Generalüberholung
+
+Der Auftrag war, das ganze Bild auf das Niveau eines modernen 2D-Pixel-Spiels
+zu bringen — nicht einzelne Grafiken, sondern alles, was zum Aussehen gehört.
+Angefangen wurde deshalb nicht bei den Kacheln, sondern beim Rendering: eine
+Kachel, die auf dem Bildschirm verzerrt ankommt, wird durch Nachzeichnen nicht
+besser.
+
+**Die Pixel waren nicht quadratisch.** `CAMERA_ZOOM` stand auf 1,5. Bei Faktor
+1,5 wird aus einem Weltpixel mal ein, mal zwei Bildschirmpunkte — nachgewiesen
+an einer zwölffachen Vergrösserung des Figurenkopfes, auf der Reihen
+abwechselnd ein und zwei Punkte hoch sind. Das ist die Ursache für „unsaubere
+Kanten", die man sonst der Zeichnung anlastet. Zoom 2 macht jeden Weltpixel
+exakt zwei Punkte breit und hoch. Das Sichtfeld wird dabei kleiner (20 × 11
+statt 27 × 15 Felder) — das ist der Preis, und er ist es wert. Alles, was in
+Bildschirmpunkten gemeint ist (Rasterlinien, Eckwinkel), rechnet seither über
+`_w()` in Weltbreite um, damit es beim Zoomen nicht mitwächst.
+
+**Die Kachelkanten waren ein Schachbrett.** Die Übergänge zwischen zwei Böden
+entstanden über eine geordnete 4 × 4-Bayer-Matrix. Die ist regelmässig, und
+genau so sah die Kante auch aus: ein Schachbrett aus Einzelpixeln quer über
+jeden Übergang. Bei Zoom 1,5 ging das unter, bei Zoom 2 war es das
+Künstlichste im ganzen Bild. Jetzt verschiebt zusammenhängendes Rauschen
+(`FastNoiseLite`, Frequenz 0,13) die Schwelle — daraus werden Zungen und
+Buchten, wie von Hand gesetzt. Dazu gibt es jede Eckmaske in drei
+Ausführungen; vorher bestand jede Küstenlinie im Spiel aus fünfzehn immer
+gleichen Bausteinen. Welche Ausführung ein Feld bekommt, entscheidet sein
+ortsfester Streuwert, nicht der Zufall beim Laden.
+
+**Die Welt bekam Dinge.** Büschel, Blumen, Klee, Steine, Kiesel, Muscheln und
+Treibholz liegen in einer eigenen Kachelschicht (`LAYER_DECOR`, z = −15) unter
+der Kantenschicht. Ein Knoten je Büschel wäre bei 5 × 5 geladenen Chunks
+sechsstellig gewesen; eine Kachelschicht kostet dasselbe wie der Boden darunter.
+Auf Gras steht deutlich mehr als auf Sand — ein gleichmässig bestreuter Strand
+sähe falsch aus.
+
+**Die Welt war flach ausgeleuchtet.** Jede Kachel zu jeder Zeit gleich hell —
+das ist der Unterschied zwischen einer Textur und einem Ort. Der `LightManager`
+bringt drei Mittel mit, alle billig: ein `CanvasModulate` färbt und dunkelt die
+ganze Welt über einen Tag von acht Minuten, ein `PointLight2D` auf Brusthöhe
+folgt der Figur, und eine Vignette dunkelt die Bildränder. Der Schein blendet
+**nach Helligkeit** auf, nicht nach Uhrzeit — dadurch passt er automatisch,
+wenn sich der Verlauf einmal ändert. Das Licht liegt auf der Welt, nicht auf
+der Oberfläche: `CanvasModulate` wirkt nur in seiner eigenen `CanvasLayer`, und
+HUD (5), Bauleiste (6) und Inventar (8) liegen auf eigenen; die Vignette hängt
+auf Ebene 1. Auf Stufe „Aus" werden alle drei Knoten unsichtbar geschaltet und
+der Prozessschritt abgestellt — ein `CanvasModulate` in Weiss würde sonst
+weiterhin über jeden Bildpunkt gerechnet.
+
+**Die Figur war halb durchsichtig — und niemandem war es aufgefallen.** Das
+ganze Raster lag bei `z_index` 500 über allem, auch die Bauvorschau. Die ist
+aber eine halbdurchsichtige Kachel im Zielfeld, und das Zielfeld grenzt fast
+immer an die Figur: über ihrer unteren Hälfte lag ein Schleier, und die weissen
+Eckwinkel liefen quer durchs Gesicht. Gefunden wurde das erst bei einer
+fünffachen Vergrösserung eines Testbildes. Bauvorschau und markiertes Feld
+liegen jetzt auf einem eigenen Knoten mit `z_as_relative = false` und
+`z_index = -2` — über Boden und Wasserwirkung, unter Schatten und Figur.
+Rasterlinien, Chunk-Nummern und Weltrand bleiben oben.
+
+**Das Raster ist beim Start aus.** Eingeschaltet legt es ein gelbes Kreuz über
+den ganzen Bildschirm und schreibt „Chunk 64 | 64" quer neben die Figur. Wer
+das Spiel zum ersten Mal startete, sah eine Karte mit Gitternetz, keinen Ort.
+G schaltet es an, die Steuerungshilfe sagt das in der ersten Zeile. Aus
+demselben Grund ist die Anzeige oben links auf eine Zeile zusammengezogen: die
+zweite nannte Kachelgrösse und Kartenmasse — Zahlen, die eine ganze Sitzung
+lang dieselben bleiben. Sie stehen auf F3.
+
+**Die Figur steckte im Wasser in einem gestanzten Loch.** Unter der Wasserlinie
+wurde alles gelöscht und darüber eine gerade Schaumlinie über die volle Breite
+gelegt — über einer 32 Pixel breiten Figur liest sich das als Brett. Jetzt
+bleibt der Körper unter Wasser durchscheinend und zur Wasserfarbe hin
+verschoben, und der Wellenkragen ist ein Ring: vorn läuft er über den Körper,
+hinten verschwindet er dahinter. Der Bodenschatten sitzt einen Pixel nach unten
+rechts versetzt — das Licht kommt in dieser Welt von oben links, bei jeder
+Kachel und an der Figur selbst.
+
+**Und eine Messung, die nichts mass.** Die Prüfung „Physikzeit pro Bild unter
+8 ms" schlug einmal mit 11,46 ms fehl und lief beim nächsten Lauf bei sonst
+unverändertem Code mit 4,75 ms durch. Godot zählt in `TIME_PHYSICS_PROCESS` die
+Zeit ALLER Physikschritte einer Hauptschleifen-Runde; wird ein Bild langsamer,
+holt Godot die feste Schrittrate mit mehreren Schritten nach, und die Zahl
+misst die Auslastung der Maschine statt der Physik. Sie wird jetzt durch die
+Zahl der Schritte je Bild geteilt. Dieselbe Falle beim Licht: „aus" kam mit
+49,45 ms teurer heraus als „voll" mit 41,77 ms. Statt Millisekunden zählt der
+Test dort Zeichenaufrufe — 53 ohne, 56 mit Beleuchtung — denn die eigentliche
+Gefahr eines 2D-Lichts ist, dass es jeden Knoten in seinem Umkreis ein zweites
+Mal zeichnen lässt.
+
+**Stand:** 250 Prüfungen, alle grün.
+
 ## Lizenzlage
 
 Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest

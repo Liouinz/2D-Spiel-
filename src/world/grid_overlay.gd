@@ -45,6 +45,37 @@ var cursor_tex: Texture2D                 ## gewählte Bodenkachel als Geistbild
 func _init() -> void:
 	z_index = 500          ## über allem, auch über Bäumen
 
+## Bodenmarken: die Bauvorschau und der Block unter der Figur.
+##
+## Sie liegen UNTER der Spielfigur, während Raster, Chunk-Nummern und Weltrand
+## darüber bleiben. Vorher lag alles zusammen bei z_index 500 — auch die
+## Bauvorschau. Die ist aber eine halbdurchsichtige Kachel im Zielfeld, und das
+## Zielfeld grenzt fast immer an die Figur: dadurch lag ein grüner Schleier über
+## ihrer unteren Hälfte und die weissen Eckwinkel liefen quer durchs Gesicht.
+## Die Figur sah durchsichtig aus.
+##
+## Eine Markierung auf dem Boden gehört auf den Boden. Sie darf von dem verdeckt
+## werden, was darauf steht — genau das erwartet man auch.
+class GroundMarks:
+	extends Node2D
+	var overlay: GridOverlay
+	func _draw() -> void:
+		if is_instance_valid(overlay):
+			overlay.draw_marks(self)
+
+var _marks: GroundMarks
+
+func _ready() -> void:
+	_marks = GroundMarks.new()
+	_marks.name = "Bodenmarken"
+	_marks.overlay = self
+	# Über Boden (-20 … -15) und Wasserwirkung (-10), unter Schatten (-1) und
+	# Figur (0). ABSOLUT, nicht relativ: sonst zählte Godot die 500 des
+	# Rasters dazu und die Marken lägen wieder ganz oben.
+	_marks.z_as_relative = false
+	_marks.z_index = -2
+	add_child(_marks)
+
 var _last_view := Rect2(Vector2.INF, Vector2.ZERO)
 var _last_cursor := Vector2i(-2, -2)
 var _last_player := Vector2i(-9999, -9999)
@@ -63,6 +94,7 @@ func _process(_delta: float) -> void:
 	_last_cursor = cursor_block
 	_last_player = pb
 	queue_redraw()
+	_marks.queue_redraw()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_action_pressed("toggle_grid"):
@@ -70,6 +102,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	show_grid = not show_grid
 	_last_view = Rect2(Vector2.INF, Vector2.ZERO)   # erzwingt ein neues Bild
 	queue_redraw()
+	_marks.queue_redraw()
 	get_viewport().set_input_as_handled()
 
 ## Der Block, auf dem eine Weltposition liegt.
@@ -98,9 +131,20 @@ func _draw() -> void:
 
 	if show_grid:
 		_draw_grid(t, x0, y0, x1, y1)
-	_draw_cursor(t)
 
-## Alles, was G umschaltet: Linien, Chunk-Nummern, Weltrand, Spielerblock.
+## Was auf dem Boden liegt: Bauvorschau und der Block unter der Figur.
+## Gezeichnet wird auf `c`, den Knoten unter der Figur.
+func draw_marks(c: CanvasItem) -> void:
+	var t := float(Config.TILE)
+	if show_grid and is_instance_valid(player):
+		var b := block_at(player.global_position)
+		var cell := Rect2(b.x * t, b.y * t, t, t)
+		c.draw_rect(cell, PLAYER_FILL, true)
+		c.draw_rect(cell, PLAYER_LINE, false, _w(2.0))
+	_draw_cursor(c, t)
+
+## Alles, was G umschaltet und ÜBER der Welt liegt: Linien, Chunk-Nummern,
+## Weltrand. Der Block unter der Figur gehört zu den Bodenmarken.
 func _draw_grid(t: float, x0: int, y0: int, x1: int, y1: int) -> void:
 	# Blocklinien
 	for bx in range(x0, x1 + 1):
@@ -127,13 +171,6 @@ func _draw_grid(t: float, x0: int, y0: int, x1: int, y1: int) -> void:
 	# ausserhalb liegen.
 	_draw_border(t, x0, y0, x1, y1)
 
-	# Block unter der Spielfigur
-	if is_instance_valid(player):
-		var b := block_at(player.global_position)
-		var cell := Rect2(b.x * t, b.y * t, t, t)
-		draw_rect(cell, PLAYER_FILL, true)
-		draw_rect(cell, PLAYER_LINE, false, _w(2.0))
-
 ## Die Bauvorschau — unabhängig vom Raster, sonst baut man blind.
 ##
 ## Gezeichnet wird nicht nur der Rahmen, sondern die gewählte Bodenkachel
@@ -144,12 +181,12 @@ func _draw_grid(t: float, x0: int, y0: int, x1: int, y1: int) -> void:
 ## Kachel darunter; Winkel zeigen dasselbe Feld, lassen es aber frei. Bewusst
 ## ohne Pulsieren: das Raster zeichnet sich nur neu, wenn sich etwas ändert, und
 ## dieser Sparzweck ist mehr wert als eine atmende Linie.
-func _draw_cursor(t: float) -> void:
+func _draw_cursor(c: CanvasItem, t: float) -> void:
 	if cursor_block.x < 0:
 		return
 	var box := Rect2(cursor_block.x * t, cursor_block.y * t, t, t)
 	if cursor_tex != null:
-		draw_texture_rect(cursor_tex, box, false, CURSOR_GHOST)
+		c.draw_texture_rect(cursor_tex, box, false, CURSOR_GHOST)
 	var arm := t * 0.3
 	for corner: Array in [[box.position, 1.0, 1.0], [Vector2(box.end.x, box.position.y), -1.0, 1.0],
 			[Vector2(box.position.x, box.end.y), 1.0, -1.0], [box.end, -1.0, -1.0]]:
@@ -161,8 +198,8 @@ func _draw_cursor(t: float) -> void:
 		for pass_i in 2:
 			var col: Color = Color(0, 0, 0, 0.6) if pass_i == 0 else CURSOR_LINE
 			var w: float = _w(4.0 if pass_i == 0 else 2.0)
-			draw_line(p, p + Vector2(arm * dx, 0.0), col, w)
-			draw_line(p, p + Vector2(0.0, arm * dy), col, w)
+			c.draw_line(p, p + Vector2(arm * dx, 0.0), col, w)
+			c.draw_line(p, p + Vector2(0.0, arm * dy), col, w)
 
 ## Weltbreite für eine gewünschte Bildschirmbreite.
 func _w(screen_px: float) -> float:

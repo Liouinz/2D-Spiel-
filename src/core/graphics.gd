@@ -28,6 +28,10 @@ const OFF_ON := ["Aus", "An"]
 const DETAIL := ["Einfach", "Mittel", "Hoch"]
 const STEPS := ["Aus", "Reduziert", "Voll"]
 
+## Beleuchtung. „Fest" ist heller Vormittag, der stehen bleibt — für alle, die
+## bauen wollen, ohne dass ihnen die Nacht dazwischenkommt.
+const LIGHT := ["Aus", "Fest", "Tagesverlauf"]
+
 func _ready() -> void:
 	Settings.changed.connect(apply)
 	apply()
@@ -110,6 +114,14 @@ func decor_chance(tile: int) -> int:
 		MapData.Tile.SAND:
 			return 25 if step == 1 else 55
 	return 0
+
+## Beleuchtung: 0 = aus, 1 = feste Tageszeit, 2 = Tagesverlauf.
+##
+## Auf Stufe 0 hängt sich der LightManager komplett ab — kein Tönen, kein
+## Licht, keine Vignette, kein Prozessschritt. Eine Einstellung „Aus", die
+## trotzdem jeden Bildpunkt anfasst, wäre eine Lüge.
+func light_mode() -> int:
+	return clampi(Settings.light, 0, LIGHT.size() - 1)
 
 ## Schattenwurf der Figur.
 func shadows_on() -> bool:

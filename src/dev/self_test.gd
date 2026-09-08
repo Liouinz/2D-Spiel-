@@ -111,8 +111,16 @@ func _run() -> void:
 	_check(map.is_solid(0, 10) and map.is_solid(Config.MAP_W - 1, 10),
 		"Unsichtbare Wand am Kartenrand")
 	var g: GridOverlay = world.grid
-	_check(g != null and g.visible, "Blockraster ist sichtbar")
+	# Das Raster ist da, aber beim Start abgeschaltet: die Welt soll wie eine
+	# Welt aussehen und nicht wie kariertes Papier.
+	_check(g != null and g.visible and not g.show_grid,
+		"Blockraster liegt bereit, ist beim Start aber aus")
 	_check(g.z_index > 100, "Raster liegt über der Welt")
+	# Bodenmarken (Bauvorschau, Feld unter der Figur) liegen UNTER der Figur.
+	var marks: Node2D = g.get_node("Bodenmarken")
+	_check(not marks.z_as_relative and marks.z_index < 0,
+		"Bodenmarken liegen unter der Figur (z %d, absolut: %s)"
+		% [marks.z_index, not marks.z_as_relative])
 	var spawn_tile := GridOverlay.block_at(player.position)
 	_check(not map.is_solid(spawn_tile.x, spawn_tile.y), "Startpunkt ist begehbar")
 	var want := (2 * Config.LOAD_RADIUS + 1) * (2 * Config.LOAD_RADIUS + 1)
@@ -169,6 +177,8 @@ func _run() -> void:
 	await _check_design_system(world)
 	await _check_settings(world)
 	await _check_motion(world)
+	await _check_light(world)
+	await _check_figure(world)
 	await _check_input_lock(world, map, player)
 	await _check_input_map(world)
 	await _check_stress(world, map, player)
@@ -188,7 +198,11 @@ func _run() -> void:
 		"Weltrand hat Kollisionsformen (%d)" % world.streamer.shape_count())
 	cam.snap_to_target()
 	await _frames(6)
+	# Für dieses eine Bild wird das Raster eingeschaltet: der Weltrand gehört
+	# dazu, und er soll dokumentiert bleiben.
+	world.grid.show_grid = true
 	await _shot("04_raster_rand")
+	world.grid.show_grid = Config.SHOW_BLOCK_GRID
 
 	_check(world.build_msec < 5000, "Welt lädt zügig (%d ms)" % world.build_msec)
 
@@ -633,11 +647,12 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 
 	# Die Bauvorschau hängt nicht am Raster.
 	var g: GridOverlay = world.grid
+	var grid_was := g.show_grid
 	g.show_grid = false
 	await _frames(2)
 	_check(g.visible and not g.show_grid, "Raster aus, Vorschau bleibt gezeichnet")
 	_check(world.build_bar.preview_texture() != null, "Vorschau kennt die gewählte Kachel")
-	g.show_grid = true
+	g.show_grid = grid_was
 
 	# Aufräumen, damit die späteren Prüfungen freies Feld haben.
 	for oy in range(-14, 8):
@@ -1095,6 +1110,200 @@ func _check_motion(world: Node2D) -> void:
 	Settings.particles = part_before
 	Settings.changed_and_save()
 	await _frames(20)
+
+# --- Beleuchtung --------------------------------------------------------------
+
+## Das Tageslicht muss drei Dinge können: sich über den Tag ändern, der Figur
+## folgen, und auf Stufe „Aus" wirklich verschwinden.
+##
+## Der letzte Punkt ist der wichtigste. Ein CanvasModulate in Weiss und eine
+## Vignette mit Stärke 0 sehen aus wie „aus", werden aber weiterhin über jeden
+## Bildpunkt gerechnet — eine Einstellung, die nichts spart, ist eine Lüge.
+func _check_light(world: Node2D) -> void:
+	var light: LightManager = world.light
+	var before := Settings.light
+
+	# 1. Der Verlauf ist wirklich ein Verlauf: Nacht deutlich dunkler als Mittag,
+	#    Morgen und Abend warm getönt statt neutral.
+	var night := LightManager.tint_at(0.0).get_luminance()
+	var noon := LightManager.tint_at(0.5).get_luminance()
+	_check(night < noon - 0.25,
+		"Die Nacht ist merklich dunkler als der Mittag (%.2f gegen %.2f)" % [night, noon])
+	var dusk := LightManager.tint_at(0.79)
+	_check(dusk.r > dusk.b + 0.2, "Der Abend ist warm getönt (r %.2f, b %.2f)" % [dusk.r, dusk.b])
+	# Und er springt nirgends: zwischen zwei benachbarten Zeitpunkten darf sich
+	# die Farbe nur wenig ändern, sonst gäbe es im Spiel einen sichtbaren Ruck.
+	var jump := 0.0
+	var prev := LightManager.tint_at(0.0)
+	for i in range(1, 401):
+		var cur := LightManager.tint_at(i / 400.0)
+		jump = maxf(jump, absf(cur.get_luminance() - prev.get_luminance()))
+		prev = cur
+	_check(jump < 0.02, "Der Tagesverlauf springt nirgends (grösster Schritt %.4f)" % jump)
+
+	# 2. Tagesverlauf: die Uhr läuft, das Licht folgt der Figur.
+	Settings.light = 2
+	Settings.changed_and_save()
+	await _frames(4)
+	var t0 := light.time_of_day()
+	await _frames(30)
+	_check(light.active() and light.time_of_day() > t0, "Die Zeit läuft (%.4f -> %.4f)"
+		% [t0, light.time_of_day()])
+	var lamp: PointLight2D = light.get_node("Figurenlicht")
+	# Auf Brusthöhe, nicht am Knöchel: die Figur steht auf ihrem Standpunkt.
+	var want_at: Vector2 = world.player.global_position - Vector2(0.0, LightManager.LIGHT_LIFT)
+	_check(lamp.global_position.distance_to(want_at) < 1.0,
+		"Der Schein sitzt auf Brusthöhe bei der Figur (%.1f px Abstand)"
+		% lamp.global_position.distance_to(want_at))
+
+	# 3. Nachts brennt der Schein, mittags nicht. Beides an derselben Stelle
+	#    geprüft, damit keine Uhrzeit übrig bleibt, in der es stockdunkel ist.
+	light.set_time(0.0)
+	await _frames(2)
+	var at_night := light.light_energy()
+	# Die Nacht wird abgelichtet. Eine Beleuchtung, die niemand ansieht, ist
+	# eine Beleuchtung, in der die Welt schwarz sein kann, ohne dass es auffällt.
+	await _shot("15_nacht")
+	light.set_time(0.79)
+	await _shot("16_abend")
+	light.set_time(0.5)
+	await _frames(2)
+	var at_noon := light.light_energy()
+	_check(at_night > 0.5 and at_noon <= 0.01,
+		"Der Schein blendet nachts auf und mittags ab (%.2f / %.2f)" % [at_night, at_noon])
+
+	# 4. „Fest" hält die Zeit an — wer bauen will, soll bauen können.
+	Settings.light = 1
+	Settings.changed_and_save()
+	await _frames(30)
+	_check(is_equal_approx(light.time_of_day(), LightManager.START_TIME),
+		"„Fest\" hält die Tageszeit an (%.3f)" % light.time_of_day())
+	_check(light.tint().get_luminance() > 0.9,
+		"„Fest\" steht am hellen Vormittag (%.2f)" % light.tint().get_luminance())
+
+	# 5. „Aus" hängt alles ab.
+	Settings.light = 0
+	Settings.changed_and_save()
+	await _frames(4)
+	var off: Array[String] = []
+	if light.active():
+		off.append("läuft weiter")
+	if light.is_processing():
+		off.append("rechnet weiter")
+	for node: Node in [light.get_node("Tageslicht"), lamp, light.get_node("Vignette")]:
+		if node.get("visible"):
+			off.append("%s sichtbar" % node.name)
+	_check(off.is_empty(), "Beleuchtung „Aus\" kostet wirklich nichts%s"
+		% ("" if off.is_empty() else " (%s)" % ", ".join(off)))
+
+	# 6. Das Licht liegt auf der Welt, nicht auf der Oberfläche. Eine Vignette
+	#    über dem HUD würde die Anzeige eintrüben statt die Welt.
+	var vignette: CanvasLayer = light.get_node("Vignette")
+	_check(vignette.layer < world.hud.layer,
+		"Die Vignette liegt unter der Oberfläche (%d gegen %d)"
+		% [vignette.layer, world.hud.layer])
+
+	# Was die Beleuchtung kostet, lässt sich hier NICHT in Millisekunden
+	# messen. Gemessen wurde (Software-Rasterizer, zwei Läufe hintereinander):
+	# „aus" 49,45 ms und „voll" 41,77 ms — die Beleuchtung kam scheinbar
+	# billiger heraus als gar keine. Die Bildzeit dieser Maschine schwankt
+	# zwischen zwei Läufen um mehr als das Doppelte; eine Messung, die Rauschen
+	# misst, prüft nichts.
+	#
+	# Zählbar ist dagegen die Zahl der Zeichenaufrufe, und die trifft genau die
+	# Gefahr: ein 2D-Licht lässt jeden Knoten in seinem Umkreis ein zweites Mal
+	# zeichnen. Ein Licht über die halbe Welt würde die Zahl verdoppeln.
+	var draws := {}
+	for entry: Array in [["aus", 0], ["voll", 2]]:
+		Settings.light = entry[1]
+		Settings.changed_and_save()
+		await _frames(20)
+		draws[entry[0]] = await _draw_calls()
+	print("  Licht: %d Zeichenaufrufe aus, %d voll" % [draws["aus"], draws["voll"]])
+	_check(draws["voll"] <= draws["aus"] + 20,
+		"Beleuchtung bleibt bei den Zeichenaufrufen bescheiden (%d gegen %d)"
+		% [draws["voll"], draws["aus"]])
+
+	Settings.light = before
+	Settings.changed_and_save()
+	await _frames(6)
+
+# --- Die Figur ----------------------------------------------------------------
+
+## Laufzyklus, Eintauchen und Bodenschatten — an den Bildern selbst geprüft,
+## nicht am Code, der sie erzeugt.
+func _check_figure(world: Node2D) -> void:
+	var frames: Dictionary = world.player._frames
+
+	# 1. Der Laufzyklus ist wirklich ein Zyklus. Bild 0 und 2 sind absichtlich
+	#    gleich (die Durchgangsstellung kommt zweimal vor, einmal je Bein), die
+	#    beiden Ausschläge müssen sich aber unterscheiden — sonst tritt die
+	#    Figur auf der Stelle, ohne dass es jemand am Code sähe.
+	var flat: Array[String] = []
+	for dir in 3:
+		var set: Array = frames["walk"][dir]
+		var seen: Array[PackedByteArray] = []
+		for f: Texture2D in set:
+			var data := f.get_image().get_data()
+			if not seen.has(data):
+				seen.append(data)
+		if seen.size() < 3:
+			flat.append("Richtung %d: nur %d Stellungen" % [dir, seen.size()])
+	_check(flat.is_empty(), "Der Laufzyklus hat drei verschiedene Stellungen je Richtung%s"
+		% ("" if flat.is_empty() else " (%s)" % ", ".join(flat)))
+
+	# 2. Beim Schwimmen ist die Figur EINGETAUCHT, nicht abgeschnitten. Unter
+	#    der Wasserlinie muss noch etwas zu sehen sein — sonst steckt sie in
+	#    einem gestanzten Loch.
+	var under := 0
+	var img: Image = (frames["swim"][ActorArt.Dir.DOWN][0] as Texture2D).get_image()
+	var line := ActorArt.H - ActorArt.SWIM_SINK
+	for y in range(line + 2, ActorArt.H):
+		for x in ActorArt.W:
+			if img.get_pixel(x, y).a > 0.02:
+				under += 1
+	_check(under > 40, "Der Körper bleibt unter Wasser zu ahnen (%d Punkte)" % under)
+
+	# Und der Wellenkragen ist ein Ring, keine Linie: keine Bildzeile darf über
+	# die ganze Breite durchlaufen.
+	var full_rows := 0
+	for y in range(line - 4, line + 5):
+		var run := 0
+		for x in ActorArt.W:
+			if img.get_pixel(x, y).a > 0.4:
+				run += 1
+		if run >= ActorArt.W - 4:
+			full_rows += 1
+	_check(full_rows == 0, "Der Wellenkragen ist ein Ring, kein Brett (%d durchgehende Reihen)"
+		% full_rows)
+
+	# 3. Der Bodenschatten liegt nach unten rechts versetzt — das Licht kommt
+	#    in dieser Welt von oben links.
+	var shadow: Image = (frames["shadow"] as Texture2D).get_image()
+	var sx := 0.0
+	var sy := 0.0
+	var mass := 0.0
+	for y in shadow.get_height():
+		for x in shadow.get_width():
+			var a := shadow.get_pixel(x, y).a
+			sx += (x + 0.5) * a
+			sy += (y + 0.5) * a
+			mass += a
+	_check(mass > 0.0, "Die Figur hat einen Bodenschatten")
+	if mass > 0.0:
+		var cx := sx / mass - shadow.get_width() * 0.5
+		var cy := sy / mass - shadow.get_height() * 0.5
+		_check(cx > 0.05 and cy > 0.05,
+			"Der Schatten fällt nach unten rechts (%.2f | %.2f)" % [cx, cy])
+	await get_tree().process_frame
+
+## Mittlere Zahl der Zeichenaufrufe über 20 Bilder.
+func _draw_calls() -> int:
+	var total := 0.0
+	for i in 20:
+		await get_tree().process_frame
+		total += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+	return int(round(total / 20.0))
 
 ## Mittlere Bildzeit über 30 Bilder in Millisekunden.
 func _frame_cost() -> float:
@@ -1809,6 +2018,7 @@ func _check_performance(world: Node2D, map: MapData, player: Player, ms_menu: fl
 	var t_physics := 0.0
 	var draws := 0.0
 	var runs := 60
+	var drawn_before := Engine.get_frames_drawn()
 	Input.action_press("move_right")
 	for i in runs:
 		await get_tree().physics_frame
@@ -1816,10 +2026,21 @@ func _check_performance(world: Node2D, map: MapData, player: Player, ms_menu: fl
 		t_physics += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
 		draws += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 	Input.action_release("move_right")
+	var drawn := maxi(Engine.get_frames_drawn() - drawn_before, 1)
 	var ms_process := t_process / runs * 1000.0
-	var ms_physics := t_physics / runs * 1000.0
-	print("Leistung nach dem Aufwärmen: Stand %.2f ms, Lauf mit Chunk-Laden %.2f ms, physics %.2f ms, Draw-Calls %d" % [
-		ms_still, ms_process, ms_physics, int(draws / runs)])
+
+	# Die Physikzeit wird auf EINEN Schritt umgerechnet, nicht auf ein Bild.
+	#
+	# Godot zählt in TIME_PHYSICS_PROCESS die Zeit ALLER Physikschritte, die in
+	# einer Hauptschleifen-Runde gelaufen sind. Auf dieser Maschine dauert ein
+	# Bild je nach Auslastung 20 bis 55 ms, und Godot holt die feste Schrittrate
+	# nach: mal ein Schritt je Bild, mal drei. Ungeteilt misst die Zahl deshalb
+	# die Auslastung der Maschine und nicht die Physik — sie stand bei sonst
+	# unverändertem Code einmal bei 4,75 und einmal bei 11,46 ms.
+	var steps_per_frame := float(runs) / float(drawn)
+	var ms_physics := t_physics / runs * 1000.0 / steps_per_frame
+	print("Leistung nach dem Aufwärmen: Stand %.2f ms, Lauf mit Chunk-Laden %.2f ms, physics %.2f ms je Schritt (%.1f Schritte je Bild), Draw-Calls %d" % [
+		ms_still, ms_process, ms_physics, steps_per_frame, int(draws / runs)])
 	# Gemessen wird auf einem Software-Rasterizer (Xvfb/llvmpipe). Die
 	# Prozesszeit hängt dort an der Füllrate und schwankt zwischen Läufen um
 	# mehr als das Doppelte — sie wird berichtet, aber nicht bewertet.
@@ -1827,7 +2048,7 @@ func _check_performance(world: Node2D, map: MapData, player: Player, ms_menu: fl
 		% (ms_still - ms_menu))
 	var avg_draws := int(draws / runs)
 	_check(avg_draws < 120, "Zeichenaufrufe bleiben gebündelt (%d)" % avg_draws)
-	_check(ms_physics < 8.0, "Physikzeit pro Bild unter 8 ms (%.2f)" % ms_physics)
+	_check(ms_physics < 8.0, "Physikzeit je Schritt unter 8 ms (%.2f)" % ms_physics)
 
 	var mm: Control = world.hud.minimap
 	if mm != null:
