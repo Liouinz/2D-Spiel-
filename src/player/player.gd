@@ -9,6 +9,9 @@ const WALK_FPS := 9.0
 ## kann. Die Figur weiss nichts vom Wasser-Effekt, nur dass sie eintaucht.
 signal splashed(pos: Vector2)
 
+## Wird beim Aufkommen nach einem Sprung gemeldet — für die Staubwolke.
+signal landed(pos: Vector2)
+
 ## Halbe Kantenlänge des Fussabdrucks. Schmaler als eine Kachel, damit die
 ## Figur durch eine ein Feld breite Lücke passt.
 const FOOT := Vector2(12.0, 12.0)
@@ -134,6 +137,7 @@ func _jump(delta: float) -> void:
 	_jump_time += delta
 	if _jump_time >= Config.JUMP_TIME:
 		_jump_time = -1.0
+		landed.emit(global_position)
 
 func _face(input: Vector2) -> void:
 	if absf(input.x) > absf(input.y) + 0.15:
@@ -162,7 +166,9 @@ func _update_sprite(speed: float) -> void:
 		_sprite.offset.y = -ActorArt.H + ActorArt.SWIM_SINK
 		_shadow.visible = false
 		return
-	_shadow.visible = true
+	# Schatten sind abschaltbar (Grafikeinstellungen). Im Wasser gibt es
+	# ohnehin keinen.
+	_shadow.visible = Graphics.shadows_on()
 
 	# Sprung und Fallen: Figur hoch, Schatten bleibt liegen und wird kleiner
 	# und blasser.

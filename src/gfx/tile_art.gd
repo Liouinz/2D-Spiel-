@@ -7,12 +7,19 @@ extends RefCounted
 ## Nur Korn allein sieht aus wie Rauschen, nur Flecken allein wie Filz.
 
 const T := Config.TILE
-const VARIANTS := 6
+## Zehn statt sechs. Bei Zoom 2 sieht man rund 220 Kacheln gleichzeitig; mit
+## sechs Bildern je Helligkeitsstufe kam dasselbe Bild rund vierzigmal vor und
+## das Muster war als Muster zu erkennen.
+const VARIANTS := 10
 ## Großflächige Helligkeitsstufen. Der Unterschied muss klein bleiben: bei
 ## 32er-Kacheln ist jede Kachel eine große einfarbige Fläche, und schon wenige
 ## Prozent Abstand lassen das Raster als Schachbrett hervortreten.
 const SHADES := 3
-const SHADE_STEP := 0.035
+## Vorher 0,035. Das dichte Korn hat die Stufen früher verdeckt; auf einer
+## ruhigeren Fläche fällt jede Stufe sofort als Schachbrettfeld auf. Die grosse
+## Helligkeitsbewegung kommt jetzt ohnehin vom Wind-Shader, der über Kachelkanten
+## hinweg weich verläuft.
+const SHADE_STEP := 0.018
 
 var base: Array = []        ## [tile_type][stufe * VARIANTS + variante] -> Image
 
@@ -75,53 +82,125 @@ func _grain(img: Image, rng: RandomNumberGenerator, count: int, c: Color) -> voi
 	for i in count:
 		Pixel.px(img, rng.randi_range(0, T - 1), rng.randi_range(0, T - 1), c)
 
+## Verteilt Marken auf einem VERWACKELTEN RASTER statt rein zufällig.
+##
+## Das ist der Kern einer ruhigen Bodenfläche. Rein zufällige Punkte ballen sich
+## an manchen Stellen und lassen anderswo Löcher; beides sieht man einer Kachel
+## an, und über eine Fläche aus vielen Kacheln wiederholt sich genau diese
+## Ballung. Ein Raster mit Streuung je Zelle deckt gleichmässig ab und wirkt
+## trotzdem ungeordnet.
+func _scatter(rng: RandomNumberGenerator, cells: int, jitter: float) -> Array:
+	var out: Array = []
+	var step := float(T) / float(cells)
+	for cy in cells:
+		for cx in cells:
+			out.append(Vector2i(
+				int(cx * step + rng.randf_range(0.0, step) + rng.randf_range(-jitter, jitter)),
+				int(cy * step + rng.randf_range(0.0, step) + rng.randf_range(-jitter, jitter))))
+	return out
+
 func _grass_tile(bg: Color, light: Color, dark: Color, hi: Color,
 		rng: RandomNumberGenerator, blades: int) -> Image:
 	var img := Pixel.filled(T, T, bg)
-	_mottle(img, rng, 4, light, 0.40)
-	_mottle(img, rng, 3, dark, 0.36)
-	_grain(img, rng, 120, light)
-	_grain(img, rng, 80, dark)
-	_grain(img, rng, 30, hi)
-	# Einzelne Halme mit hellem Kopf und dunklem Fuß
+
+	# Sehr weiche, grosse Flecken. Bewusst schwach: kräftigere Flecken lasen
+	# sich als Flecken auf dem Boden, nicht als Boden.
+	_mottle(img, rng, 3, light, 0.16)
+	_mottle(img, rng, 3, dark, 0.15)
+
+	# Halme: kurze senkrechte Striche auf dem verwackelten Raster. Sie sind die
+	# eigentliche Struktur — nicht Körnung, sondern gerichtete Marken, die man
+	# als Bewuchs liest.
+	for p: Vector2i in _scatter(rng, 6, 1.0):
+		var h := rng.randi_range(2, 3)
+		var c := light if rng.randf() < 0.72 else hi
+		var a := 0.42 + rng.randf() * 0.22
+		Pixel.vline(img, p.x, p.y, h, Color(c, a))
+		if rng.randf() < 0.35:
+			Pixel.px(img, p.x + (1 if rng.randf() < 0.5 else -1), p.y + 1, Color(c, a * 0.7))
+
+	# Dunkle Zwischenräume — sie geben der Fläche Tiefe, ohne sie zu beleben.
+	for p: Vector2i in _scatter(rng, 5, 1.2):
+		Pixel.vline(img, p.x, p.y, rng.randi_range(1, 2), Color(dark, 0.34 + rng.randf() * 0.16))
+
+	# Einzelne helle Spitzen, sehr sparsam: sie fangen das Licht.
 	for i in blades:
-		var x := rng.randi_range(1, T - 2)
-		var y := rng.randi_range(3, T - 5)
-		var h := rng.randi_range(3, 5)
-		Pixel.vline(img, x, y, h, light)
-		Pixel.px(img, x, y, hi)
-		Pixel.px(img, x + (1 if rng.randf() < 0.5 else -1), y + 1, light)
-		Pixel.px(img, x, y + h, dark)
+		var p := Vector2i(rng.randi_range(0, T - 1), rng.randi_range(0, T - 1))
+		Pixel.px(img, p.x, p.y, Color(hi, 0.55))
 	return img
 
+## Sand: eine ruhige Fläche, die trotzdem Korn zeigt.
+##
+## Vorher war er so zurückgenommen, dass bei näherem Zoom eine fast leere
+## beige Fläche übrig blieb. Die Struktur kommt jetzt aus drei Ebenen: weiche
+## Verwehungen, gleichmässiges Korn auf dem verwackelten Raster und ein paar
+## Rippelmarken, die dem Ganzen eine Richtung geben.
 func _sand_tile(rng: RandomNumberGenerator) -> Image:
 	var img := Pixel.filled(T, T, Palette.SAND)
-	_mottle(img, rng, 4, Palette.SAND_LIGHT, 0.34)
-	_mottle(img, rng, 3, Palette.SAND_DARK, 0.30)
-	_grain(img, rng, 100, Palette.SAND_LIGHT)
-	_grain(img, rng, 70, Palette.SAND_DARK)
-	# Rippelmarken
+	_mottle(img, rng, 4, Palette.SAND_LIGHT, 0.20)
+	_mottle(img, rng, 3, Palette.SAND_DARK, 0.18)
+
+	for p: Vector2i in _scatter(rng, 7, 1.0):
+		var c := Palette.SAND_LIGHT if rng.randf() < 0.55 else Palette.SAND_DARK
+		Pixel.px(img, p.x, p.y, Color(c, 0.30 + rng.randf() * 0.22))
+
+	# Rippelmarken: eine helle Kante mit dunklem Schatten darunter — dadurch
+	# liest man sie als Welle im Sand und nicht als Kratzer.
+	for i in rng.randi_range(2, 3):
+		var y := rng.randi_range(2, T - 5)
+		var length := rng.randi_range(14, 26)
+		var x0 := rng.randi_range(-4, T - length + 4)
+		var amp := rng.randf_range(0.8, 1.6)
+		var freq := rng.randf_range(0.35, 0.6)
+		for s2 in length:
+			var wave := int(round(sin(s2 * freq) * amp))
+			Pixel.px(img, x0 + s2, y + wave,
+				Color(Palette.SAND_LIGHT, 0.55))
+			Pixel.px(img, x0 + s2, y + wave + 1,
+				Color(Palette.SAND_DARK, 0.42))
+
+	# Vereinzelte Kiesel: kleine dunkle Punkte mit heller Oberkante.
 	for i in rng.randi_range(1, 3):
-		var y := rng.randi_range(3, T - 4)
-		var len := rng.randi_range(10, 20)
-		var x0 := rng.randi_range(0, T - len)
-		for s in len:
-			Pixel.px(img, x0 + s, y + int(sin(s * 0.5) * 1.2), Palette.SAND_DARK)
-			Pixel.px(img, x0 + s, y + int(sin(s * 0.5) * 1.2) + 1, Palette.SAND_LIGHT)
+		var p := Vector2i(rng.randi_range(1, T - 2), rng.randi_range(1, T - 2))
+		Pixel.px(img, p.x, p.y, Color(Palette.SAND_DARK.darkened(0.22), 0.7))
+		Pixel.px(img, p.x, p.y - 1, Color(Palette.SAND_LIGHT, 0.5))
 	return img
 
+## Wasser: waagerechte Wellenbänder statt verstreuter Striche.
+##
+## Der klassische Aufbau für Pixelwasser von oben: eine dunklere Grundfläche mit
+## unregelmässigen Bändern, darauf helle Glanzkanten. Die Bänder laufen
+## waagerecht — dadurch liest man eine Oberfläche und nicht ein gesprenkeltes
+## Feld. Die Bewegung kommt darüber aus dem Shader und der Wasserwirkung.
 func _water_tile(bg: Color, hi: Color, deep: Color, rng: RandomNumberGenerator) -> Image:
 	var img := Pixel.filled(T, T, bg)
-	# Tiefenwirkung: dunklere Schlieren unter der Oberfläche
+
+	# Tiefenwirkung: breite, weiche Bänder in der dunklen Farbe.
+	for i in 3:
+		var y := rng.randi_range(0, T - 1)
+		var h := rng.randi_range(3, 7)
+		for dy in h:
+			var a := 0.16 * (1.0 - absf(float(dy) - h * 0.5) / (h * 0.5)) + 0.06
+			Pixel.hline(img, 0, y + dy, T, Color(deep, a))
+
+	# Glanzkanten: kurze helle Striche mit einem dunkleren Schatten darunter.
+	# Der Schatten ist das, was sie als Welle statt als Strich lesbar macht.
 	for i in 4:
-		Pixel.ellipse(img, rng.randf_range(0, T), rng.randf_range(0, T),
-			rng.randf_range(7, 14), rng.randf_range(4, 8), Color(deep.r, deep.g, deep.b, 0.20))
-	# Wellenlinien
-	for i in 5:
-		var y := rng.randi_range(1, T - 2)
-		var x := rng.randi_range(0, T - 12)
-		var w := rng.randi_range(6, 12)
-		for s in w:
-			Pixel.px(img, x + s, y + int(sin(s * 0.6) * 1.0), Color(hi.r, hi.g, hi.b, 0.42))
-	_grain(img, rng, 24, Color(hi.r, hi.g, hi.b, 0.22))
+		var y := rng.randi_range(1, T - 3)
+		var x := rng.randi_range(-6, T - 4)
+		var w := rng.randi_range(7, 15)
+		for s2 in w:
+			# An den Enden ausdünnen, sonst wirkt es wie ein gezogener Strich.
+			var edge := minf(float(s2), float(w - 1 - s2)) / 3.0
+			var a := 0.42 * minf(edge, 1.0)
+			if a <= 0.02:
+				continue
+			var wave := int(round(sin(s2 * 0.45) * 0.8))
+			Pixel.px(img, x + s2, y + wave, Color(hi, a))
+			Pixel.px(img, x + s2, y + wave + 1, Color(deep, a * 0.5))
+
+	# Feines Funkeln, sehr sparsam.
+	for p: Vector2i in _scatter(rng, 4, 1.5):
+		if rng.randf() < 0.45:
+			Pixel.px(img, p.x, p.y, Color(Palette.WATER_FOAM, 0.22))
 	return img

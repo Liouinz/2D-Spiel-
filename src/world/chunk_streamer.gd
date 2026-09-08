@@ -19,10 +19,18 @@ var map: MapData
 var ground: GroundTileSet
 var player: Node2D
 
-## Drei Bodenschichten, danach die Kantenschicht
-## (siehe GroundTileSet.STACK / LAYER_EDGE).
+## Drei Bodenschichten, danach Kanten und Streu-Dekoration
+## (siehe GroundTileSet.STACK / LAYER_EDGE / LAYER_DECOR).
 var layers: Array[TileMapLayer] = []
 var body: StaticBody2D                 ## Sammelknoten aller Kollisionsformen
+
+## Materialien, die Gras und Wasser in Bewegung halten. Sie hängen an der
+## Schicht, nicht an der Kachel — deshalb kostet die Bewegung unabhängig von der
+## Weltgrösse immer nur diese Materialien. Einmal gebaut, danach nur noch
+## zugewiesen oder abgehängt.
+var _grass_full: ShaderMaterial
+var _grass_simple: ShaderMaterial
+var _water_mat: ShaderMaterial
 
 var _loaded: Dictionary = {}           ## Vector2i -> Array[CollisionShape2D]
 var _pending: Array[Vector2i] = []     ## noch zu ladende Chunks, nächster zuerst
@@ -41,14 +49,70 @@ func setup(m: MapData, g: GroundTileSet, p: Node2D) -> void:
 		layers.append(_layer("L%d_%s" % [pos, GroundTileSet.NAMES[GroundTileSet.STACK[pos]]],
 			-40 + pos, g))
 
+	# Gras weht, Wasser bekommt wandernde Lichtstreifen. Die Reihenfolge der
+	# Schichten steht in GroundTileSet.STACK: 0 Gras, 1 Sand, 2 Wasser.
+	_grass_full = WorldShaders.make(WorldShaders.GRASS)
+	_grass_simple = WorldShaders.make(WorldShaders.GRASS_SIMPLE)
+	_water_mat = WorldShaders.make(WorldShaders.WATER)
+
 	# Die Kantenschicht liegt über dem Boden, aber unter der Brandung:
 	# Uferbänder gehören zum Untergrund, die Wellen darüber.
 	# Der Index muss zu GroundTileSet.LAYER_EDGE passen.
 	layers.append(_layer("Kanten", -20, g))
 
+	# Streu-Dekoration ganz oben, aber weiterhin unter der Figur (z < 0):
+	# ein Grasbüschel gehört auf den Boden, nicht vor die Spielfigur.
+	# Der Index muss zu GroundTileSet.LAYER_DECOR passen.
+	layers.append(_layer("Dekor", -15, g))
+
 	body = StaticBody2D.new()
 	body.name = "Collision"
 	add_child(body)
+
+	# Sichtweite ist eine Einstellung. Wird sie geändert, wird die Sollmenge
+	# sofort neu bestimmt: zu weit entfernte Chunks fliegen raus, fehlende
+	# kommen in die Warteschlange und werden über die nächsten Bilder verteilt
+	# nachgeladen. Deshalb stockt das Spiel beim Umstellen nicht.
+	Graphics.applied.connect(_on_graphics_applied)
+	apply_wind()
+
+var _decor_chance: int = -1
+
+func _on_graphics_applied() -> void:
+	apply_wind()
+	# Nur neu malen, wenn sich die Dichte wirklich geändert hat: `applied` kommt
+	# bei jeder Einstellung, und 25 Chunks neu zu malen kostet rund 25 ms.
+	var want := Graphics.decor_chance(MapData.Tile.GRASS)
+	if want != _decor_chance:
+		_decor_chance = want
+		repaint_all()
+	if is_instance_valid(player):
+		_refresh_wanted()
+
+## Hängt die Bewegung an die Bodenschichten — oder ab.
+##
+## Öffentlich, damit der Selbsttest die drei Stufen messen kann.
+## Malt alle geladenen Chunks neu. Wird gebraucht, wenn sich die Dichte der
+## Streu-Dekoration ändert — sie steckt in den gemalten Kacheln, nicht in einem
+## Knoten, den man einfach ausblenden könnte.
+func repaint_all() -> void:
+	for chunk: Vector2i in _loaded.keys():
+		ground.erase_chunk(layers, chunk)
+		ground.paint_chunk(layers, map, chunk)
+
+func apply_wind() -> void:
+	if layers.size() < 3:
+		return
+	layers[0].material = WorldShaders.grass_for(Settings.wind, _grass_simple, _grass_full)
+	layers[2].material = _water_mat if Settings.wind > 0 else null
+	WorldShaders.set_strength([_grass_full, _grass_simple, _water_mat],
+		Graphics.wind_strength())
+
+## Welche Bewegungsstufe liegt gerade auf dem Boden? 0 keine, 1 einfach, 2 voll.
+func wind_level() -> int:
+	if layers.is_empty() or layers[0].material == null:
+		return 0
+	return 1 if layers[0].material == _grass_simple else 2
 
 func _layer(layer_name: String, z: int, g: GroundTileSet) -> TileMapLayer:
 	var layer := TileMapLayer.new()

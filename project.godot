@@ -13,6 +13,7 @@ config/features=PackedStringArray("4.3", "GL Compatibility")
 [autoload]
 
 Settings="*res://src/core/settings.gd"
+Graphics="*res://src/core/graphics.gd"
 Audio="*res://src/audio/audio.gd"
 
 [display]

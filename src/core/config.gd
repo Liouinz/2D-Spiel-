@@ -17,7 +17,14 @@ const WORLD_SEED := 20260904          ## fester Seed -> reproduzierbare Welt
 const BUILD_CHUNKS := Vector2i(128, 128)
 
 ## Blockraster beim Start sichtbar. Im Spiel mit G umschaltbar.
-const SHOW_BLOCK_GRID := true
+##
+## AUS beim Start. Das Raster ist ein Werkzeug zum Planen, kein Teil der Welt:
+## eingeschaltet legt es ein gelbes Kreuz über den ganzen Bildschirm und
+## schreibt „Chunk 64 | 64" quer neben die Figur. Wer das Spiel zum ersten Mal
+## startet, sah bisher genau das — eine Karte mit Gitternetz, kein Ort. Es ist
+## keine Zeile Funktion verloren: G schaltet es an, die Steuerungshilfe sagt
+## das in der ersten Zeile, und die Minimap zeigt Gebautes auch ohne Raster.
+const SHOW_BLOCK_GRID := false
 
 ## Kantenlänge eines Chunks in Blöcken — dieselbe Größe wie in Minecraft.
 const CHUNK := 16
@@ -25,10 +32,14 @@ const CHUNK := 16
 static var MAP_W: int = BUILD_CHUNKS.x * CHUNK
 static var MAP_H: int = BUILD_CHUNKS.y * CHUNK
 
-## Wie viele Chunks ringsum geladen bleiben. Der Bildausschnitt ist bei Zoom 1,5
-## nur rund 27 x 15 Blöcke groß; Radius 2 lässt also ringsum mindestens einen
-## ganzen Chunk Puffer. Notfalls hier heruntersetzen, nicht die Weltgröße.
-const LOAD_RADIUS := 2
+## Wie viele Chunks ringsum geladen bleiben.
+##
+## Statisch statt konstant: die Sichtweite ist eine Einstellung. `Graphics`
+## setzt den Wert aus `Settings.render_range`, der ChunkStreamer liest ihn bei
+## jeder Neuberechnung. Radius 2 (5 x 5 Chunks) ist die Voreinstellung — der
+## Bildausschnitt ist bei Zoom 1,5 nur rund 27 x 15 Blöcke groß, das lässt
+## ringsum mindestens einen ganzen Chunk Puffer.
+static var LOAD_RADIUS: int = 2
 
 ## Höchstens so viele Chunks werden je Bild nachgeladen. Ein Chunk kostet ein
 ## paar Millisekunden — auf mehrere Bilder verteilt merkt man davon nichts.
@@ -51,9 +62,20 @@ const JUMP_HEIGHT := 14.0             ## Scheitelhöhe in Bildpunkten
 const SWIM_SPEED := 68.0
 
 
-## Halber Zoom bei doppelter Kachelgröße = unverändertes Sichtfeld,
-## aber doppelt so feine Grafik.
-const CAMERA_ZOOM := 1.5
+## Kamerazoom. MUSS ganzzahlig sein.
+##
+## Vorher stand hier 1,5, damit das Sichtfeld bei der Verdopplung der
+## Kachelgröße gleich blieb. Der Preis dafür war hoch und fiel erst beim
+## Hineinzoomen ins Bild auf: bei Faktor 1,5 wird aus einem Weltpixel mal ein,
+## mal zwei Bildschirmpunkte. Jede Kante einer Figur war dadurch abwechselnd
+## ein und zwei Punkte dick, Augen waren unterschiedlich breit, Umrisse
+## ausgefranst — genau das, was Pixel-Art nicht sein darf, und durch keine
+## bessere Zeichnung zu heilen.
+##
+## Mit Faktor 2 ist jeder Weltpixel exakt zwei Bildschirmpunkte. Das Sichtfeld
+## wird dabei kleiner (20 x 11 statt 27 x 15 Blöcke) — das ist die Gegenleistung
+## und in etwa die Bildeinstellung, die Aufbauspiele dieser Art benutzen.
+const CAMERA_ZOOM := 2.0
 const CAMERA_SMOOTH := 6.0            ## Interpolationsgeschwindigkeit der Kamera
 
 ## Streuwert aus zwei Koordinaten — dieselbe Kachel bekommt immer denselben

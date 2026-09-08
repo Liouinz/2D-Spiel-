@@ -509,10 +509,393 @@ Aufrufstelle im Quelltext übrig ist.
 `Layout`. Ein einziger Treffer lässt den Test fehlschlagen. Sie hat beim ersten
 Lauf zwei vergessene Kommentare gefunden.
 
-**Stand:** 155 Prüfungen, alle grün, Godot-Konsole beim Import und beim Lauf
+**Stand dieses Nachtrags:** 155 Prüfungen, alle grün, Godot-Konsole beim Import und beim Lauf
 ohne Fehler. Kachelnähte: Gras 1,16, Sand 0,66, Wasser 0,82 (1,0 = so glatt wie
 das Kachelinnere). Weltaufbau 260 ms, ein Chunk in 1,5 ms, Physik 0,5 ms je
 Bild.
+
+## Nachtrag: Inventar und Bauleiste als ein Oberflächensystem
+
+Das Inventar funktionierte, sah aber aus wie ein Entwicklerfenster: zwei
+Erklärsätze übereinander, eine dünne gelbe Linie als einzige Auswahlmarkierung,
+in ein Rechteck gestreckte Vorschaubilder und darunter eine zweite Leiste, die
+anders aussah als die echte. Der Umbau war deshalb keine Farbkorrektur, sondern
+eine Umstellung der Struktur.
+
+**Ein Feld, zwei Ansichten.** Vorher hatte jede Ansicht ihre eigenen Rahmen,
+Abstände und Beschriftungen — `Inventory._card()`, `Inventory._slot_card()` und
+`BuildBar._make_slot()` bauten dreimal ungefähr dasselbe, aber nie ganz gleich.
+Genau daher kam der Eindruck von „mehreren einzelnen Schaltflächen nebeneinander"
+statt von einem System. Das ist jetzt eine Klasse: `ItemSlot`, ein `Control`,
+das alles in `_draw()` zeichnet — Rahmen, Kachelbild, Nummer, Name. Zwei
+Ausprägungen (`Kind.CARD` für die Materialkarten, `Kind.SLOT` für die
+Leistenfelder) unterscheiden sich in Grösse und Beschriftung, nicht im
+Aussehen. Damit gibt es auch keine verschachtelten Knoten und keine NodePaths
+mehr, die brechen können; das alte `get_node("Name")` im Inventar ist weg.
+
+**Vier Zustände statt einer Linie.** `NORMAL`, `HOVER`, `SELECTED`, `DISABLED`
+liegen an einer Stelle und werden über zwei Werte (`_hover`, `_sel`)
+ineinander überblendet. Gewählt heisst jetzt: kräftigerer Rahmen in der
+Akzentfarbe, wärmere Fläche, weicher Schein (`StyleBoxFlat.shadow_size`) und
+zwei Bildpunkte Wachstum. Der Selbsttest prüft das nicht am Bild, sondern an
+den Werten: `frame_style()` des gewählten Feldes muss einen breiteren Rahmen,
+einen Schein und eine andere Fläche haben als das eines ungewählten. Das
+Überfahren wird mit einem echten `InputEventMouseMotion` durch den Viewport
+ausgelöst und muss wieder abfallen.
+
+**Bilder, die nicht verzerren können.** Die alte Vorschau zog eine 32er-Kachel
+in ein 56 × 42 grosses Rechteck — nicht quadratisch und kein ganzzahliger
+Faktor, also genau die ungleich breiten Bildpunkte, die das Projekt sonst
+vermeidet. `TileIcon` baut stattdessen aus vier echten Bodenkacheln ein
+64 × 64 grosses Stück Fläche und die Oberfläche zeichnet es 1:1. Weil die
+Kacheln nahtlos sind, ist zwischen ihnen keine Naht zu sehen. Der Test hält
+fest, dass die Kantenlänge ein ganzes Vielfaches von `Config.TILE` ist und
+jedes Bild quadratisch bleibt.
+
+**Eine Auswahl statt zweier.** Das Inventar hatte ein eigenes `target_slot`
+neben `BuildBar.selected`. Zwei Auswahlen, die dasselbe meinten — deshalb war
+der Satz „Feld unten wählen, dann oben einen Boden anklicken" überhaupt nötig.
+`target_slot` ist jetzt eine reine Ableitung von `bar.selected`. Dadurch lassen
+sich das gewählte Feld **und** das Material darauf gleichzeitig hervorheben,
+und die Beziehung ist zu sehen statt zu lesen. Übrig sind drei kurze Texte:
+`INVENTAR`, `Bauleiste`, `E – Schließen`. Der Test zählt sie und misst ihre
+Länge.
+
+**Getrennt bleiben sie trotzdem.** Das Inventar bestückt, die Leiste wählt im
+Spiel schnell aus. Sie werden nie gleichzeitig angezeigt — bei offenem Inventar
+zeigt das Inventar die Leiste selbst, `BuildBar` wird ausgeblendet. Vorher
+standen beide übereinander auf dem Bild.
+
+**Ein Weg auf, ein Weg zu.** `toggle_inventory()` gibt jetzt zurück, ob der
+Zustand wirklich gewechselt hat, und nur dann gilt der Tastendruck als
+verbraucht — vorher schluckte E die Taste in jedem Zustand, auch im Hauptmenü,
+wo sie nichts bewirkte. `open_inventory()` und `close_inventory()` prüfen beide
+ihren Ausgangszustand, bevor sie ihn setzen; doppeltes Öffnen oder Schliessen
+ist damit unmöglich, egal ob der Anstoss von E, von ESC oder aus dem Selbsttest
+kommt. Die Sichtbarkeit läuft über `Inventory.set_open()`, das ebenfalls
+abbricht, wenn sich nichts ändert, und die kurze Einblendung anstösst.
+
+**Keine durchsickernden Eingaben.** Jedes Feld ist `MOUSE_FILTER_STOP` und
+`FOCUS_NONE`: der Klick endet im Feld, und die Tastatur landet nie darin, wo
+Leertaste oder Eingabe es unabsichtlich auslösen könnten. Die Abdunkelung
+hinter der Tafel ist ebenfalls `STOP` und fängt jeden Klick daneben ab.
+Zusätzlich baut `BuildTool` weiterhin nur im Zustand `PLAYING` — zwei
+unabhängige Sperren für dieselbe Sache, weil eine davon still ausfallen kann.
+`BuildBar.covers()` meldet jetzt `false`, solange die Leiste unsichtbar ist.
+
+**Weniger Dauertext im Spiel.** Unter der Leiste stand eine Zeile mit vier
+Bedienhinweisen („Gras gewählt · 1–3 oder Mausrad wechseln · links setzen ·
+rechts entfernen · E – Inventar"). Sie ist weg; das Label bleibt nur für kurze
+Rückmeldungen wie „Karte gespeichert". Die Steuerung steht in der HUD und
+vollständig im Optionsmenü.
+
+**Stand:** 181 Prüfungen, alle grün.
+
+## Nachtrag: Eine Designsprache, Menüs und echte Einstellungen
+
+Nach dem Inventar war die Lage schief: EIN Fenster sah aus wie ein fertiges
+Spiel, die übrigen Menüs weiter nach Prototyp — Holzrahmen aus Pixelgrafik
+neben flachen Tafeln, drei verschiedene Radien, vier verschiedene Abstände.
+Dieser Abschnitt zieht alle Oberflächen auf dieselbe Sprache und macht aus den
+vier Schaltern ein Einstellungsmenü, hinter dem wirklich etwas hängt.
+
+**Ein Ort für die Werte.** `UiTheme` ist keine Sammlung von Hilfsfunktionen
+mehr, sondern die Designsprache: fünf Abstandsstufen (Vielfache von 4), drei
+Radien, fünf Schriftgrößen, benannte Flächen- und Rahmenfarben, drei
+Bewegungsdauern. Wer etwas braucht, das es dort nicht gibt, trägt es dort ein —
+dann haben es alle. Die Pixel-Holzrahmen (`MenuArt.button_frame()`,
+`panel_frame()`) sind ersatzlos weg; zwei Designsprachen nebeneinander waren
+genau das Problem.
+
+**Die Falle mit dem Theme.** Godot vererbt ein Theme nur entlang der
+Control-Kette. JEDE Oberfläche dieses Spiels liegt aber unter einer
+`CanvasLayer`, und die unterbricht die Kette. Ein Theme am Fenster wirkt
+deshalb nicht — die Tafeln bekamen still Godots graue Voreinstellung
+(0.1, 0.1, 0.1, 0.6) und waren halb durchsichtig, ohne dass irgendwo ein Fehler
+stand. `UiTheme.attach()` hängt das gemeinsame Theme jetzt ausdrücklich an die
+oberste Control jeder CanvasLayer, und eine Prüfung im Selbsttest fällt darauf
+herein, bevor es jemand sieht.
+
+**Ein Grundgerüst für Menüs.** `UiScreen` bringt Abdunkelung, mittige Tafel,
+Innenrand und Ein-/Ausblenden mit; ein Menü füllt nur noch `_build()`. Ein
+Menü bleibt undurchlässig für Mausklicks, SOLANGE es zu sehen ist — auch
+während es ausblendet. Dadurch kann der Klick auf „Fortsetzen" nicht in der
+Welt landen, bevor das Menü ganz weg ist.
+
+**Schaltflächen mit Zuständen.** `UiButton` animiert Überfahren und Drücken
+über dieselben Werte wie die Felder im Inventar, und behandelt Tastaturfokus
+wie Mauszeiger. `size_flags_horizontal = SHRINK_CENTER` musste sein: ohne das
+zieht ein VBoxContainer jede Schaltfläche auf die Breite der breitesten — aus
+„ZURÜCK" wurde ein Balken über die ganze Tafel. Auch dafür gibt es jetzt eine
+Prüfung.
+
+**Auswahl statt Kästchen.** `UiChoice` zeigt alle Stufen nebeneinander und hebt
+die geltende hervor. Damit sehen „Aus / An", „Einfach / Mittel / Hoch" und
+„30 / 60 / 90 / …" gleich aus, statt Kästchen neben Aufklappmenüs zu mischen.
+Die Feldbreiten kommen aus der Textbreite — „Unbegrenzt" braucht mehr Platz als
+„60", und gleich breite Felder würden entweder abschneiden oder gähnen.
+
+**Hauptmenü mit echten Wegen.** „Fortsetzen" steht nur da, wenn
+`MapData.has_save()` etwas findet. „Neue Welt" geht über eine Rückfrage, wenn
+dabei eine gebaute Karte verloren ginge — die Datei wird dabei NICHT gelöscht,
+sie wird erst beim nächsten Speichern überschrieben. `MapData.generate()` hat
+dafür ein `fresh`-Kennzeichen bekommen, das über `WorldBuilder` und `World`
+durchgereicht wird.
+
+**Einstellungen: getrennt gespeichert, getrennt angewendet.** `Settings` ist
+jetzt reine Datenhaltung plus Persistenz. Das Anwenden macht `Graphics` — ein
+zweiter Autoload, der die Auswahllisten für die Oberfläche UND die Werte
+liefert, mit denen gerechnet wird. Dadurch kann keine Beschriftung entstehen,
+hinter der kein Wert steht. `Config.LOAD_RADIUS` ist von `const` zu
+`static var` geworden, weil die Sichtweite eine Einstellung ist; der
+ChunkStreamer hängt an `Graphics.applied` und bestimmt seine Sollmenge neu,
+sobald sie sich ändert.
+
+**Was geprüft wird.** Nicht, ob ein Wert gespeichert wurde, sondern ob sich das
+System dahinter ändert: `Engine.max_fps` nach dem Umstellen der Bildratengrenze,
+die Zahl geladener Chunks nach dem Umstellen der Sichtweite (25 → 49 → 9), die
+gezeichneten Rechtecke der Wasserwirkung auf der Stufe „Einfach" (0), die
+Sichtbarkeit des Bodenschattens. Dazu ein echter Schreib-Lese-Vergleich für den
+Neustart. Eine weitere Prüfung misst jede Kategorieseite gegen die Fläche, die
+für sie da ist — sie hat sofort gefunden, dass die Leistungsseite mit ihren
+sieben Bildratenstufen 652 statt 478 Bildpunkte breit war und die Tafel beim
+Wechsel gesprungen wäre.
+
+**Stand:** 196 Prüfungen, alle grün.
+
+## Nachtrag: Bewegung in der Welt — und ein Boden, der wie Boden aussieht
+
+**Wind und Wasserlicht als Shader auf der Schicht.** Der Boden sind vier
+`TileMapLayer` über einer Karte mit 4,2 Millionen Feldern. Jede Kachel einzeln
+zu animieren ist nicht bezahlbar, ein Knoten je bewegtem Halm erst recht nicht.
+Ein Shader auf der Schicht kostet dagegen genau drei Materialien, unabhängig von
+der Weltgrösse.
+
+**Der Vertex-Schritt, nicht das Fragment.** Die erste Fassung rechnete die
+Wellen je Bildpunkt. Gemessen auf dem Software-Rasterizer bei 1280 x 720: 13,8 ms
+je Bild ohne Bewegung, **66 ms mit** — und die Physikzeit stieg von 0,3 auf
+9,8 ms mit, weil Godot bei langsamen Bildern mehrere Physikschritte nachholt.
+Dieselbe Wirkung im `vertex()` kostet wieder rund 17 ms. Eine Kachel hat vier
+Eckpunkte und 1024 Bildpunkte; die Wellenlänge liegt bei mehreren hundert
+Bildpunkten, die lineare Interpolation über eine 32er-Kachel sieht man nicht.
+Es gibt bewusst kein `fragment()` — ohne eines nimmt Godot das voreingestellte
+`COLOR *= texture(TEXTURE, UV)`, genau das, was gebraucht wird.
+
+**Helligkeit statt Verschiebung.** Die Kacheln kommen aus einem Atlas. Ein
+verschobenes UV griffe in die Nachbarkachel im Atlasbild; an jeder Kachelkante
+entstünden Streifen fremder Farbe. Eine wandernde Aufhellung liest sich als Böe
+über einem Feld und kann das nicht.
+
+**„Aus" muss nichts kosten.** Bei Stufe 0 wird das Material ABGEHÄNGT, nicht auf
+Stärke null gesetzt — ein Shader mit Faktor null rechnet trotzdem. Dasselbe beim
+Staub: die Punkte werden entfernt, nicht unsichtbar geschaltet. Beides prüft der
+Selbsttest, weil man einer Einstellung sonst nicht ansieht, ob sie hält, was sie
+verspricht.
+
+**Was die Messung wert ist.** Eine erste Prüfung verglich „mit" und „ohne"
+direkt und schlug fehl, sobald die Zahlen um zwei Millisekunden streuten — sie
+mass Rauschen. Die vier Kombinationen liegen alle bei 17 bis 21 ms; der
+Unterschied ist auf einem Software-Rasterizer nicht auflösbar. Geprüft wird
+deshalb die Grössenordnung: die Bewegung darf das Bild nicht um ein Vielfaches
+teurer machen. Die Fragment-Fassung wäre daran gescheitert, das Rauschen ist es
+nicht. Ausserdem wird ein erster Messdurchlauf weggeworfen — ein frisch
+angehängter Shader wird beim ersten Bild übersetzt, diese eine Spitze (gemessen:
+100 ms) gehört nicht in die Zahl.
+
+**Der Boden.** Die Gras- und Sandkacheln trugen 230 deckende Einzelpixel auf
+1024 — knapp ein Viertel der Fläche. Das war kein Gras, sondern Bildrauschen,
+und es überdeckte jede grössere Struktur; im Bild las sich der Boden als
+Fernsehschnee. Jetzt sind es rund 70, eingeblendet statt gesetzt, und die Halme
+stehen in Büscheln von zwei bis drei. Damit fielen die Helligkeitsstufen je
+Kachel auf, die das Korn vorher verdeckt hatte — `SHADE_STEP` ist von 0,035 auf
+0,018 zurückgenommen, die grosse Helligkeitsbewegung kommt ohnehin vom Wind und
+läuft über Kachelkanten hinweg weich durch. Die gemessenen Kachelnähte sind
+dabei besser geworden: Gras 1,16 → 0,51, Sand 0,66 → 0,54.
+
+**Stand:** 207 Prüfungen, alle grün.
+
+## Nachtrag: Baugefühl und die Form, die das Gelände erkennt
+
+**Zielwinkel statt Kasten.** Die Bauvorschau war ein geschlossener weisser
+Rahmen um den Block. Der legt sich wie ein zweites Raster über die Welt und
+schluckt genau die Kachel, die er zeigen soll. Vier Eckwinkel zeigen dasselbe
+Feld und lassen es frei. Bewusst ohne Pulsieren: `GridOverlay` zeichnet sich nur
+neu, wenn sich wirklich etwas geändert hat — dieser Sparzweck ist mehr wert als
+eine atmende Linie, und eine pulsierende Vorschau hätte ihn zunichtegemacht.
+
+**Ein Zeichen für „das habe ich getan".** `BuildFx` hält eine kurze Liste
+vergänglicher Marken: ein Rahmen, der aus dem gesetzten Block herauswächst und
+in 0,22 Sekunden verblasst, und eine kleine Staubwolke beim Aufkommen nach einem
+Sprung. Ohne so etwas fühlt sich Bauen an wie das Ausfüllen einer Tabelle. Die
+Liste ist auf 24 Marken begrenzt — beim schnellen Ziehen entstehen sonst
+hunderte, und die verdecken am Ende die Welt, die sie zeigen sollen. Ist die
+Liste leer, laufen weder `_process` noch `_draw`.
+
+**Die Form steckt schon in der Maske.** Das Eck-Autotiling war da, geprüft wurde
+bisher aber nur, DASS Übergänge entstehen. Der Kachelindex eines Übergangsfeldes
+IST seine Eckmaske (0 – 14; 15 ist die Vollkachel), und daraus lässt sich die
+Form direkt ablesen:
+
+| Bits | Bedeutung |
+|---|---|
+| 1 | Aussenecke — nur diagonal berührt |
+| 2 | gerade Kante |
+| 3 | Innenecke |
+| 4 | Vollkachel |
+
+Der Selbsttest baut ein Einzelfeld, eine 3 x 3-Fläche, eine L-Form und ein
+Wasserfeld und liest die Masken der Nachbarn ab. Er prüft nicht nur die Anzahl
+der Bits, sondern welche: über einem Einzelblock muss Maske 12 stehen (die
+beiden unteren Ecken), schräg darüber Maske 4 (nur unten rechts), in der Kerbe
+einer L-Form Maske 11 (alles ausser der abgewandten Ecke). Neben Wasser darf gar
+nichts auf der Wasserschicht liegen — seine Kante sitzt hart am Block, sonst
+landete die Brandung auf dem Sand statt im Wasser.
+
+Das ist ein Bildvergleich ohne Bilder: ein Ausrutscher im Autotiling fällt als
+falsche Zahl auf, nicht erst jemandem beim Spielen.
+
+**Nichts rechnet, wenn es nichts zu rechnen gibt.** Das ist die Regel, an der
+Wirkungen in einem Sandkastenspiel scheitern: sie laufen weiter, auch wenn sie
+abgeschaltet sind oder gar nichts zu tun haben. Für Bau-Rückmeldung, Staub und
+Wasserwirkung wird deshalb `is_processing()` geprüft, nicht die Sichtbarkeit.
+
+Ausserdem wirft die Leistungsmessung jetzt einen ersten Durchlauf weg. Auch nach
+90 Aufwärmbildern fiel im ersten Messfenster noch eine Spitze an — zuletzt 56 ms
+statt 17, aus Shader-Übersetzung und Texturuploads, die erst dort fällig werden.
+Eine Zahl, die in der Dokumentation landet, darf davon nicht stammen.
+
+**Stand:** 229 Prüfungen, alle grün. Weltaufbau 208 ms, ein Chunk in 1,1 ms, die
+Minimap in 0,8 ms, Physik 0,7 ms je Bild, 50 Zeichenaufrufe.
+
+## Nachtrag: Jede Seite einmal ansehen
+
+Bis hierher waren mehrere Bildschirme nie angesehen worden — die
+Einstellungsseiten „Leistung", „Steuerung" und „Ton", die Rückfrage vor einer
+neuen Welt und das Hauptmenü mit vorhandener Karte. Sie sind jetzt Teil des
+Selbsttests, der von jeder ein Bild ablegt. Das war kein Selbstzweck: drei der
+fünf waren schlecht.
+
+**„Ton" war eine Zeile in einem leeren Kasten.** Ein Thema, das aus einem
+Regler besteht, ist kein Thema. Die Musik steht jetzt bei „Allgemein" — vier
+Kategorien statt fünf — und der Regler zeigt seinen Wert in Prozent, statt raten
+zu lassen.
+
+**Die Steuerungsübersicht schwebte.** Sie lag als schmale Tabelle mitten in der
+Fläche, rechts blieb totes Feld, und sie fing an einer anderen x-Position an als
+die Zeilen der übrigen Seiten — beim Wechsel der Kategorie sprang alles. Jetzt
+ist sie eine Tabelle über die volle Breite mit abwechselnd hinterlegten Zeilen.
+
+**Der Seitenkasten war zu zwei Dritteln leer.** Er muss so hoch sein wie die
+längste Kategorie; auf einer Seite mit drei Zeilen sah man vor allem seinen
+leeren Boden, und ein sichtbar leerer Kasten liest sich als unfertig. Der Rahmen
+ist weg: die Zeilen stehen als Streifen direkt auf der Tafel, eine dünne
+senkrechte Linie trennt Kategorien und Inhalt, und der Platz darunter ist
+einfach Rand. Die feste Grösse bleibt — sie hält die Tafel ruhig, wenn man die
+Kategorie wechselt.
+
+**Die Rückfrage wurde doppelt abgedunkelt.** Sie liegt über dem Hauptmenü, das
+sich bereits selbst abdunkelt; zusammen war das Titelbild praktisch schwarz und
+es sah aus, als sei das Spiel ausgegangen. Ihre eigene Abdunkelung ist auf 0,34
+zurückgenommen.
+
+**Und zwei Dinge ausserhalb der Menüs.** Das Blockraster war kräftig rot bei
+30 % über dem ganzen Bild, die Chunk-Linien gelb bei 80 % — die Welt sah aus wie
+Millimeterpapier. Die Entwicklerzeile oben links stand in 20 Punkt vollem Weiss
+und war das Erste, was man im Bild sah. Beides ist zurückgenommen, beides
+funktioniert unverändert. Das ist der Unterschied zwischen einem Werkzeug mit
+Weltansicht und einem Spiel.
+
+**Stand:** 233 Prüfungen, alle grün.
+
+## Nachtrag: die visuelle Generalüberholung
+
+Der Auftrag war, das ganze Bild auf das Niveau eines modernen 2D-Pixel-Spiels
+zu bringen — nicht einzelne Grafiken, sondern alles, was zum Aussehen gehört.
+Angefangen wurde deshalb nicht bei den Kacheln, sondern beim Rendering: eine
+Kachel, die auf dem Bildschirm verzerrt ankommt, wird durch Nachzeichnen nicht
+besser.
+
+**Die Pixel waren nicht quadratisch.** `CAMERA_ZOOM` stand auf 1,5. Bei Faktor
+1,5 wird aus einem Weltpixel mal ein, mal zwei Bildschirmpunkte — nachgewiesen
+an einer zwölffachen Vergrösserung des Figurenkopfes, auf der Reihen
+abwechselnd ein und zwei Punkte hoch sind. Das ist die Ursache für „unsaubere
+Kanten", die man sonst der Zeichnung anlastet. Zoom 2 macht jeden Weltpixel
+exakt zwei Punkte breit und hoch. Das Sichtfeld wird dabei kleiner (20 × 11
+statt 27 × 15 Felder) — das ist der Preis, und er ist es wert. Alles, was in
+Bildschirmpunkten gemeint ist (Rasterlinien, Eckwinkel), rechnet seither über
+`_w()` in Weltbreite um, damit es beim Zoomen nicht mitwächst.
+
+**Die Kachelkanten waren ein Schachbrett.** Die Übergänge zwischen zwei Böden
+entstanden über eine geordnete 4 × 4-Bayer-Matrix. Die ist regelmässig, und
+genau so sah die Kante auch aus: ein Schachbrett aus Einzelpixeln quer über
+jeden Übergang. Bei Zoom 1,5 ging das unter, bei Zoom 2 war es das
+Künstlichste im ganzen Bild. Jetzt verschiebt zusammenhängendes Rauschen
+(`FastNoiseLite`, Frequenz 0,13) die Schwelle — daraus werden Zungen und
+Buchten, wie von Hand gesetzt. Dazu gibt es jede Eckmaske in drei
+Ausführungen; vorher bestand jede Küstenlinie im Spiel aus fünfzehn immer
+gleichen Bausteinen. Welche Ausführung ein Feld bekommt, entscheidet sein
+ortsfester Streuwert, nicht der Zufall beim Laden.
+
+**Die Welt bekam Dinge.** Büschel, Blumen, Klee, Steine, Kiesel, Muscheln und
+Treibholz liegen in einer eigenen Kachelschicht (`LAYER_DECOR`, z = −15) unter
+der Kantenschicht. Ein Knoten je Büschel wäre bei 5 × 5 geladenen Chunks
+sechsstellig gewesen; eine Kachelschicht kostet dasselbe wie der Boden darunter.
+Auf Gras steht deutlich mehr als auf Sand — ein gleichmässig bestreuter Strand
+sähe falsch aus.
+
+**Die Welt war flach ausgeleuchtet.** Jede Kachel zu jeder Zeit gleich hell —
+das ist der Unterschied zwischen einer Textur und einem Ort. Der `LightManager`
+bringt drei Mittel mit, alle billig: ein `CanvasModulate` färbt und dunkelt die
+ganze Welt über einen Tag von acht Minuten, ein `PointLight2D` auf Brusthöhe
+folgt der Figur, und eine Vignette dunkelt die Bildränder. Der Schein blendet
+**nach Helligkeit** auf, nicht nach Uhrzeit — dadurch passt er automatisch,
+wenn sich der Verlauf einmal ändert. Das Licht liegt auf der Welt, nicht auf
+der Oberfläche: `CanvasModulate` wirkt nur in seiner eigenen `CanvasLayer`, und
+HUD (5), Bauleiste (6) und Inventar (8) liegen auf eigenen; die Vignette hängt
+auf Ebene 1. Auf Stufe „Aus" werden alle drei Knoten unsichtbar geschaltet und
+der Prozessschritt abgestellt — ein `CanvasModulate` in Weiss würde sonst
+weiterhin über jeden Bildpunkt gerechnet.
+
+**Die Figur war halb durchsichtig — und niemandem war es aufgefallen.** Das
+ganze Raster lag bei `z_index` 500 über allem, auch die Bauvorschau. Die ist
+aber eine halbdurchsichtige Kachel im Zielfeld, und das Zielfeld grenzt fast
+immer an die Figur: über ihrer unteren Hälfte lag ein Schleier, und die weissen
+Eckwinkel liefen quer durchs Gesicht. Gefunden wurde das erst bei einer
+fünffachen Vergrösserung eines Testbildes. Bauvorschau und markiertes Feld
+liegen jetzt auf einem eigenen Knoten mit `z_as_relative = false` und
+`z_index = -2` — über Boden und Wasserwirkung, unter Schatten und Figur.
+Rasterlinien, Chunk-Nummern und Weltrand bleiben oben.
+
+**Das Raster ist beim Start aus.** Eingeschaltet legt es ein gelbes Kreuz über
+den ganzen Bildschirm und schreibt „Chunk 64 | 64" quer neben die Figur. Wer
+das Spiel zum ersten Mal startete, sah eine Karte mit Gitternetz, keinen Ort.
+G schaltet es an, die Steuerungshilfe sagt das in der ersten Zeile. Aus
+demselben Grund ist die Anzeige oben links auf eine Zeile zusammengezogen: die
+zweite nannte Kachelgrösse und Kartenmasse — Zahlen, die eine ganze Sitzung
+lang dieselben bleiben. Sie stehen auf F3.
+
+**Die Figur steckte im Wasser in einem gestanzten Loch.** Unter der Wasserlinie
+wurde alles gelöscht und darüber eine gerade Schaumlinie über die volle Breite
+gelegt — über einer 32 Pixel breiten Figur liest sich das als Brett. Jetzt
+bleibt der Körper unter Wasser durchscheinend und zur Wasserfarbe hin
+verschoben, und der Wellenkragen ist ein Ring: vorn läuft er über den Körper,
+hinten verschwindet er dahinter. Der Bodenschatten sitzt einen Pixel nach unten
+rechts versetzt — das Licht kommt in dieser Welt von oben links, bei jeder
+Kachel und an der Figur selbst.
+
+**Und eine Messung, die nichts mass.** Die Prüfung „Physikzeit pro Bild unter
+8 ms" schlug einmal mit 11,46 ms fehl und lief beim nächsten Lauf bei sonst
+unverändertem Code mit 4,75 ms durch. Godot zählt in `TIME_PHYSICS_PROCESS` die
+Zeit ALLER Physikschritte einer Hauptschleifen-Runde; wird ein Bild langsamer,
+holt Godot die feste Schrittrate mit mehreren Schritten nach, und die Zahl
+misst die Auslastung der Maschine statt der Physik. Sie wird jetzt durch die
+Zahl der Schritte je Bild geteilt. Dieselbe Falle beim Licht: „aus" kam mit
+49,45 ms teurer heraus als „voll" mit 41,77 ms. Statt Millisekunden zählt der
+Test dort Zeichenaufrufe — 53 ohne, 56 mit Beleuchtung — denn die eigentliche
+Gefahr eines 2D-Lichts ist, dass es jeden Knoten in seinem Umkreis ein zweites
+Mal zeichnen lässt.
+
+**Stand:** 251 Prüfungen, alle grün.
 
 ## Lizenzlage
 

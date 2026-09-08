@@ -38,9 +38,16 @@ func _check(ok: bool, what: String) -> void:
 		_fails.append(what)
 		print("  [FAIL] ", what)
 
+## Bild ablegen — aber erst, wenn nichts mehr in Bewegung ist.
+##
+## Menüs und Felder blenden weich ein. Ein Bild mitten in der Einblendung zeigt
+## halbe Deckkraft und halbe Abdunkelung und taugt weder als Beleg noch für die
+## Dokumentation. Deshalb wartet JEDES Bild hier ab, statt an jeder Aufrufstelle
+## einzeln daran denken zu müssen.
 func _shot(name: String) -> void:
 	if _shot_dir == "" or DisplayServer.get_name() == "headless":
 		return
+	await _frames(14)
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	img.save_png(_shot_dir.path_join(name + ".png"))
@@ -104,8 +111,16 @@ func _run() -> void:
 	_check(map.is_solid(0, 10) and map.is_solid(Config.MAP_W - 1, 10),
 		"Unsichtbare Wand am Kartenrand")
 	var g: GridOverlay = world.grid
-	_check(g != null and g.visible, "Blockraster ist sichtbar")
+	# Das Raster ist da, aber beim Start abgeschaltet: die Welt soll wie eine
+	# Welt aussehen und nicht wie kariertes Papier.
+	_check(g != null and g.visible and not g.show_grid,
+		"Blockraster liegt bereit, ist beim Start aber aus")
 	_check(g.z_index > 100, "Raster liegt über der Welt")
+	# Bodenmarken (Bauvorschau, Feld unter der Figur) liegen UNTER der Figur.
+	var marks: Node2D = g.get_node("Bodenmarken")
+	_check(not marks.z_as_relative and marks.z_index < 0,
+		"Bodenmarken liegen unter der Figur (z %d, absolut: %s)"
+		% [marks.z_index, not marks.z_as_relative])
 	var spawn_tile := GridOverlay.block_at(player.position)
 	_check(not map.is_solid(spawn_tile.x, spawn_tile.y), "Startpunkt ist begehbar")
 	var want := (2 * Config.LOAD_RADIUS + 1) * (2 * Config.LOAD_RADIUS + 1)
@@ -154,7 +169,16 @@ func _run() -> void:
 	await _check_chunks()
 	await _check_building(world, map, player)
 	await _check_water(world, map, player)
+	await _check_terrain_shapes(world, map)
+	await _check_build_feedback(world)
+	await _check_idle_cost(world)
 	await _check_toggle(world, map, player)
+	await _check_inventory_ui(world)
+	await _check_design_system(world)
+	await _check_settings(world)
+	await _check_motion(world)
+	await _check_light(world)
+	await _check_figure(world)
 	await _check_input_lock(world, map, player)
 	await _check_input_map(world)
 	await _check_stress(world, map, player)
@@ -174,7 +198,11 @@ func _run() -> void:
 		"Weltrand hat Kollisionsformen (%d)" % world.streamer.shape_count())
 	cam.snap_to_target()
 	await _frames(6)
+	# Für dieses eine Bild wird das Raster eingeschaltet: der Weltrand gehört
+	# dazu, und er soll dokumentiert bleiben.
+	world.grid.show_grid = true
 	await _shot("04_raster_rand")
+	world.grid.show_grid = Config.SHOW_BLOCK_GRID
 
 	_check(world.build_msec < 5000, "Welt lädt zügig (%d ms)" % world.build_msec)
 
@@ -200,6 +228,14 @@ func _run() -> void:
 	_check(main.state == main.State.OPTIONS, "Optionen offen")
 	await _frames(4)
 	await _shot("06_optionen")
+	# JEDE Kategorieseite wird abgelichtet. Eine Seite, die nie jemand ansieht,
+	# ist eine Seite, auf der etwas verrutschen kann, ohne dass es auffällt —
+	# und genau das ist hier schon zweimal passiert.
+	for entry: Array in [[1, "12_grafik"], [2, "13_leistung"], [3, "14_steuerung"]]:
+		main._options_menu._show_page(entry[0])
+		await _shot(entry[1])
+	main._options_menu._show_page(0)
+	await _frames(4)
 	main.close_options()
 	await _frames(2)
 	_check(main.state == main.State.PAUSED, "Zurück zur Pause")
@@ -222,6 +258,19 @@ func _run() -> void:
 	main.to_main_menu()
 	await _frames(4)
 	_check(main.state == main.State.MENU, "Zurück im Hauptmenü")
+	# Jetzt liegt eine gebaute Karte vor: das Hauptmenü muss „Fortsetzen"
+	# zeigen, und „Neue Welt" muss nachfragen, statt sie zu überschreiben.
+	_check(MapData.has_save(), "Es gibt jetzt eine gebaute Karte")
+	_check(main._main_menu._continue.visible,
+		"Mit gespeicherter Karte steht „Fortsetzen\" im Hauptmenü")
+	await _shot("16_hauptmenue_fortsetzen")
+	main.ask_new_world()
+	await _frames(4)
+	_check(main.state == main.State.CONFIRM, "„Neue Welt\" fragt vorher nach")
+	await _shot("17_rueckfrage")
+	main._unhandled_input(_key("ui_cancel"))
+	await _frames(4)
+	_check(main.state == main.State.MENU, "ESC bricht die Rückfrage ab")
 	main.start_game()
 	await _frames(6)
 	_check(main._world != null and main._world != world, "Neustart erzeugt frische Welt")
@@ -252,15 +301,16 @@ func _check_three_materials() -> void:
 	_check(GroundTileSet.STACK.size() == 3
 		and GroundTileSet.STACK == [MapData.Tile.GRASS, MapData.Tile.SAND, MapData.Tile.WATER],
 		"Kachelstapel hat drei Schichten")
-	_check(GroundTileSet.LAYER_COUNT == 4 and GroundTileSet.LAYER_EDGE == 3,
-		"Vier Schichten: drei Böden plus Kanten")
+	_check(GroundTileSet.LAYER_COUNT == 5 and GroundTileSet.LAYER_EDGE == 3
+		and GroundTileSet.LAYER_DECOR == 4,
+		"Fünf Schichten: drei Böden, Kanten, Streu-Dekoration")
 
-	var inv_all: Array = preload("res://src/ui/inventory.gd").ALL
+	var inv_all: Array = Inventory.ALL
 	_check(inv_all.size() == 3
 		and inv_all.has(MapData.Tile.GRASS) and inv_all.has(MapData.Tile.SAND)
 		and inv_all.has(MapData.Tile.WATER),
 		"Inventar zeigt genau Gras, Sand, Wasser")
-	var bar_types: Array = preload("res://src/ui/build_bar.gd").DEFAULT_TYPES
+	var bar_types: Array = BuildBar.DEFAULT_TYPES
 	_check(bar_types.size() == 3, "Bau-Leiste hat drei Felder")
 	var mini_colors: Dictionary = preload("res://src/ui/minimap.gd").COLORS
 	_check(mini_colors.size() == 3, "Minimap kennt drei Farben")
@@ -317,9 +367,9 @@ func _check_tileset(world: Node2D, map: MapData, player: Player) -> void:
 	var T := Config.TILE
 
 	_check(ts.tile_size == Vector2i(T, T), "Kachelgröße im Kachelsatz ist %d × %d" % [T, T])
-	_check(ts.get_source_count() == GroundTileSet.STACK.size() + 1,
-		"Genau %d Atlasquellen: drei Böden und die Kanten (%d)"
-		% [GroundTileSet.STACK.size() + 1, ts.get_source_count()])
+	_check(ts.get_source_count() == GroundTileSet.STACK.size() + 2,
+		"Genau %d Atlasquellen: drei Böden, Kanten und Dekor (%d)"
+		% [GroundTileSet.STACK.size() + 2, ts.get_source_count()])
 
 	# Jede Quelle: Textur da, Bereichsgröße genau eine Kachel, Kacheln angelegt.
 	var bad_src: Array[String] = []
@@ -597,11 +647,12 @@ func _check_building(world: Node2D, map: MapData, player: Player) -> void:
 
 	# Die Bauvorschau hängt nicht am Raster.
 	var g: GridOverlay = world.grid
+	var grid_was := g.show_grid
 	g.show_grid = false
 	await _frames(2)
 	_check(g.visible and not g.show_grid, "Raster aus, Vorschau bleibt gezeichnet")
 	_check(world.build_bar.preview_texture() != null, "Vorschau kennt die gewählte Kachel")
-	g.show_grid = true
+	g.show_grid = grid_was
 
 	# Aufräumen, damit die späteren Prüfungen freies Feld haben.
 	for oy in range(-14, 8):
@@ -772,10 +823,10 @@ func _check_toggle(world: Node2D, map: MapData, player: Player) -> void:
 	var seen: Array[String] = []
 	for i in 3:
 		main._unhandled_input(_key("inventory"))
-		await _frames(3)
+		# Reichlich Bilder abwarten: das Inventar blendet sich weich ein, und
+		# ein Bild mitten in der Einblendung wäre als Beleg wertlos.
+		await _frames(14)
 		seen.append("offen" if main.state == main.State.INVENTORY else "zu")
-		if i == 0:
-			await _shot("09_inventar")
 	_check(seen == ["offen", "zu", "offen"],
 		"E öffnet, E schliesst, E öffnet wieder (%s)" % ", ".join(seen))
 	_check(inv.visible and main.state == main.State.INVENTORY, "Inventar ist jetzt offen")
@@ -805,6 +856,851 @@ func _check_toggle(world: Node2D, map: MapData, player: Player) -> void:
 	main._unhandled_input(_key("ui_cancel"))
 	await _frames(3)
 	_check(main.state == main.State.PLAYING and not inv.visible, "ESC schliesst das Inventar")
+
+# --- Sparsamkeit --------------------------------------------------------------
+
+## Nichts rechnet, wenn es nichts zu rechnen gibt.
+##
+## Das ist die Regel, an der Wirkungen in einem Sandkastenspiel scheitern: sie
+## laufen weiter, auch wenn sie abgeschaltet sind oder gar nichts zu tun haben.
+## Hier wird für jede der drei Wirkungen nachgesehen, ob sie sich wirklich
+## abschaltet — `is_processing()` lügt nicht.
+func _check_idle_cost(world: Node2D) -> void:
+	var fx: BuildFx = world.build_fx
+	var ambient: AmbientFx = world.ambient
+	var water: WaterFx = world.get_node("WaterFx")
+
+	await _frames(40)
+	_check(not fx.is_processing(),
+		"Ohne offene Zeichen rechnet die Bau-Rückmeldung nicht")
+	world.build_tool.place(Config.spawn_block() + Vector2i(28, 28), MapData.Tile.SAND)
+	await _frames(2)
+	_check(fx.is_processing(), "Mit einem Zeichen rechnet sie wieder")
+	await _frames(40)
+	_check(not fx.is_processing(), "Und hört von selbst wieder auf")
+
+	var part_before := Settings.particles
+	Settings.particles = 0
+	Settings.changed_and_save()
+	await _frames(4)
+	_check(not ambient.is_processing(), "Ohne Staub rechnet der Staub nicht")
+	Settings.particles = part_before
+	Settings.changed_and_save()
+	await _frames(4)
+	_check(ambient.is_processing(), "Mit Staub rechnet er wieder")
+
+	var water_before := Settings.water_detail
+	Settings.water_detail = 0
+	Settings.changed_and_save()
+	water.prims = -1
+	await _frames(10)
+	_check(water.prims <= 0, "Wasser „Einfach\" zeichnet nichts (%d)" % water.prims)
+	Settings.water_detail = water_before
+	Settings.changed_and_save()
+	await _frames(6)
+
+# --- Bauen: Form erkennen, Rückmeldung geben ----------------------------------
+
+## Erkennt das Gelände, welche Form gebaut wurde?
+##
+## Die Übergangskachel eines Feldes ist durch ihre ECKMASKE bestimmt: vier Bits,
+## eines je Ecke, gesetzt wenn eines der drei dort anliegenden Felder zur Schicht
+## gehört. Aus der Maske lässt sich also ablesen, ob ein Feld eine gerade Kante,
+## eine Aussenecke oder eine Innenecke ist — und genau das wird hier geprüft,
+## statt Bilder zu vergleichen.
+##
+##   1 Bit   Aussenecke (nur diagonal berührt)
+##   2 Bits  gerade Kante
+##   3 Bits  Innenecke
+##   4 Bits  Vollkachel (Maske 15)
+func _check_terrain_shapes(world: Node2D, map: MapData) -> void:
+	var tool: BuildTool = world.build_tool
+	var origin := Config.spawn_block() + Vector2i(20, 20)
+	var sand := MapData.Tile.SAND
+
+	# --- Einzelnes Feld ---
+	tool.place(origin, sand)
+	await _frames(2)
+	_check(_mask_at(world, 1, origin) == 15,
+		"Einzelnes Feld ist eine Vollkachel (%d)" % _mask_at(world, 1, origin))
+	var north := _mask_at(world, 1, origin + Vector2i(0, -1))
+	var north_west := _mask_at(world, 1, origin + Vector2i(-1, -1))
+	_check(_bits(north) == 2, "Feld über einem Einzelblock ist eine Kante (%d Bits)" % _bits(north))
+	_check(_bits(north_west) == 1,
+		"Feld schräg über einem Einzelblock ist eine Aussenecke (%d Bits)" % _bits(north_west))
+	_check(north == 12, "Die Kante liegt unten (Maske %d, erwartet 12)" % north)
+	_check(north_west == 4, "Die Aussenecke liegt unten rechts (Maske %d, erwartet 4)" % north_west)
+
+	# --- Gerade Fläche: Mitte einer 3 x 3 bleibt voll, der Rand wird Kante ---
+	for oy in range(-1, 2):
+		for ox in range(-1, 2):
+			tool.place(origin + Vector2i(ox, oy), sand)
+	await _frames(2)
+	_check(_mask_at(world, 1, origin) == 15, "Mitte einer Fläche bleibt eine Vollkachel")
+	var edge := _mask_at(world, 1, origin + Vector2i(0, -2))
+	_check(edge == 12, "Über einer Fläche liegt eine gerade Kante (Maske %d)" % edge)
+
+	# --- Innenecke: L-Form, das freie Feld in der Kerbe ---
+	for oy in range(-1, 2):
+		for ox in range(-1, 2):
+			tool.place(origin + Vector2i(ox, oy), MapData.Tile.GRASS)
+	var l_cells := [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1)]
+	for c: Vector2i in l_cells:
+		tool.place(origin + c, sand)
+	await _frames(2)
+	var inner := _mask_at(world, 1, origin + Vector2i(1, 1))
+	_check(_bits(inner) == 3,
+		"Das Feld in der Kerbe einer L-Form ist eine Innenecke (%d Bits, Maske %d)"
+		% [_bits(inner), inner])
+	_check(inner == 11, "Die Innenecke lässt genau die abgewandte Ecke frei (Maske %d)" % inner)
+
+	# --- Übergang zu Wasser: hart am Block, kein Saum im Nachbarfeld ---
+	for c: Vector2i in l_cells:
+		tool.place(origin + c, MapData.Tile.GRASS)
+	var pond := origin + Vector2i(6, 0)
+	tool.place(pond, MapData.Tile.WATER)
+	await _frames(2)
+	_check(_mask_at(world, 2, pond) == 15, "Wasser füllt sein Feld ganz")
+	_check(_mask_at(world, 2, pond + Vector2i(0, -1)) < 0,
+		"Neben dem Wasser liegt kein Wassersaum — seine Kante sitzt am Block")
+	_check(_mask_at(world, 1, pond) == 15,
+		"Unter dem Wasser liegt Sand, damit die Brandung auf Sand trifft")
+	tool.place(pond, MapData.Tile.GRASS)
+	await _frames(2)
+
+## Die Eckmaske eines Feldes auf einer Bodenschicht.
+##
+## 0 – 14 sind Übergänge, 15 ist eine Vollkachel, −1 heisst: dort liegt nichts.
+##
+## Jede Maske liegt in mehreren Ausführungen hintereinander im Atlas, deshalb
+## wird der Platz durch ihre Anzahl geteilt.
+func _mask_at(world: Node2D, layer_pos: int, cell: Vector2i) -> int:
+	var layer: TileMapLayer = world.streamer.layers[layer_pos]
+	var coords := layer.get_cell_atlas_coords(cell)
+	if coords.x < 0:
+		return -1
+	var slots: Array = world.streamer.ground._slots[layer_pos]
+	var idx := slots.find(coords)
+	if idx < 0:
+		return -1
+	return (idx / TerrainAtlas.EDGE_VARIANTS) if idx < TerrainAtlas.FULL_START else 15
+
+func _bits(mask: int) -> int:
+	if mask < 0:
+		return 0
+	var n := 0
+	for i in 4:
+		if mask & (1 << i):
+			n += 1
+	return n
+
+## Bauen muss sich anfühlen, als hätte man etwas getan.
+##
+## Geprüft wird, dass jedes gesetzte Feld ein Zeichen bekommt, dass das Zeichen
+## wieder verschwindet, und dass beim schnellen Ziehen nicht hunderte davon
+## stehen bleiben und die Welt zudecken.
+func _check_build_feedback(world: Node2D) -> void:
+	var fx: BuildFx = world.build_fx
+	var tool: BuildTool = world.build_tool
+	_check(fx != null, "Rückmeldung beim Bauen vorhanden")
+	if fx == null:
+		return
+	var at := Config.spawn_block() + Vector2i(24, 24)
+	tool.place(at, MapData.Tile.SAND)
+	await _frames(3)
+	_check(fx.drawn > 0, "Ein gesetzter Block bekommt ein Zeichen (%d)" % fx.drawn)
+	await _frames(40)
+	_check(fx.drawn == 0, "Das Zeichen verschwindet von selbst wieder (%d)" % fx.drawn)
+
+	# Schnelles Ziehen: viele Felder, aber die Zeichen bleiben begrenzt.
+	for i in 60:
+		tool.place(at + Vector2i(i % 12, i / 12), MapData.Tile.SAND)
+	_check(fx._marks.size() <= BuildFx.MAX_MARKS,
+		"Beim Ziehen bleiben höchstens %d Zeichen stehen (%d)"
+		% [BuildFx.MAX_MARKS, fx._marks.size()])
+	for i in 60:
+		tool.place(at + Vector2i(i % 12, i / 12), MapData.Tile.GRASS)
+	await _frames(40)
+
+# --- Bewegung in der Welt -----------------------------------------------------
+
+## Wind, Wasserlicht und Staub — und dass sich beides wirklich abschalten lässt.
+##
+## „Aus" muss heissen: kostet nichts. Ein Shader mit Stärke null rechnet
+## trotzdem für jeden Eckpunkt, und Staubpunkte, die nur unsichtbar sind, werden
+## trotzdem bewegt. Deshalb wird hier nicht die Sichtbarkeit geprüft, sondern
+## ob Material und Punkte überhaupt noch da sind.
+func _check_motion(world: Node2D) -> void:
+	var streamer: ChunkStreamer = world.streamer
+	var ambient: AmbientFx = world.ambient
+	var wind_before := Settings.wind
+	var part_before := Settings.particles
+
+	for level in 3:
+		Settings.wind = level
+		Settings.changed_and_save()
+		await _frames(2)
+		_check(streamer.wind_level() == level,
+			"Bewegungsstufe %d liegt wirklich auf dem Boden (%d)" % [level, streamer.wind_level()])
+	Settings.wind = 0
+	Settings.changed_and_save()
+	await _frames(2)
+	_check(streamer.layers[0].material == null and streamer.layers[2].material == null,
+		"Bewegung „Aus\" hängt das Material ab, statt es auf null zu rechnen")
+
+	# Die Wellen laufen im Vertex-Schritt, nicht je Bildpunkt. Im Fragment
+	# kostete dieselbe Wirkung das Fünffache je Bild — deshalb steht das hier
+	# als Prüfung und nicht nur als Kommentar.
+	Settings.wind = 2
+	Settings.changed_and_save()
+	await _frames(2)
+	var code: String = streamer.layers[0].material.shader.code
+	_check(code.contains("void vertex()") and not code.contains("void fragment()"),
+		"Die Bewegung wird je Eckpunkt gerechnet, nicht je Bildpunkt")
+
+	# Staub: Anzahl folgt der Einstellung, „Aus" lässt nichts übrig.
+	for entry: Array in [[0, 0], [1, 18], [2, 42]]:
+		Settings.particles = entry[0]
+		Settings.changed_and_save()
+		await _frames(4)
+		_check(ambient._motes.size() == entry[1],
+			"Staubstufe %d hält %d Punkte (%d)" % [entry[0], entry[1], ambient._motes.size()])
+	Settings.particles = 0
+	Settings.changed_and_save()
+	await _frames(6)
+	_check(ambient.drawn == 0, "Staub „Aus\" zeichnet nichts mehr (%d)" % ambient.drawn)
+	Settings.particles = 2
+	Settings.changed_and_save()
+	await _frames(20)
+	_check(ambient.drawn > 0, "Staub „Voll\" zeichnet wieder (%d Punkte)" % ambient.drawn)
+
+	# Was die Bewegung kostet, getrennt nach Ursache.
+	#
+	# Ein erster Durchlauf wird weggeworfen: ein frisch angehängter Shader wird
+	# beim ersten Bild übersetzt, und diese eine Spitze (gemessen: 100 ms)
+	# gehört nicht in die Messung.
+	Settings.wind = 2
+	Settings.particles = 2
+	Settings.changed_and_save()
+	await _frames(30)
+	await _frame_cost()
+
+	var cost := {}
+	for entry: Array in [["Wind + Staub", 2, 2], ["nur Staub", 0, 2],
+			["nur Wind", 2, 0], ["nichts", 0, 0]]:
+		Settings.wind = entry[1]
+		Settings.particles = entry[2]
+		Settings.changed_and_save()
+		await _frames(25)
+		cost[entry[0]] = await _frame_cost()
+	for key: String in cost:
+		print("  Bewegung %-14s %6.2f ms je Bild" % [key, cost[key]])
+
+	# Geprüft wird die Grössenordnung, nicht die Nachkommastelle: auf einem
+	# Software-Rasterizer streuen die Werte um ein bis zwei Millisekunden, ein
+	# Unterschied darunter sagt nichts. Was diese Prüfung fangen soll, ist eine
+	# Wirkung, die das Bild VIELFACH teurer macht — die erste Fassung rechnete
+	# die Wellen je Bildpunkt statt je Eckpunkt und kostete das Fünffache.
+	var quiet: float = cost["nichts"]
+	var loud: float = cost["Wind + Staub"]
+	_check(loud <= quiet * 1.6 + 3.0,
+		"Bewegung kostet keine Grössenordnung (%.2f ms mit, %.2f ms ohne)" % [loud, quiet])
+
+	Settings.wind = wind_before
+	Settings.particles = part_before
+	Settings.changed_and_save()
+	await _frames(20)
+
+# --- Beleuchtung --------------------------------------------------------------
+
+## Das Tageslicht muss drei Dinge können: sich über den Tag ändern, der Figur
+## folgen, und auf Stufe „Aus" wirklich verschwinden.
+##
+## Der letzte Punkt ist der wichtigste. Ein CanvasModulate in Weiss und eine
+## Vignette mit Stärke 0 sehen aus wie „aus", werden aber weiterhin über jeden
+## Bildpunkt gerechnet — eine Einstellung, die nichts spart, ist eine Lüge.
+func _check_light(world: Node2D) -> void:
+	var light: LightManager = world.light
+	var before := Settings.light
+
+	# 1. Der Verlauf ist wirklich ein Verlauf: Nacht deutlich dunkler als Mittag,
+	#    Morgen und Abend warm getönt statt neutral.
+	var night := LightManager.tint_at(0.0).get_luminance()
+	var noon := LightManager.tint_at(0.5).get_luminance()
+	_check(night < noon - 0.25,
+		"Die Nacht ist merklich dunkler als der Mittag (%.2f gegen %.2f)" % [night, noon])
+	var dusk := LightManager.tint_at(0.79)
+	_check(dusk.r > dusk.b + 0.2, "Der Abend ist warm getönt (r %.2f, b %.2f)" % [dusk.r, dusk.b])
+	# Und er springt nirgends: zwischen zwei benachbarten Zeitpunkten darf sich
+	# die Farbe nur wenig ändern, sonst gäbe es im Spiel einen sichtbaren Ruck.
+	var jump := 0.0
+	var prev := LightManager.tint_at(0.0)
+	for i in range(1, 401):
+		var cur := LightManager.tint_at(i / 400.0)
+		jump = maxf(jump, absf(cur.get_luminance() - prev.get_luminance()))
+		prev = cur
+	_check(jump < 0.02, "Der Tagesverlauf springt nirgends (grösster Schritt %.4f)" % jump)
+
+	# 2. Tagesverlauf: die Uhr läuft, das Licht folgt der Figur.
+	Settings.light = 2
+	Settings.changed_and_save()
+	await _frames(4)
+	var t0 := light.time_of_day()
+	await _frames(30)
+	_check(light.active() and light.time_of_day() > t0, "Die Zeit läuft (%.4f -> %.4f)"
+		% [t0, light.time_of_day()])
+	var lamp: PointLight2D = light.get_node("Figurenlicht")
+	# Auf Brusthöhe, nicht am Knöchel: die Figur steht auf ihrem Standpunkt.
+	var want_at: Vector2 = world.player.global_position - Vector2(0.0, LightManager.LIGHT_LIFT)
+	_check(lamp.global_position.distance_to(want_at) < 1.0,
+		"Der Schein sitzt auf Brusthöhe bei der Figur (%.1f px Abstand)"
+		% lamp.global_position.distance_to(want_at))
+
+	# 3. Nachts brennt der Schein, mittags nicht. Beides an derselben Stelle
+	#    geprüft, damit keine Uhrzeit übrig bleibt, in der es stockdunkel ist.
+	light.set_time(0.0)
+	await _frames(2)
+	var at_night := light.light_energy()
+	# Die Nacht wird abgelichtet. Eine Beleuchtung, die niemand ansieht, ist
+	# eine Beleuchtung, in der die Welt schwarz sein kann, ohne dass es auffällt.
+	await _shot("15_nacht")
+	light.set_time(0.79)
+	await _shot("16_abend")
+	light.set_time(0.5)
+	await _frames(2)
+	var at_noon := light.light_energy()
+	_check(at_night > 0.5 and at_noon <= 0.01,
+		"Der Schein blendet nachts auf und mittags ab (%.2f / %.2f)" % [at_night, at_noon])
+
+	# 4. „Fest" hält die Zeit an — wer bauen will, soll bauen können.
+	Settings.light = 1
+	Settings.changed_and_save()
+	await _frames(30)
+	_check(is_equal_approx(light.time_of_day(), LightManager.START_TIME),
+		"„Fest\" hält die Tageszeit an (%.3f)" % light.time_of_day())
+	_check(light.tint().get_luminance() > 0.9,
+		"„Fest\" steht am hellen Vormittag (%.2f)" % light.tint().get_luminance())
+
+	# 5. „Aus" hängt alles ab.
+	Settings.light = 0
+	Settings.changed_and_save()
+	await _frames(4)
+	var off: Array[String] = []
+	if light.active():
+		off.append("läuft weiter")
+	if light.is_processing():
+		off.append("rechnet weiter")
+	for node: Node in [light.get_node("Tageslicht"), lamp, light.get_node("Vignette")]:
+		if node.get("visible"):
+			off.append("%s sichtbar" % node.name)
+	_check(off.is_empty(), "Beleuchtung „Aus\" kostet wirklich nichts%s"
+		% ("" if off.is_empty() else " (%s)" % ", ".join(off)))
+
+	# 6. Das Licht liegt auf der Welt, nicht auf der Oberfläche. Eine Vignette
+	#    über dem HUD würde die Anzeige eintrüben statt die Welt.
+	var vignette: CanvasLayer = light.get_node("Vignette")
+	_check(vignette.layer < world.hud.layer,
+		"Die Vignette liegt unter der Oberfläche (%d gegen %d)"
+		% [vignette.layer, world.hud.layer])
+
+	# Was die Beleuchtung kostet, lässt sich hier NICHT in Millisekunden
+	# messen. Gemessen wurde (Software-Rasterizer, zwei Läufe hintereinander):
+	# „aus" 49,45 ms und „voll" 41,77 ms — die Beleuchtung kam scheinbar
+	# billiger heraus als gar keine. Die Bildzeit dieser Maschine schwankt
+	# zwischen zwei Läufen um mehr als das Doppelte; eine Messung, die Rauschen
+	# misst, prüft nichts.
+	#
+	# Zählbar ist dagegen die Zahl der Zeichenaufrufe, und die trifft genau die
+	# Gefahr: ein 2D-Licht lässt jeden Knoten in seinem Umkreis ein zweites Mal
+	# zeichnen. Ein Licht über die halbe Welt würde die Zahl verdoppeln.
+	var draws := {}
+	for entry: Array in [["aus", 0], ["voll", 2]]:
+		Settings.light = entry[1]
+		Settings.changed_and_save()
+		await _frames(20)
+		draws[entry[0]] = await _draw_calls()
+	print("  Licht: %d Zeichenaufrufe aus, %d voll" % [draws["aus"], draws["voll"]])
+	_check(draws["voll"] <= draws["aus"] + 20,
+		"Beleuchtung bleibt bei den Zeichenaufrufen bescheiden (%d gegen %d)"
+		% [draws["voll"], draws["aus"]])
+
+	Settings.light = before
+	Settings.changed_and_save()
+	await _frames(6)
+
+# --- Die Figur ----------------------------------------------------------------
+
+## Laufzyklus, Eintauchen und Bodenschatten — an den Bildern selbst geprüft,
+## nicht am Code, der sie erzeugt.
+func _check_figure(world: Node2D) -> void:
+	var frames: Dictionary = world.player._frames
+
+	# 1. Der Laufzyklus ist wirklich ein Zyklus. Bild 0 und 2 sind absichtlich
+	#    gleich (die Durchgangsstellung kommt zweimal vor, einmal je Bein), die
+	#    beiden Ausschläge müssen sich aber unterscheiden — sonst tritt die
+	#    Figur auf der Stelle, ohne dass es jemand am Code sähe.
+	var flat: Array[String] = []
+	for dir in 3:
+		var set: Array = frames["walk"][dir]
+		var seen: Array[PackedByteArray] = []
+		for f: Texture2D in set:
+			var data := f.get_image().get_data()
+			if not seen.has(data):
+				seen.append(data)
+		if seen.size() < 3:
+			flat.append("Richtung %d: nur %d Stellungen" % [dir, seen.size()])
+	_check(flat.is_empty(), "Der Laufzyklus hat drei verschiedene Stellungen je Richtung%s"
+		% ("" if flat.is_empty() else " (%s)" % ", ".join(flat)))
+
+	# 2. Beim Schwimmen ist die Figur EINGETAUCHT, nicht abgeschnitten. Unter
+	#    der Wasserlinie muss noch etwas zu sehen sein — sonst steckt sie in
+	#    einem gestanzten Loch.
+	var under := 0
+	var img: Image = (frames["swim"][ActorArt.Dir.DOWN][0] as Texture2D).get_image()
+	var line := ActorArt.H - ActorArt.SWIM_SINK
+	for y in range(line + 2, ActorArt.H):
+		for x in ActorArt.W:
+			if img.get_pixel(x, y).a > 0.02:
+				under += 1
+	_check(under > 40, "Der Körper bleibt unter Wasser zu ahnen (%d Punkte)" % under)
+
+	# Und der Wellenkragen ist ein Ring, keine Linie: keine Bildzeile darf über
+	# die ganze Breite durchlaufen.
+	var full_rows := 0
+	for y in range(line - 4, line + 5):
+		var run := 0
+		for x in ActorArt.W:
+			if img.get_pixel(x, y).a > 0.4:
+				run += 1
+		if run >= ActorArt.W - 4:
+			full_rows += 1
+	_check(full_rows == 0, "Der Wellenkragen ist ein Ring, kein Brett (%d durchgehende Reihen)"
+		% full_rows)
+
+	# 3. Der Bodenschatten liegt nach unten rechts versetzt — das Licht kommt
+	#    in dieser Welt von oben links.
+	var shadow: Image = (frames["shadow"] as Texture2D).get_image()
+	var sx := 0.0
+	var sy := 0.0
+	var mass := 0.0
+	for y in shadow.get_height():
+		for x in shadow.get_width():
+			var a := shadow.get_pixel(x, y).a
+			sx += (x + 0.5) * a
+			sy += (y + 0.5) * a
+			mass += a
+	_check(mass > 0.0, "Die Figur hat einen Bodenschatten")
+	if mass > 0.0:
+		var cx := sx / mass - shadow.get_width() * 0.5
+		var cy := sy / mass - shadow.get_height() * 0.5
+		_check(cx > 0.05 and cy > 0.05,
+			"Der Schatten fällt nach unten rechts (%.2f | %.2f)" % [cx, cy])
+	await get_tree().process_frame
+
+## Mittlere Zahl der Zeichenaufrufe über 20 Bilder.
+func _draw_calls() -> int:
+	var total := 0.0
+	for i in 20:
+		await get_tree().process_frame
+		total += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+	return int(round(total / 20.0))
+
+## Mittlere Bildzeit über 30 Bilder in Millisekunden.
+func _frame_cost() -> float:
+	var total := 0.0
+	for i in 30:
+		await get_tree().process_frame
+		total += Performance.get_monitor(Performance.TIME_PROCESS)
+	return total / 30.0 * 1000.0
+
+# --- Einstellungen ------------------------------------------------------------
+
+## Jede Einstellung muss wirklich etwas tun — und einen Neustart überleben.
+##
+## Ein Menü voller Schalter, hinter denen nichts hängt, ist schlimmer als kein
+## Menü: es verspricht etwas. Deshalb wird hier nicht geprüft, ob ein Wert
+## gespeichert wurde, sondern ob sich das SYSTEM daran ändert, an dem er hängt.
+func _check_settings(world: Node2D) -> void:
+	var cfg := ConfigFile.new()
+	var had := cfg.load(Settings.PATH) == OK
+
+	# 1. Bildratengrenze landet in der Engine.
+	var fps_before := Settings.fps_limit
+	Settings.fps_limit = 0                       # 30
+	Settings.changed_and_save()
+	await _frames(2)
+	_check(Engine.max_fps == 30, "Bildratengrenze wirkt (Engine.max_fps = %d)" % Engine.max_fps)
+	Settings.fps_limit = Graphics.FPS_VALUES.size() - 1   # Unbegrenzt
+	Settings.changed_and_save()
+	await _frames(2)
+	_check(Engine.max_fps == 0, "Unbegrenzt heisst wirklich unbegrenzt (%d)" % Engine.max_fps)
+
+	# 2. Sichtweite lädt wirklich mehr und wieder weniger Chunks.
+	var range_before := Settings.render_range
+	var loaded_before: int = world.streamer.loaded_count()
+	Settings.render_range = 2                     # 7 x 7
+	Settings.changed_and_save()
+	await _frames(40)
+	var want := (2 * Config.LOAD_RADIUS + 1) * (2 * Config.LOAD_RADIUS + 1)
+	_check(Config.LOAD_RADIUS == 3, "Sichtweite setzt den Chunk-Radius (%d)" % Config.LOAD_RADIUS)
+	_check(world.streamer.loaded_count() == want,
+		"Grössere Sichtweite lädt mehr Chunks (%d von %d, vorher %d)"
+		% [world.streamer.loaded_count(), want, loaded_before])
+	Settings.render_range = 0                     # 3 x 3
+	Settings.changed_and_save()
+	await _frames(10)
+	_check(world.streamer.loaded_count() == 9,
+		"Kleinere Sichtweite entlädt sofort (%d)" % world.streamer.loaded_count())
+	Settings.render_range = range_before
+	Settings.changed_and_save()
+	await _frames(40)
+
+	# 3. Wasser auf der einfachsten Stufe zeichnet nichts mehr.
+	var water: WaterFx = world.get_node("WaterFx")
+	var water_before := Settings.water_detail
+	Settings.water_detail = 0
+	Settings.changed_and_save()
+	water.queue_redraw()
+	await _frames(6)
+	_check(not Graphics.water_animated() and water.prims == 0,
+		"Wasser „Einfach\" zeichnet keine Wirkung mehr (%d Rechtecke)" % water.prims)
+	Settings.water_detail = 2
+	Settings.changed_and_save()
+	_check(Graphics.water_redraw_hz() > Graphics.water_redraw_hz() - 1.0
+		and is_equal_approx(Graphics.water_redraw_hz(), 24.0),
+		"Wasser „Hoch\" zeichnet wieder mit voller Rate")
+	Settings.water_detail = water_before
+
+	# 4. Schatten lassen sich abschalten — an der Figur, nicht nur im Menü.
+	Settings.shadows = false
+	Settings.changed_and_save()
+	await _frames(4)
+	_check(not Graphics.shadows_on() and not _player_shadow(world.player).visible,
+		"Schatten aus heisst: die Figur wirft keinen mehr")
+	Settings.shadows = true
+	Settings.changed_and_save()
+	await _frames(4)
+	_check(_player_shadow(world.player).visible, "Schatten an heisst: er ist wieder da")
+
+	# 5. Alles überlebt einen Neustart. Geprüft wird über den echten Weg:
+	#    schreiben, Werte verstellen, neu laden, vergleichen.
+	Settings.render_range = 0
+	Settings.water_detail = 0
+	Settings.fps_limit = 2
+	Settings.vsync = false
+	Settings.shadows = false
+	Settings.save_settings()
+	Settings.render_range = 3
+	Settings.water_detail = 2
+	Settings.fps_limit = 5
+	Settings.vsync = true
+	Settings.shadows = true
+	Settings.load_settings()
+	_check(Settings.render_range == 0 and Settings.water_detail == 0
+		and Settings.fps_limit == 2 and not Settings.vsync and not Settings.shadows,
+		"Einstellungen überleben den Neustart")
+
+	# 6. Das Menü zeigt, was wirklich gilt.
+	main._options_menu.refresh()
+	await _frames(2)
+	var shown: int = main._options_menu._rows["fps"].index
+	_check(shown == Settings.fps_limit,
+		"Das Menü zeigt den geltenden Wert (%d)" % shown)
+
+	# Aufräumen: alles zurück auf die Voreinstellungen dieser Sitzung.
+	Settings.render_range = range_before
+	Settings.water_detail = water_before
+	Settings.fps_limit = fps_before
+	Settings.vsync = true
+	Settings.shadows = true
+	Settings.changed_and_save()
+	if not had:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(Settings.PATH))
+	await _frames(30)
+
+## Der Bodenschatten der Figur — der erste Sprite2D mit negativem z_index.
+func _player_shadow(player: Node) -> Sprite2D:
+	for child: Node in player.get_children():
+		if child is Sprite2D and (child as Sprite2D).z_index < 0:
+			return child as Sprite2D
+	return null
+
+# --- Eine Designsprache -------------------------------------------------------
+
+## Alle Oberflächen benutzen wirklich dasselbe Theme.
+##
+## Das ist kein Geschmacksthema, sondern eine Falle: Godot vererbt ein Theme nur
+## entlang der Control-Kette, und JEDE Oberfläche dieses Spiels liegt unter
+## einer CanvasLayer, die diese Kette unterbricht. Ein Theme am Fenster wirkt
+## deshalb nicht — die Tafeln bekamen still Godots graue Voreinstellung
+## (0.1, 0.1, 0.1, 0.6) und waren halb durchsichtig, ohne dass irgendwo ein
+## Fehler stand. Diese Prüfung fällt darauf herein, bevor es jemand sieht.
+func _check_design_system(world: Node2D) -> void:
+	var want: StyleBoxFlat = UiTheme.panel_style()
+	var wrong: Array[String] = []
+	for entry: Array in [["Hauptmenü", main._main_menu], ["Pause", main._pause_menu],
+			["Einstellungen", main._options_menu], ["Rückfrage", main._confirm],
+			["Inventar", world.inventory], ["Bauleiste", world.build_bar],
+			["HUD", world.hud]]:
+		var node: Node = entry[1]
+		if node == null:
+			wrong.append("%s fehlt" % entry[0])
+			continue
+		var c := _first_control(node)
+		if c == null:
+			wrong.append("%s ohne Oberfläche" % entry[0])
+			continue
+		if c.get_theme_default_font_size() != UiTheme.FONT_BODY:
+			wrong.append("%s erbt das Theme nicht" % entry[0])
+	_check(wrong.is_empty(), "Jede Oberfläche erbt dasselbe Theme%s"
+		% ("" if wrong.is_empty() else " (%s)" % ", ".join(wrong)))
+
+	# Und die Tafeln benutzen wirklich die eigene Fassung, nicht Godots graue.
+	var panels: Array[String] = []
+	for entry: Array in [["Pause", main._pause_menu], ["Einstellungen", main._options_menu],
+			["Rückfrage", main._confirm]]:
+		var node: Node = entry[1]
+		var pc := _find_node_of_type(node, "PanelContainer")
+		if pc == null:
+			panels.append("%s ohne Tafel" % entry[0])
+			continue
+		var sb := (pc as Control).get_theme_stylebox("panel", "PanelContainer")
+		if not (sb is StyleBoxFlat) or not (sb as StyleBoxFlat).bg_color.is_equal_approx(want.bg_color):
+			panels.append("%s: %s" % [entry[0],
+				(sb as StyleBoxFlat).bg_color if sb is StyleBoxFlat else "keine Flächenfassung"])
+	_check(panels.is_empty(), "Jede Tafel ist deckend und in der eigenen Fassung%s"
+		% ("" if panels.is_empty() else " (%s)" % ", ".join(panels)))
+
+	# Jede Kategorieseite passt in die Fläche, die für sie da ist.
+	var overflow: Array = main._options_menu.page_fits()
+	_check(overflow.is_empty(), "Jede Einstellungsseite passt in ihre Fläche%s"
+		% ("" if overflow.is_empty() else " (%s)" % ", ".join(overflow)))
+
+	# Schaltflächen werden nicht auf Containerbreite gezogen.
+	var stretched: Array[String] = []
+	for b: Node in _find_all_of_type(main._pause_menu, "UiButton"):
+		var btn := b as UiButton
+		if btn.size.x > btn.custom_minimum_size.x + 1.0:
+			stretched.append(btn.text)
+	_check(stretched.is_empty(), "Schaltflächen behalten ihre Breite%s"
+		% ("" if stretched.is_empty() else " (%s)" % ", ".join(stretched)))
+	await get_tree().process_frame
+
+func _first_control(node: Node) -> Control:
+	if node is Control:
+		return node as Control
+	for child: Node in node.get_children():
+		var c := _first_control(child)
+		if c != null:
+			return c
+	return null
+
+func _find_node_of_type(node: Node, type_name: String) -> Node:
+	if node.is_class(type_name):
+		return node
+	for child: Node in node.get_children():
+		var found := _find_node_of_type(child, type_name)
+		if found != null:
+			return found
+	return null
+
+func _find_all_of_type(node: Node, script_class: String) -> Array[Node]:
+	var out: Array[Node] = []
+	if node.get_script() != null and (node.get_script() as Script).get_global_name() == script_class:
+		out.append(node)
+	for child: Node in node.get_children():
+		out.append_array(_find_all_of_type(child, script_class))
+	return out
+
+# --- Inventar als Oberfläche ---------------------------------------------------
+
+## Das Inventar als Oberfläche, nicht als Entwicklerfenster.
+##
+## Vorher standen hier zwei Erklärsätze, die Auswahl war eine dünne gelbe Linie,
+## die Vorschaubilder waren in ein Rechteck gestreckt, und die Leiste im
+## Inventar sah anders aus als die echte. Jeder dieser Punkte hat hier eine
+## Prüfung bekommen, damit er nicht zurückkommt.
+func _check_inventory_ui(world: Node2D) -> void:
+	var inv: Inventory = world.inventory
+	var bar: BuildBar = world.build_bar
+	if inv == null or bar == null:
+		return
+	main.open_inventory()
+	await _frames(14)
+
+	# 1. Bilder, die nicht verzerren können.
+	#
+	#    Das Materialbild wird 1:1 gezeichnet. Damit das aufgeht, muss seine
+	#    Kantenlänge ein ganzes Vielfaches der Weltkachel sein — eine 32er
+	#    Kachel in ein 48er Feld gestreckt macht manche Bildpunkte zwei breit.
+	_check(TileIcon.SIZE % Config.TILE == 0 and TileIcon.SIZE > Config.TILE,
+		"Materialbild ist ein ganzes Vielfaches der Kachel (%d px)" % TileIcon.SIZE)
+	_check(bar.icons.size() == MapData.Tile.COUNT,
+		"Ein Materialbild je Bodentyp (%d)" % bar.icons.size())
+	var square := true
+	for tex: Texture2D in bar.icons:
+		if tex == null or tex.get_width() != TileIcon.SIZE \
+				or tex.get_height() != TileIcon.SIZE:
+			square = false
+	_check(square, "Jedes Materialbild ist quadratisch und unverzerrt")
+
+	# 2. Gleiche Felder, gleichmässige Abstände.
+	var cards: Array[ItemSlot] = []
+	var row: Array[ItemSlot] = []
+	for slot: ItemSlot in _item_slots(inv):
+		if slot.kind == ItemSlot.Kind.CARD:
+			cards.append(slot)
+		else:
+			row.append(slot)
+	_check(cards.size() == 3 and row.size() == 3,
+		"Drei Materialfelder und drei Leistenfelder (%d / %d)" % [cards.size(), row.size()])
+	_even_row(cards, "Materialfelder")
+	_even_row(row, "Leistenfelder im Inventar")
+	_even_row(_item_slots(bar), "Leistenfelder im Spiel")
+	_check(not row.is_empty() and not _item_slots(bar).is_empty()
+		and row[0].size == _item_slots(bar)[0].size,
+		"Die Leiste sieht im Inventar aus wie im Spiel")
+
+	# 3. Die Auswahl ist eindeutig — nicht nur eine dünne Linie.
+	inv.select_slot(0)
+	await _frames(14)
+	var lit := 0
+	for slot: ItemSlot in row:
+		if slot.selected:
+			lit += 1
+	_check(lit == 1, "Genau ein Feld der Leiste ist gewählt (%d)" % lit)
+	var chosen := row[0]
+	var other := row[1]
+	_check(chosen.highlight_strength() > 0.9 and other.highlight_strength() < 0.1,
+		"Das gewählte Feld ist voll hervorgehoben, die anderen nicht")
+	var hot := chosen.frame_style()
+	var cold := other.frame_style()
+	_check(hot.border_width_left > cold.border_width_left and hot.shadow_size > 0
+		and cold.shadow_size == 0,
+		"Gewählt heisst kräftigerer Rahmen UND Schein, nicht nur eine Linie")
+	_check(hot.bg_color != cold.bg_color, "Auch die Fläche des gewählten Feldes ist anders")
+
+	# 4. Überfahren hebt ein Feld sichtbar ab — und lässt es wieder los.
+	var probe := cards[1]
+	_hover_at(probe.get_global_rect().get_center())
+	await _frames(14)
+	_check(probe.hover_strength() > 0.9,
+		"Ein Feld hebt sich beim Überfahren ab (%.2f)" % probe.hover_strength())
+	_check(probe.frame_style().bg_color != cards[2].frame_style().bg_color,
+		"Das überfahrene Feld sieht anders aus als seine Nachbarn")
+	# Genau jetzt zeigt ein Bild alle drei Zustände auf einmal: Gras gewählt,
+	# Sand überfahren, Wasser ruhig. Deshalb entsteht es hier und nicht beim
+	# Öffnen.
+	await _shot("09_inventar")
+	_hover_at(Vector2(4, 4))
+	await _frames(14)
+	_check(probe.hover_strength() < 0.1, "Und fällt danach wieder zurück")
+
+	# 5. Kein Erklärtext mehr. Übrig sind Überschrift, Zwischenüberschrift und
+	#    der eine Hinweis, wie man wieder herauskommt.
+	var texts: Array[String] = []
+	for l: Label in _labels(inv):
+		if l.text.strip_edges() != "":
+			texts.append(l.text)
+	var longest := 0
+	for t: String in texts:
+		longest = maxi(longest, t.length())
+	_check(texts.size() <= 3 and longest <= 20,
+		"Kaum noch Text im Inventar (%d Zeilen, längste %d Zeichen: %s)"
+		% [texts.size(), longest, ", ".join(texts)])
+
+	# 6. Nichts kann eine Eingabe durchlassen: kein Feld nimmt den Tastaturfokus,
+	#    jedes fängt seinen Mausklick selbst ab.
+	var leaky: Array[String] = []
+	for slot: ItemSlot in _item_slots(inv) + _item_slots(bar):
+		if slot.focus_mode != Control.FOCUS_NONE:
+			leaky.append("Fokus")
+		if slot.mouse_filter != Control.MOUSE_FILTER_STOP:
+			leaky.append("Mausfilter")
+	_check(leaky.is_empty(), "Kein Feld lässt eine Eingabe durch%s"
+		% ("" if leaky.is_empty() else " (%s)" % ", ".join(leaky)))
+
+	# 7. Inventar und Leiste sind getrennte Ansichten: nie beide zugleich.
+	_check(inv.visible and not bar.visible,
+		"Bei offenem Inventar ist die Leiste im Spiel nicht zusätzlich zu sehen")
+
+	# 8. Testplan 6 – 8: jedes der drei Materialien lässt sich wählen.
+	var saved: Array = bar.loadout()
+	for tile: int in [MapData.Tile.GRASS, MapData.Tile.SAND, MapData.Tile.WATER]:
+		inv.select_slot(0)
+		inv.equip_requested.emit(0, tile)
+		await _frames(2)
+		_check(bar.types[0] == tile and bar.tile_type() == tile,
+			"%s im Inventar gewählt — %s ist aktiv" % [MapData.NAMES[tile], MapData.NAMES[tile]])
+	bar.set_loadout(saved)
+	await _frames(2)
+
+	# 9. Testplan 9: über die Leiste gewechselt kommt dasselbe Material heraus.
+	var wrong: Array[String] = []
+	for i in bar.types.size():
+		bar.slot_clicked.emit(i)
+		await _frames(2)
+		if bar.selected != i or bar.tile_type() != bar.types[i]:
+			wrong.append(str(i + 1))
+	_check(wrong.is_empty(), "Ein Klick auf ein Feld der Leiste wählt genau dessen Material%s"
+		% ("" if wrong.is_empty() else " (Feld %s)" % ", ".join(wrong)))
+	bar.select(0)
+
+	# 10. Der Umschalter greift nur da, wo er soll. In der Pause tut E nichts —
+	#    und meldet das auch, damit die Taste nicht stillschweigend verschwindet.
+	main.close_inventory()
+	await _frames(3)
+	main.pause_game()
+	await _frames(3)
+	_check(not main.toggle_inventory() and main.state == main.State.PAUSED,
+		"E öffnet das Inventar nicht aus der Pause heraus")
+	main.resume_game()
+	await _frames(3)
+	_check(main.state == main.State.PLAYING and not inv.visible,
+		"Danach läuft das Spiel wieder, das Inventar bleibt zu")
+
+## Gleich groß und gleich weit auseinander — sonst wirkt eine Reihe gebastelt.
+func _even_row(list: Array, what: String) -> void:
+	if list.size() < 2:
+		_check(false, "%s: zu wenige Felder zum Vergleichen" % what)
+		return
+	var same := true
+	var gaps: Array[float] = []
+	for i in list.size():
+		if list[i].size != list[0].size:
+			same = false
+		if i > 0:
+			gaps.append(list[i].position.x - (list[i - 1].position.x + list[i - 1].size.x))
+	var even := true
+	for g: float in gaps:
+		if absf(g - gaps[0]) > 0.5:
+			even = false
+	_check(same, "%s: alle gleich groß (%s)" % [what, list[0].size])
+	_check(even, "%s: gleichmäßige Abstände (%.0f px)" % [what, gaps[0]])
+
+## Schiebt den Mauszeiger auf einen Punkt, damit sich der Überfahren-Zustand
+## prüfen lässt.
+func _hover_at(pos: Vector2) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	get_viewport().push_input(motion)
+
+func _item_slots(node: Node) -> Array[ItemSlot]:
+	var out: Array[ItemSlot] = []
+	if node is ItemSlot:
+		out.append(node)
+	for child: Node in node.get_children():
+		out.append_array(_item_slots(child))
+	return out
+
+func _labels(node: Node) -> Array[Label]:
+	var out: Array[Label] = []
+	if node is Label:
+		out.append(node)
+	for child: Node in node.get_children():
+		out.append_array(_labels(child))
+	return out
 
 ## Kein Durchsickern von Eingaben zwischen Oberfläche und Spiel.
 ##
@@ -1108,6 +2004,11 @@ func _check_performance(world: Node2D, map: MapData, player: Player, ms_menu: fl
 	# der Welt lag bei 849 ms, das zweite schon bei 2,5 — Shader-Übersetzung
 	# und Texturuploads, kein Dauerzustand.
 	await _frames(90)
+	# Ein Messdurchlauf wird weggeworfen. Auch nach dem Aufwärmen fällt beim
+	# ersten Fenster noch eine Spitze an (zuletzt gemessen: 56 ms statt 17) —
+	# Shader-Übersetzung und Texturuploads, die erst hier fällig werden. Eine
+	# Zahl, die in der Dokumentation landet, darf davon nicht stammen.
+	await _frame_cost()
 
 	var t_still := 0.0
 	for i in 30:
@@ -1119,6 +2020,7 @@ func _check_performance(world: Node2D, map: MapData, player: Player, ms_menu: fl
 	var t_physics := 0.0
 	var draws := 0.0
 	var runs := 60
+	var drawn_before := Engine.get_frames_drawn()
 	Input.action_press("move_right")
 	for i in runs:
 		await get_tree().physics_frame
@@ -1126,10 +2028,21 @@ func _check_performance(world: Node2D, map: MapData, player: Player, ms_menu: fl
 		t_physics += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
 		draws += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 	Input.action_release("move_right")
+	var drawn := maxi(Engine.get_frames_drawn() - drawn_before, 1)
 	var ms_process := t_process / runs * 1000.0
-	var ms_physics := t_physics / runs * 1000.0
-	print("Leistung nach dem Aufwärmen: Stand %.2f ms, Lauf mit Chunk-Laden %.2f ms, physics %.2f ms, Draw-Calls %d" % [
-		ms_still, ms_process, ms_physics, int(draws / runs)])
+
+	# Die Physikzeit wird auf EINEN Schritt umgerechnet, nicht auf ein Bild.
+	#
+	# Godot zählt in TIME_PHYSICS_PROCESS die Zeit ALLER Physikschritte, die in
+	# einer Hauptschleifen-Runde gelaufen sind. Auf dieser Maschine dauert ein
+	# Bild je nach Auslastung 20 bis 55 ms, und Godot holt die feste Schrittrate
+	# nach: mal ein Schritt je Bild, mal drei. Ungeteilt misst die Zahl deshalb
+	# die Auslastung der Maschine und nicht die Physik — sie stand bei sonst
+	# unverändertem Code einmal bei 4,75 und einmal bei 11,46 ms.
+	var steps_per_frame := float(runs) / float(drawn)
+	var ms_physics := t_physics / runs * 1000.0 / steps_per_frame
+	print("Leistung nach dem Aufwärmen: Stand %.2f ms, Lauf mit Chunk-Laden %.2f ms, physics %.2f ms je Schritt (%.1f Schritte je Bild), Draw-Calls %d" % [
+		ms_still, ms_process, ms_physics, steps_per_frame, int(draws / runs)])
 	# Gemessen wird auf einem Software-Rasterizer (Xvfb/llvmpipe). Die
 	# Prozesszeit hängt dort an der Füllrate und schwankt zwischen Läufen um
 	# mehr als das Doppelte — sie wird berichtet, aber nicht bewertet.
@@ -1137,7 +2050,7 @@ func _check_performance(world: Node2D, map: MapData, player: Player, ms_menu: fl
 		% (ms_still - ms_menu))
 	var avg_draws := int(draws / runs)
 	_check(avg_draws < 120, "Zeichenaufrufe bleiben gebündelt (%d)" % avg_draws)
-	_check(ms_physics < 8.0, "Physikzeit pro Bild unter 8 ms (%.2f)" % ms_physics)
+	_check(ms_physics < 8.0, "Physikzeit je Schritt unter 8 ms (%.2f)" % ms_physics)
 
 	var mm: Control = world.hud.minimap
 	if mm != null:

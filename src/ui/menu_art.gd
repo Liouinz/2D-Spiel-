@@ -1,6 +1,11 @@
 class_name MenuArt
 extends RefCounted
-## Hintergrundbild des Hauptmenüs — dieselbe Palette wie die Spielwelt.
+## Hintergrundbild des Hauptmenüs und sein Wolkenband — dieselbe Palette wie
+## die Spielwelt.
+##
+## Die Rahmen für Tafeln und Schaltflächen standen früher hier als
+## Pixel-Holzgrafik. Sie sind weg: Form und Farbe aller Oberflächen kommen
+## jetzt aus UiTheme, sonst hätte das Spiel zwei Designsprachen nebeneinander.
 
 const W := 320
 const H := 180
@@ -103,64 +108,6 @@ static func _tree_silhouette(img: Image, x: float, base: float, h: float, c: Col
 		var ty := base - 2.0 - h * (float(i) / tiers)
 		var half := (h * 0.32) * (1.0 - float(i) / (tiers + 0.6))
 		Pixel.triangle(img, x - half, ty, x + half, ty, x, ty - h * 0.42, c)
-
-# --- Pixel-Art-Rahmen für die Menüs -----------------------------------------
-
-const FRAME := 32
-const MARGIN := 10
-
-## Holzrahmen für Schaltflächen. `state`: 0 normal, 1 überfahren, 2 gedrückt.
-static func button_frame(state: int) -> ImageTexture:
-	var img := Pixel.make(FRAME, FRAME)
-	var body := Color8(74, 56, 42)
-	var bevel := Color8(112, 86, 60)
-	var border := Palette.UI_BORDER
-	if state == 1:
-		body = Color8(98, 74, 48)
-		bevel = Color8(146, 114, 74)
-		border = Palette.UI_BORDER_HI
-	elif state == 2:
-		body = Color8(52, 40, 32)
-		bevel = Color8(74, 56, 42)
-		border = Palette.UI_BORDER
-
-	Pixel.rect(img, 0, 0, FRAME, FRAME, body)
-	# Maserung
-	for y in range(3, FRAME - 3, 4):
-		Pixel.hline(img, 2, y, FRAME - 4, body.darkened(0.12))
-	# Fase: Licht oben links, Schatten unten rechts
-	Pixel.hline(img, 1, 1, FRAME - 2, bevel if state != 2 else body.darkened(0.2))
-	Pixel.vline(img, 1, 1, FRAME - 2, bevel if state != 2 else body.darkened(0.2))
-	Pixel.hline(img, 1, FRAME - 2, FRAME - 2, body.darkened(0.25) if state != 2 else bevel)
-	Pixel.vline(img, FRAME - 2, 1, FRAME - 2, body.darkened(0.25) if state != 2 else bevel)
-	# Außenkante
-	Pixel.hline(img, 0, 0, FRAME, border)
-	Pixel.hline(img, 0, FRAME - 1, FRAME, border)
-	Pixel.vline(img, 0, 0, FRAME, border)
-	Pixel.vline(img, FRAME - 1, 0, FRAME, border)
-	# Nieten in den Ecken
-	for p: Vector2i in [Vector2i(3, 3), Vector2i(FRAME - 4, 3), Vector2i(3, FRAME - 4), Vector2i(FRAME - 4, FRAME - 4)]:
-		Pixel.px(img, p.x, p.y, Palette.UI_BORDER_HI)
-		Pixel.px(img, p.x, p.y + 1, Palette.UI_BG_DEEP)
-	return Pixel.tex(img)
-
-## Dunkle Tafel mit Holzrahmen für Pause- und Optionsfenster.
-static func panel_frame() -> ImageTexture:
-	var img := Pixel.make(FRAME, FRAME)
-	Pixel.rect(img, 0, 0, FRAME, FRAME, Palette.UI_BG)
-	Pixel.rect(img, 0, 0, FRAME, 4, Palette.UI_BORDER)
-	Pixel.rect(img, 0, FRAME - 4, FRAME, 4, Palette.UI_BORDER)
-	Pixel.rect(img, 0, 0, 4, FRAME, Palette.UI_BORDER)
-	Pixel.rect(img, FRAME - 4, 0, 4, FRAME, Palette.UI_BORDER)
-	Pixel.hline(img, 0, 0, FRAME, Palette.UI_BORDER_HI)
-	Pixel.vline(img, 0, 0, FRAME, Palette.UI_BORDER_HI)
-	Pixel.hline(img, 0, FRAME - 1, FRAME, Palette.UI_BG_DEEP)
-	Pixel.vline(img, FRAME - 1, 0, FRAME, Palette.UI_BG_DEEP)
-	Pixel.rect(img, 4, 4, FRAME - 8, 1, Palette.UI_BG_DEEP)
-	Pixel.rect(img, 4, 4, 1, FRAME - 8, Palette.UI_BG_DEEP)
-	for p: Vector2i in [Vector2i(1, 1), Vector2i(FRAME - 3, 1), Vector2i(1, FRAME - 3), Vector2i(FRAME - 3, FRAME - 3)]:
-		Pixel.rect(img, p.x, p.y, 2, 2, Palette.UI_BORDER_HI)
-	return Pixel.tex(img)
 
 ## Wolkenband, das im Hauptmenü langsam vorbeizieht.
 static func cloud_band(width: int, height: int) -> ImageTexture:

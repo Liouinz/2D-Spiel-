@@ -8,16 +8,21 @@ var player: Player
 var camera: GameCamera
 var hud: CanvasLayer
 var grid: GridOverlay
-var build_bar: CanvasLayer
+var build_bar: BuildBar
 var build_tool: BuildTool
-var inventory: CanvasLayer
+var inventory: Inventory
 var streamer: ChunkStreamer
+var ambient: AmbientFx
+var build_fx: BuildFx
+var light: LightManager
 
 const HudScene := preload("res://src/ui/hud.gd")
-const BuildBarScene := preload("res://src/ui/build_bar.gd")
-const InventoryScene := preload("res://src/ui/inventory.gd")
 
 var build_msec: int = 0
+
+## Von Main gesetzt, bevor die Welt in den Baum kommt: neue Welt statt der
+## gespeicherten Karte.
+var fresh: bool = false
 
 var _sorted: Node2D
 
@@ -33,7 +38,7 @@ func _ready() -> void:
 
 	var started := Time.get_ticks_msec()
 	var builder := WorldBuilder.new()
-	builder.build(Config.WORLD_SEED)
+	builder.build(Config.WORLD_SEED, fresh)
 	map = builder.map
 
 	# Die Figur muss vor dem Boden dastehen: der ChunkStreamer lädt um sie
@@ -76,6 +81,26 @@ func _ready() -> void:
 	water.camera = camera
 	player.splashed.connect(water.splash)
 
+	# Kurze Rückmeldung beim Bauen und beim Aufkommen.
+	build_fx = BuildFx.new()
+	build_fx.name = "BuildFx"
+	add_child(build_fx)
+	player.landed.connect(build_fx.puff)
+
+	# Staub und Pollen in der Luft — nur im sichtbaren Ausschnitt.
+	ambient = AmbientFx.new()
+	ambient.name = "AmbientFx"
+	ambient.camera = camera
+	add_child(ambient)
+
+	# Tageslicht, ein weicher Schein um die Figur, dunklere Bildränder.
+	# Muss nach der Kamera kommen: die Vignette liegt auf einer eigenen
+	# CanvasLayer über der Welt, aber unter jeder Oberfläche.
+	light = LightManager.new()
+	light.name = "Light"
+	light.player = player
+	add_child(light)
+
 	# Rotes Blockraster über allem — zeigt das sonst unsichtbare Grid.
 	grid = GridOverlay.new()
 	grid.name = "GridOverlay"
@@ -95,7 +120,8 @@ func _ready() -> void:
 		hud.debug.player = player
 		hud.debug.streamer = streamer
 
-	build_bar = BuildBarScene.new()
+	build_bar = BuildBar.new()
+	build_bar.name = "BuildBar"
 	add_child(build_bar)
 	build_bar.setup(builder.art)
 
@@ -108,6 +134,7 @@ func _ready() -> void:
 	build_tool.camera = camera
 	build_tool.water = water
 	build_tool.minimap = hud.minimap
+	build_tool.fx = build_fx
 	build_tool.main = get_parent()
 	add_child(build_tool)
 	build_bar.slot_clicked.connect(func(i: int) -> void:
@@ -117,11 +144,15 @@ func _ready() -> void:
 		Settings.build_loadout = build_bar.loadout()
 		Settings.save_settings())
 
-	inventory = InventoryScene.new()
+	inventory = Inventory.new()
+	inventory.name = "Inventory"
 	# Das Inventar ist UI und muss bei pausiertem Baum bedienbar bleiben.
 	inventory.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(inventory)
-	inventory.setup(builder.art, build_bar)
+	inventory.setup(build_bar)
+	# Genau ein Weg vom Klick zur Belegung: das Inventar bittet, die Leiste
+	# führt aus, das Inventar zieht seine Anzeige nach. Kein zweiter Pfad,
+	# keine doppelten Meldungen.
 	inventory.equip_requested.connect(func(slot: int, tile: int) -> void:
 		build_bar.equip(slot, tile)
 		inventory.refresh())

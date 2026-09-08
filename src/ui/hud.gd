@@ -20,10 +20,16 @@ func _ready() -> void:
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UiTheme.attach(root)
 	add_child(root)
 
 	# Blockanzeige: Chunk, Block und Position der Figur.
-	_blocks = _make_label(20)
+	#
+	# Kleiner und blasser als früher (20 Punkt in vollem Weiss). Die Angaben
+	# sind nützlich, aber sie sind Nebeninformation — in voller Grösse und
+	# Helligkeit war die Ecke das Erste, was man im Bild sah, und das Spiel
+	# wirkte dadurch wie ein Werkzeug mit Weltansicht.
+	_blocks = _make_label(UiTheme.FONT_SMALL)
 	_blocks.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_blocks.offset_left = 24
 	_blocks.offset_top = 18
@@ -52,7 +58,7 @@ func _ready() -> void:
 	if Settings.show_hints:
 		# Unten ist kein Platz — dort liegt die Bau-Leiste. Die Steuerungshilfe
 		# kommt deshalb unter die Blockanzeige.
-		_label = _make_label(17)
+		_label = _make_label(UiTheme.FONT_SMALL)
 		_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		_label.offset_left = 24
 		_label.offset_top = 78
@@ -66,8 +72,8 @@ func _ready() -> void:
 func _make_label(size: int) -> Label:
 	var l := Label.new()
 	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", Palette.UI_TEXT)
-	l.add_theme_constant_override("outline_size", 5)
+	l.add_theme_color_override("font_color", Color(UiTheme.TEXT, 0.62))
+	l.add_theme_constant_override("outline_size", UiTheme.OUTLINE)
 	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
@@ -91,12 +97,15 @@ func _process(delta: float) -> void:
 		var b := GridOverlay.block_at(player.global_position)
 		var c := GridOverlay.chunk_of(b)
 		var ic := GridOverlay.block_in_chunk(b)
-		var on := is_instance_valid(grid) and grid.show_grid
-		_blocks.text = "Chunk  %d | %d      ·      Block  %d | %d      ·      im Chunk  %d | %d\n%d px je Block   ·   %d × %d Blöcke   =   %d × %d Chunks   ·   G – Raster %s" % [
-			c.x, c.y, b.x, b.y, ic.x, ic.y,
-			Config.TILE, Config.MAP_W, Config.MAP_H,
-			Config.MAP_W / Config.CHUNK, Config.MAP_H / Config.CHUNK,
-			"aus" if on else "an"]
+		# Eine Zeile, und darin nur, was sich ändert.
+		#
+		# Vorher standen hier zwei: darunter „32 px je Block · 2048 × 2048
+		# Blöcke = 128 × 128 Chunks". Das sind Zahlen, die eine ganze Sitzung
+		# lang dieselben bleiben — sie beschreiben die Engine, nicht den Ort,
+		# an dem die Figur steht. Wer sie sehen will, drückt F3; dort stehen
+		# sie zusammen mit Bodentyp, Begehbarkeit und Kollisionsformen.
+		_blocks.text = "Block  %d | %d      ·      Chunk  %d | %d      ·      im Chunk  %d | %d" % [
+			b.x, b.y, c.x, c.y, ic.x, ic.y]
 
 	if _label == null:
 		return

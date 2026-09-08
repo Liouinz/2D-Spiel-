@@ -1,16 +1,25 @@
+class_name BuildBar
 extends CanvasLayer
-## Bau-Leiste am unteren Bildrand: drei Felder mit den Bodentypen, die sich
-## in die Welt setzen lassen — Gras, Sand und Wasser.
+## Bauleiste am unteren Bildrand — die Schnellauswahl im Spiel.
 ##
-## Jedes Feld zeigt die echte Bodenkachel als Vorschau — dieselben Bilder, die
-## auch auf der Karte liegen. Dadurch stimmt die Leiste immer mit dem überein,
-## was ein Klick tatsächlich erzeugt, ohne eigene Symbolgrafiken.
+## Drei Felder in einer zusammenhängenden Leiste, so wie man es aus
+## Sandkastenspielen kennt: Nummer oben links, das Material als Bild, der Name
+## im Fuss. Das gewählte Feld ist deutlich hervorgehoben, nicht nur an einer
+## dünnen Linie zu erkennen.
+##
+## Die Leiste hat genau eine Aufgabe: schnell zwischen den drei belegten
+## Materialien wechseln. WAS auf den Feldern liegt, wird im Inventar (E)
+## bestimmt — die beiden sind technisch verbunden, bleiben aber getrennte
+## Ansichten mit getrennten Aufgaben.
+##
+## Bewusst ohne Dauertext: früher stand hier eine Zeile mit vier
+## Bedienhinweisen. Die Steuerung steht in der HUD und im Optionsmenü; die
+## Leiste selbst zeigt nur noch, was sie ist.
 
-const SLOT := 48          ## Kantenlänge der Kachelvorschau
-const PAD := 8            ## Rand um die Vorschau
-const NAME_H := 16        ## Zeile für den Namen
-const GAP := 8            ## Abstand zwischen den Feldern
-const MARGIN := 14        ## Abstand zum unteren Bildrand
+const SLOT := ItemSlot.SLOT_SIZE      ## 72 x 72
+const GAP := 6                        ## Abstand zwischen den Feldern
+const PAD := 7                        ## Rand der Leiste um die Felder
+const MARGIN := UiTheme.SPACE_M       ## Abstand zum unteren Bildrand
 
 ## Anfangsbelegung der drei Felder. Änderbar: im Inventar (E) lässt sich jedes
 ## Feld mit einem beliebigen Bodentyp belegen, und die Belegung bleibt
@@ -24,120 +33,89 @@ const DEFAULT_TYPES := [
 var selected: int = 0
 var types: Array = DEFAULT_TYPES.duplicate()
 
+## Die Materialbilder der Oberfläche — das Inventar nimmt dieselben, damit
+## beide Ansichten dasselbe zeigen.
+var icons: Array[Texture2D] = []
+
 signal slot_clicked(index: int)
 
 ## Wird gemeldet, wenn sich die Belegung geändert hat — Settings sichern sie.
 signal loadout_changed
 
 var _root: Control
-var _slots: Array[Panel] = []
-var _textures: Array[Texture2D] = []
-var _previews: Array[TextureRect] = []
-var _names: Array[Label] = []
+var _frame: Panel
+var _slots: Array[ItemSlot] = []
+var _world_tex: Array[Texture2D] = []   ## 32er-Kacheln für die Bauvorschau
 var _art: TileArt
-var _hint: Label
+var _message: Label
 var _flash: float = 0.0
 
 func setup(art: TileArt) -> void:
 	layer = 6
+	_art = art
+	icons = TileIcon.build(art)
+	_world_tex.resize(types.size())
+
 	_root = Control.new()
+	_root.name = "Root"
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UiTheme.attach(_root)
 	add_child(_root)
 
-	var slot_w := SLOT + 2 * PAD
-	var slot_h := SLOT + 2 * PAD + NAME_H
-	var width := types.size() * slot_w + (types.size() - 1) * GAP
+	var w := int(PAD * 2 + types.size() * SLOT.x + (types.size() - 1) * GAP)
+	var h := int(PAD * 2 + SLOT.y)
 
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", GAP)
-	row.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.offset_left = -width * 0.5
-	row.offset_right = width * 0.5
-	row.offset_top = -slot_h - MARGIN
-	row.offset_bottom = -MARGIN
-	_root.add_child(row)
+	_frame = Panel.new()
+	_frame.name = "Frame"
+	_frame.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_frame.offset_left = -w * 0.5
+	_frame.offset_right = w * 0.5
+	_frame.offset_top = -h - MARGIN
+	_frame.offset_bottom = -MARGIN
+	# STOP: ein Klick auf die Leiste endet hier und wird nicht zusätzlich als
+	# Bauklick in der Welt ausgeführt.
+	_frame.mouse_filter = Control.MOUSE_FILTER_STOP
+	_frame.add_theme_stylebox_override("panel", bar_frame())
+	_root.add_child(_frame)
 
-	_art = art
 	for i in types.size():
-		row.add_child(_make_slot(art, i, slot_w, slot_h))
+		var slot := ItemSlot.new().setup(ItemSlot.Kind.SLOT, types[i], icons[types[i]], i + 1)
+		slot.position = Vector2(PAD + i * (SLOT.x + GAP), PAD)
+		slot.pressed.connect(func() -> void: slot_clicked.emit(i))
+		_frame.add_child(slot)
+		_slots.append(slot)
+		_world_tex[i] = Pixel.tex(art.base[types[i]][TileArt.VARIANTS])
 
-	# Der Hinweis steht ÜBER der Leiste: unter ihr wäre er am Bildrand
-	# abgeschnitten und läge über der Steuerungshilfe der HUD.
-	_hint = Label.new()
-	_hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_hint.offset_left = -480
-	_hint.offset_right = 480
-	_hint.offset_top = -slot_h - MARGIN - 26
-	_hint.offset_bottom = -slot_h - MARGIN - 4
-	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hint.add_theme_font_size_override("font_size", 16)
-	_hint.add_theme_color_override("font_color", Palette.UI_TEXT)
-	_hint.add_theme_constant_override("outline_size", 6)
-	_hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	_root.add_child(_hint)
+	# Nur für kurze Rückmeldungen wie „Karte gespeichert“ — sonst unsichtbar.
+	_message = Label.new()
+	_message.name = "Message"
+	_message.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_message.offset_left = -320
+	_message.offset_right = 320
+	_message.offset_top = -h - MARGIN - 30
+	_message.offset_bottom = -h - MARGIN - 6
+	_message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_message.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_message.visible = false
+	_message.add_theme_font_size_override("font_size", UiTheme.FONT_SMALL)
+	_message.add_theme_color_override("font_color", UiTheme.ACCENT)
+	_message.add_theme_constant_override("outline_size", UiTheme.OUTLINE + 2)
+	_message.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_root.add_child(_message)
 
 	select(0)
 
-func _make_slot(art: TileArt, i: int, slot_w: int, slot_h: int) -> Panel:
-	var panel := Panel.new()
-	panel.custom_minimum_size = Vector2(slot_w, slot_h)
-	# Anklickbar: das Feld fängt den Klick ab, damit er nicht als Bauklick
-	# in der Welt landet.
-	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	panel.gui_input.connect(func(e: InputEvent) -> void:
-		if e is InputEventMouseButton and e.pressed \
-				and e.button_index == MOUSE_BUTTON_LEFT:
-			slot_clicked.emit(i))
+## Die Fassung der Leiste. Öffentlich, weil das Inventar dieselbe verwendet —
+## so sieht die Leiste dort genauso aus wie im Spiel.
+static func bar_frame() -> StyleBoxFlat:
+	return UiTheme.inset_style()
 
-	# Mittlere Helligkeitsstufe, erste Variante — die neutralste Ansicht.
-	var tex := TextureRect.new()
-	tex.texture = Pixel.tex(art.base[types[i]][TileArt.VARIANTS])
-	_textures.append(tex.texture)
-	_previews.append(tex)
-	tex.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	tex.stretch_mode = TextureRect.STRETCH_SCALE
-	tex.position = Vector2(PAD, PAD)
-	tex.size = Vector2(SLOT, SLOT)
-	tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_child(tex)
-
-	panel.add_child(_slot_label(str(i + 1), 13, Vector2(PAD + 3, PAD - 2), Vector2(20, 18),
-		HORIZONTAL_ALIGNMENT_LEFT))
-	# 11 Punkt: der längste Name ("Wasser") passt damit bequem ins Feld.
-	var nm := _slot_label(GroundTileSet.NAMES[types[i]], 11,
-		Vector2(0, SLOT + 2 * PAD - 3), Vector2(slot_w, NAME_H), HORIZONTAL_ALIGNMENT_CENTER)
-	_names.append(nm)
-	panel.add_child(nm)
-
-	_slots.append(panel)
-	return panel
-
-func _slot_label(text: String, size: int, pos: Vector2, dim: Vector2, align: int) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.position = pos
-	l.size = dim
-	l.horizontal_alignment = align
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
-	l.add_theme_constant_override("outline_size", 5)
-	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return l
-
-## Hebt das gewählte Feld hervor und benennt es.
+## Hebt das gewählte Feld hervor.
 func select(i: int) -> void:
 	selected = posmod(i, types.size())
 	for s in _slots.size():
-		_slots[s].add_theme_stylebox_override("panel", _frame(s == selected))
-	_flash = 0.0
-	if _hint != null:
-		_hint.text = "%s  gewählt   ·   1–3 oder Mausrad wechseln   ·   links setzen   ·   rechts entfernen   ·   E – Inventar" % [
-			GroundTileSet.NAMES[types[selected]]]
+		_slots[s].selected = s == selected
 
 ## Der gewählte Bodentyp.
 func tile_type() -> int:
@@ -147,12 +125,11 @@ func tile_type() -> int:
 func equip(slot: int, tile: int) -> void:
 	if slot < 0 or slot >= types.size() or types[slot] == tile:
 		return
+	if tile < 0 or tile >= MapData.Tile.COUNT:
+		return
 	types[slot] = tile
-	var tex := Pixel.tex(_art.base[tile][TileArt.VARIANTS])
-	_textures[slot] = tex
-	_previews[slot].texture = tex
-	_names[slot].text = GroundTileSet.NAMES[tile]
-	select(selected)
+	_slots[slot].set_tile(tile, icons[tile])
+	_world_tex[slot] = Pixel.tex(_art.base[tile][TileArt.VARIANTS])
 	loadout_changed.emit()
 
 ## Belegung als Liste von Bodentypen (für das Sichern).
@@ -161,28 +138,29 @@ func loadout() -> Array:
 
 func set_loadout(list: Array) -> void:
 	for i in mini(list.size(), types.size()):
-		var t: int = int(list[i])
-		if t >= 0 and t < MapData.Tile.COUNT:
-			equip(i, t)
+		equip(i, int(list[i]))
 
-## Die Kachel des gewählten Typs — die Bauvorschau zeichnet sie unter den Zeiger.
+## Die Weltkachel des gewählten Typs — die Bauvorschau zeichnet sie in den
+## Block unter dem Zeiger. Bewusst die 32er-Kachel, nicht das grosse Feldbild:
+## die Vorschau liegt auf genau einem Block.
 func preview_texture() -> Texture2D:
-	if selected < _textures.size():
-		return _textures[selected]
+	if selected < _world_tex.size():
+		return _world_tex[selected]
 	return null
 
 ## Liegt der Mauszeiger über der Leiste? Dann darf kein Block gesetzt werden.
 func covers(pos: Vector2) -> bool:
-	for s in _slots:
-		if s.get_global_rect().has_point(pos):
-			return true
-	return false
+	if not visible or not is_instance_valid(_frame):
+		return false
+	return _frame.get_global_rect().has_point(pos)
 
-## Blendet für zwei Sekunden eine Meldung statt der Bedienhilfe ein.
+## Blendet für zwei Sekunden eine Meldung über der Leiste ein.
 func flash(text: String) -> void:
-	if _hint == null:
+	if _message == null:
 		return
-	_hint.text = text
+	_message.text = text
+	_message.visible = true
+	_message.modulate.a = 1.0
 	_flash = 2.0
 
 func _process(delta: float) -> void:
@@ -190,12 +168,6 @@ func _process(delta: float) -> void:
 		return
 	_flash -= delta
 	if _flash <= 0.0:
-		select(selected)      # setzt den normalen Hinweistext zurück
-
-func _frame(active: bool) -> StyleBoxFlat:
-	var box := StyleBoxFlat.new()
-	box.bg_color = Color(0.07, 0.08, 0.10, 0.88 if active else 0.66)
-	box.set_border_width_all(3 if active else 2)
-	box.border_color = Color(1.00, 0.85, 0.25, 0.95) if active else Color(0, 0, 0, 0.6)
-	box.set_corner_radius_all(6)
-	return box
+		_message.visible = false
+	elif _flash < 0.5:
+		_message.modulate.a = _flash / 0.5

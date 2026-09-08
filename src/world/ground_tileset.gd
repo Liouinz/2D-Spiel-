@@ -55,12 +55,22 @@ var _full_count: int = 0               ## Vollkacheln je Bodentyp
 var _table := PackedByteArray()
 var _shade: FastNoiseLite               ## grossflaechige Bodenhelligkeit
 var edges: EdgeArt                      ## Uferkanten
+
+## Streu-Dekoration: Quelle im Kachelsatz und die Plätze je Bodentyp.
+var decor_source: int = -1
+var decor_slots: Array = []
+var decor_grass: Array = []
+var decor_sand: Array = []
 var _sharp: Array[bool] = []            ## Schichten ohne weichen Übergang
 
 ## Hinter den drei Bodenschichten liegt die Kantenschicht (Uferband und
 ## Tiefenband). Die Reihenfolge muss zu ChunkStreamer.setup() passen.
 const LAYER_EDGE := 3
-const LAYER_COUNT := 4
+
+## Ganz oben die Streu-Dekoration: Büschel, Blumen, Kiesel. Sie liegt über den
+## Kanten, damit ein Grasbüschel am Ufer nicht vom Uferband durchschnitten wird.
+const LAYER_DECOR := 4
+const LAYER_COUNT := 5
 
 static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 	var g := GroundTileSet.new()
@@ -95,13 +105,25 @@ static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 				var td := src.get_tile_data(slots[i], 0)
 				td.terrain_set = 0
 				td.terrain = terrain
-				var mask := i if i < TerrainAtlas.PARTIAL else 15
+				var mask := (i / TerrainAtlas.EDGE_VARIANTS) if i < TerrainAtlas.FULL_START else 15
 				for c in 4:
 					if mask & (1 << c):
 						td.set_terrain_peering_bit(CORNERS[c], terrain)
 
 		g._sources.append(sid)
 		g._slots.append(slots)
+
+	# Dekor als eigene Atlasquelle im selben Kachelsatz.
+	var decor: Dictionary = DecorArt.build(seed_value)
+	var decor_src := TileSetAtlasSource.new()
+	decor_src.texture = decor["texture"]
+	decor_src.texture_region_size = Vector2i(Config.TILE, Config.TILE)
+	for coords: Vector2i in decor["slots"]:
+		decor_src.create_tile(coords)
+	g.decor_source = ts.add_source(decor_src)
+	g.decor_slots = decor["slots"]
+	g.decor_grass = decor["grass"]
+	g.decor_sand = decor["sand"]
 
 	g.edges = EdgeArt.build(ts)
 	g._build_table()
@@ -213,6 +235,7 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 
 	var cell := Vector2i(x, y)
 	var count := STACK.size()
+	_paint_decor(layers, cell, t4, erase)
 
 	# Häufigster Fall, gerade auf einer noch leeren Karte: ringsum derselbe
 	# Bodentyp. Dann ist jede Ecke bedeckt und die Eckrechnung entfällt.
@@ -262,9 +285,39 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 			if erase:
 				layer.erase_cell(cell)
 		else:
-			layer.set_cell(cell, _sources[pos], (_slots[pos] as Array[Vector2i])[mask])
+			# Welche Ausführung der Maske? Der Streuwert des Feldes entscheidet:
+			# ortsfest, also gleich nach jedem Nachladen des Chunks.
+			var edge := Config.hash2(x, y) % TerrainAtlas.EDGE_VARIANTS
+			layer.set_cell(cell, _sources[pos],
+				(_slots[pos] as Array[Vector2i])[mask * TerrainAtlas.EDGE_VARIANTS + edge])
 
 	_paint_edges(layers, cell, t1, t3, t4, t5, t7, erase)
+
+## Streu-Dekoration auf ein Feld.
+##
+## Ob und was dort steht, ergibt sich allein aus der Feldposition. Dadurch ist
+## es ortsfest: derselbe Kiesel liegt nach dem Nachladen eines Chunks wieder an
+## derselben Stelle, ohne dass irgendwo eine Liste geführt werden müsste.
+##
+## Zwei verschiedene Streuwerte: einer entscheidet OB, der andere WAS. Mit
+## einem einzigen wären beide Entscheidungen gekoppelt und man sähe es der
+## Verteilung an.
+func _paint_decor(layers: Array[TileMapLayer], cell: Vector2i, tile: int, erase: bool) -> void:
+	if layers.size() <= LAYER_DECOR or decor_source < 0:
+		return
+	var layer := layers[LAYER_DECOR]
+	var choices: Array = []
+	match tile:
+		MapData.Tile.GRASS: choices = decor_grass
+		MapData.Tile.SAND: choices = decor_sand
+	var chance := Graphics.decor_chance(tile)
+	if choices.is_empty() or chance <= 0 \
+			or Config.hash2(cell.x * 3 + 1, cell.y * 7 + 2) % 1000 >= chance:
+		if erase:
+			layer.erase_cell(cell)
+		return
+	var pick: int = choices[Config.hash2(cell.y * 5 + 3, cell.x * 11 + 9) % choices.size()]
+	layer.set_cell(cell, decor_source, decor_slots[pick])
 
 ## Uferkanten: das Land hört sichtbar auf, im Wasser fällt der Grund weg.
 func _paint_edges(layers: Array[TileMapLayer], cell: Vector2i,

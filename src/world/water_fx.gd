@@ -9,7 +9,6 @@ extends Node2D
 
 const T := Config.TILE
 const FOAM_SEG := 4          ## Segmentbreite des Schaums in Pixeln
-const REDRAW_HZ := 24.0
 const SPLASH_TIME := 0.55    ## Lebensdauer eines Wellenrings
 
 ## Bits der Uferrichtungen je Kachel
@@ -60,6 +59,11 @@ func splash(pos: Vector2) -> void:
 	queue_redraw()
 
 func _process(delta: float) -> void:
+	# Auf der einfachsten Wasserstufe bleibt die Fläche ruhig: kein Glitzern,
+	# keine Brandung, keine Wellenringe — und damit auch kein Neuzeichnen. Das
+	# ist der grösste Einzelposten, den sich ein schwacher Rechner sparen kann.
+	if not Graphics.water_animated():
+		return
 	_time += delta
 	if not _splashes.is_empty():
 		for sp: Dictionary in _splashes:
@@ -67,14 +71,14 @@ func _process(delta: float) -> void:
 		_splashes = _splashes.filter(func(sp: Dictionary) -> bool: return sp["age"] < SPLASH_TIME)
 		queue_redraw()
 	_accum += delta
-	if _accum >= 1.0 / REDRAW_HZ:
+	if _accum >= 1.0 / Graphics.water_redraw_hz():
 		_accum = 0.0
 		queue_redraw()
 
 func _draw() -> void:
-	if _map == null:
-		return
 	prims = 0
+	if _map == null or not Graphics.water_animated():
+		return
 	var rect: Rect2
 	if is_instance_valid(camera):
 		rect = camera.visible_world_rect().grow(T)
