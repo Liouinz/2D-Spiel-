@@ -509,7 +509,7 @@ Aufrufstelle im Quelltext übrig ist.
 `Layout`. Ein einziger Treffer lässt den Test fehlschlagen. Sie hat beim ersten
 Lauf zwei vergessene Kommentare gefunden.
 
-**Stand dieses Nachtrags:** 154 Prüfungen, alle grün, Godot-Konsole beim Import und beim Lauf
+**Stand dieses Nachtrags:** 155 Prüfungen, alle grün, Godot-Konsole beim Import und beim Lauf
 ohne Fehler. Kachelnähte: Gras 1,16, Sand 0,66, Wasser 0,82 (1,0 = so glatt wie
 das Kachelinnere). Weltaufbau 260 ms, ein Chunk in 1,5 ms, Physik 0,5 ms je
 Bild.
@@ -895,7 +895,7 @@ Test dort Zeichenaufrufe — 53 ohne, 56 mit Beleuchtung — denn die eigentlich
 Gefahr eines 2D-Lichts ist, dass es jeden Knoten in seinem Umkreis ein zweites
 Mal zeichnen lässt.
 
-**Stand:** 250 Prüfungen, alle grün.
+**Stand:** 251 Prüfungen, alle grün.
 
 ## Lizenzlage
 

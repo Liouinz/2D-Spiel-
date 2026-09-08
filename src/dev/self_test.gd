@@ -1790,6 +1790,8 @@ func _check_input_map(world: Node2D) -> void:
 	_check(Config.keys_for("build_place") == "Linke Maustaste", "Links setzt")
 	_check(Config.keys_for("build_remove") == "Rechte Maustaste", "Rechts entfernt")
 	_check(Config.keys_for("build_slot_3") == "3", "Feld 3 liegt auf der 3")
+	_check(Config.keys_for("build_slot_1+build_slot_2+build_slot_3") == "1 2 3",
+		"Materialwahl steht als eine Zeile: 1 2 3")
 	_check(not InputMap.has_action("build_slot_4"),
 		"Es gibt nur drei Materialtasten")
 	_check(Config.keys_for("save_map") == "F5", "F5 speichert")
