@@ -178,6 +178,11 @@ static func build() -> Theme:
 	t.set_stylebox("slider", "HSlider", track)
 	t.set_stylebox("grabber_area", "HSlider", fill)
 	t.set_stylebox("grabber_area_highlight", "HSlider", fill)
+	# Godots Griff ist ein weisser Punkt und der einzige Fleck der Oberfläche,
+	# der nicht zur Palette gehört.
+	var grabber := slider_grabber()
+	t.set_icon("grabber", "HSlider", grabber)
+	t.set_icon("grabber_highlight", "HSlider", grabber)
 
 	var flat := StyleBoxEmpty.new()
 	for state: String in ["normal", "hover", "pressed", "disabled", "focus", "hover_pressed"]:
@@ -189,6 +194,16 @@ static func build() -> Theme:
 	t.set_color("font_hover_color", "CheckBox", ACCENT)
 	t.set_font_size("font_size", "CheckBox", FONT_BODY)
 	return t
+
+## Der Griff des Reglers: dunkler Saum, Akzentring, heller Kern.
+static func slider_grabber() -> ImageTexture:
+	var d := 16
+	var img := Pixel.make(d, d)
+	var c := d * 0.5
+	Pixel.circle(img, c, c, 7.0, Color(0, 0, 0, 0.55))
+	Pixel.circle(img, c, c, 5.5, ACCENT)
+	Pixel.circle(img, c, c, 3.0, ACCENT.lightened(0.4))
+	return Pixel.tex(img)
 
 # --- Fertige Bauteile --------------------------------------------------------
 

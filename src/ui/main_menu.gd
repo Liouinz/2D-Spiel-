@@ -33,9 +33,10 @@ func _background() -> void:
 func _build() -> void:
 	content.add_child(UiTheme.title("TALHAIN", UiTheme.FONT_TITLE))
 	content.add_child(UiTheme.rule(180))
+	content.add_child(UiTheme.gap(UiTheme.SPACE_XS))
 	content.add_child(UiTheme.text_label(
 		"Bauen in einer offenen Welt aus Gras, Sand und Wasser"))
-	content.add_child(UiTheme.gap(UiTheme.SPACE_XL))
+	content.add_child(UiTheme.gap(UiTheme.SPACE_XL + UiTheme.SPACE_S))
 
 	_continue = add_button("FORTSETZEN", func() -> void: continue_pressed.emit())
 	add_button("NEUE WELT", func() -> void: new_world_pressed.emit())

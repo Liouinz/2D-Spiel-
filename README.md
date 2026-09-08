@@ -64,8 +64,11 @@ Quelltext danach und schlägt fehl, sobald noch einer auftaucht.
 ## Die Welt
 
 Das Spiel startet mit einer **leeren Karte und sichtbarem Blockraster**. Das
-Raster ist das technische Skelett der Welt — hier wird es absichtlich in Rot
-gezeigt, damit sich planen lässt, wie viele Blöcke etwas belegt.
+Raster ist das technische Skelett der Welt und wird gezeigt, damit sich planen
+lässt, wie viele Blöcke etwas belegt — aber sehr zurückhaltend. Vorher waren
+die Blocklinien kräftig rot und die Chunk-Linien kräftig gelb; über den ganzen
+Bildschirm gelegt sah die Welt damit aus wie Millimeterpapier. Zum Planen
+reicht eine Linie, die man sieht, wenn man sie sucht.
 
 - **Ein Block = 32 × 32 Pixel.** Die Karte ist **2048 × 2048 Blöcke** groß —
   65 536 × 65 536 Pixel. Einmal quer durchzulaufen dauert rennend rund vier
@@ -182,9 +185,14 @@ zu wechseln. Tastatur und Maus sehen dabei gleich aus: wer mit den Pfeiltasten
 durch ein Menü geht, sieht dasselbe wie mit dem Zeiger.
 
 **Hauptmenü** — **Fortsetzen** steht nur da, wenn es eine gebaute Karte gibt.
-**Neue Welt** fragt vorher nach, wenn dabei eine verloren ginge.
 
 ![Hauptmenü](docs/bilder/hauptmenue.png)
+
+**Neue Welt** fragt vorher nach, wenn dabei eine gebaute Karte verloren ginge.
+Die Datei wird dabei nicht gelöscht — sie wird erst beim nächsten Speichern
+überschrieben:
+
+![Rückfrage vor einer neuen Welt](docs/bilder/rueckfrage.png)
 
 **Pause** — ESC hält das Spiel an. Solange ein Menü offen ist, passiert in der
 Welt nichts: keine Bewegung, kein Bauen, keine Mausaktion. Ein Menü bleibt
@@ -195,12 +203,22 @@ deshalb keinen Block setzen.
 
 ## Einstellungen
 
-Fünf Kategorien statt einer langen Liste: **Allgemein**, **Grafik**,
-**Leistung**, **Steuerung**, **Ton**. Jede Zeile ist gleich gebaut —
-Beschriftung links, Stufen rechts. Auch Schalter sind Stufen („Aus / An"),
-damit nicht Kästchen neben Auswahlfeldern stehen.
+Vier Kategorien statt einer langen Liste: **Allgemein**, **Grafik**,
+**Leistung**, **Steuerung**. Jede Zeile ist ein Streifen über die ganze
+Seitenbreite — Beschriftung links, Stufen rechts. Auch Schalter sind Stufen
+(„Aus / An"), damit nicht Kästchen neben Auswahlfeldern stehen.
+
+Vier, nicht fünf: „Ton" bestand aus einem einzigen Regler und war eine fast
+leere Seite. Ein Thema, das aus einer Zeile besteht, ist kein Thema, sondern
+eine Zeile — die Musik steht jetzt bei „Allgemein", mit ihrem Wert in Prozent
+daneben.
 
 ![Einstellungen](docs/bilder/optionen.png)
+
+Unter **Steuerung** steht die vollständige Tastenbelegung als Tabelle über die
+volle Seitenbreite:
+
+![Steuerung](docs/bilder/steuerung.png)
 
 Es steht dort **nichts, was nicht wirkt**:
 
@@ -420,7 +438,7 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **229 Prüfungen**.
+Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **233 Prüfungen**.
 Darunter unter anderem:
 
 - genau drei Bodentypen in Aufzählung, Kachelstapel, Leiste, Inventar und Minimap
@@ -451,6 +469,8 @@ Darunter unter anderem:
   Ziehen bleiben nie mehr als 24 stehen
 - nichts rechnet, wenn es nichts zu rechnen gibt: Bau-Rückmeldung, Staub und
   Wasserwirkung schalten ihr `_process` wirklich ab
+- mit gespeicherter Karte steht „Fortsetzen“ im Hauptmenü, und „Neue Welt“
+  fragt vorher nach
 - Musik vorhanden, Klangeffekte weder im Ton noch an einer Aufrufstelle
 - keine fremde Asset-Datei im Projekt (siehe [`CREDITS.md`](CREDITS.md))
 

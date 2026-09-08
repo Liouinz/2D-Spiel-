@@ -767,6 +767,46 @@ Eine Zahl, die in der Dokumentation landet, darf davon nicht stammen.
 **Stand:** 229 Prüfungen, alle grün. Weltaufbau 208 ms, ein Chunk in 1,1 ms, die
 Minimap in 0,8 ms, Physik 0,7 ms je Bild, 50 Zeichenaufrufe.
 
+## Nachtrag: Jede Seite einmal ansehen
+
+Bis hierher waren mehrere Bildschirme nie angesehen worden — die
+Einstellungsseiten „Leistung", „Steuerung" und „Ton", die Rückfrage vor einer
+neuen Welt und das Hauptmenü mit vorhandener Karte. Sie sind jetzt Teil des
+Selbsttests, der von jeder ein Bild ablegt. Das war kein Selbstzweck: drei der
+fünf waren schlecht.
+
+**„Ton" war eine Zeile in einem leeren Kasten.** Ein Thema, das aus einem
+Regler besteht, ist kein Thema. Die Musik steht jetzt bei „Allgemein" — vier
+Kategorien statt fünf — und der Regler zeigt seinen Wert in Prozent, statt raten
+zu lassen.
+
+**Die Steuerungsübersicht schwebte.** Sie lag als schmale Tabelle mitten in der
+Fläche, rechts blieb totes Feld, und sie fing an einer anderen x-Position an als
+die Zeilen der übrigen Seiten — beim Wechsel der Kategorie sprang alles. Jetzt
+ist sie eine Tabelle über die volle Breite mit abwechselnd hinterlegten Zeilen.
+
+**Der Seitenkasten war zu zwei Dritteln leer.** Er muss so hoch sein wie die
+längste Kategorie; auf einer Seite mit drei Zeilen sah man vor allem seinen
+leeren Boden, und ein sichtbar leerer Kasten liest sich als unfertig. Der Rahmen
+ist weg: die Zeilen stehen als Streifen direkt auf der Tafel, eine dünne
+senkrechte Linie trennt Kategorien und Inhalt, und der Platz darunter ist
+einfach Rand. Die feste Grösse bleibt — sie hält die Tafel ruhig, wenn man die
+Kategorie wechselt.
+
+**Die Rückfrage wurde doppelt abgedunkelt.** Sie liegt über dem Hauptmenü, das
+sich bereits selbst abdunkelt; zusammen war das Titelbild praktisch schwarz und
+es sah aus, als sei das Spiel ausgegangen. Ihre eigene Abdunkelung ist auf 0,34
+zurückgenommen.
+
+**Und zwei Dinge ausserhalb der Menüs.** Das Blockraster war kräftig rot bei
+30 % über dem ganzen Bild, die Chunk-Linien gelb bei 80 % — die Welt sah aus wie
+Millimeterpapier. Die Entwicklerzeile oben links stand in 20 Punkt vollem Weiss
+und war das Erste, was man im Bild sah. Beides ist zurückgenommen, beides
+funktioniert unverändert. Das ist der Unterschied zwischen einem Werkzeug mit
+Weltansicht und einem Spiel.
+
+**Stand:** 233 Prüfungen, alle grün.
+
 ## Lizenzlage
 
 Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest

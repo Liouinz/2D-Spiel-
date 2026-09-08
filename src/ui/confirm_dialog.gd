@@ -14,11 +14,19 @@ var confirm_text: String = "BESTÄTIGEN"
 
 var _message: Label
 
+## Die Rückfrage liegt ÜBER dem Hauptmenü, das sich bereits selbst abdunkelt.
+## Mit der vollen Abdunkelung kam beides zusammen und das Titelbild war
+## praktisch schwarz — es sah aus, als sei das Spiel ausgegangen.
+func _configure() -> void:
+	scrim_alpha = 0.34
+
 func _build() -> void:
 	add_heading(title_text, UiTheme.FONT_H1)
 	_message = UiTheme.text_label(message_text, UiTheme.FONT_BODY, UiTheme.TEXT)
 	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_message.custom_minimum_size = Vector2(UiTheme.BUTTON_W, 0)
+	# Breiter als eine Schaltfläche: sonst bricht der Satz in vier kurze Zeilen,
+	# von denen die letzte aus einem Wort besteht.
+	_message.custom_minimum_size = Vector2(UiTheme.BUTTON_W + 90, 0)
 	content.add_child(_message)
 	content.add_child(UiTheme.gap(UiTheme.SPACE_M))
 	# Abbrechen steht zuerst und bekommt damit den Fokus: die harmlose Wahl ist

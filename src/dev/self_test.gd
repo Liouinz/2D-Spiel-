@@ -214,10 +214,12 @@ func _run() -> void:
 	_check(main.state == main.State.OPTIONS, "Optionen offen")
 	await _frames(4)
 	await _shot("06_optionen")
-	# Ein zweites Bild von der Grafikseite: die Kategorien sind der eigentliche
-	# Umbau, und eine Seite mit Auswahlreihen zeigt mehr als die erste.
-	main._options_menu._show_page(1)
-	await _shot("12_grafik")
+	# JEDE Kategorieseite wird abgelichtet. Eine Seite, die nie jemand ansieht,
+	# ist eine Seite, auf der etwas verrutschen kann, ohne dass es auffällt —
+	# und genau das ist hier schon zweimal passiert.
+	for entry: Array in [[1, "12_grafik"], [2, "13_leistung"], [3, "14_steuerung"]]:
+		main._options_menu._show_page(entry[0])
+		await _shot(entry[1])
 	main._options_menu._show_page(0)
 	await _frames(4)
 	main.close_options()
@@ -242,6 +244,19 @@ func _run() -> void:
 	main.to_main_menu()
 	await _frames(4)
 	_check(main.state == main.State.MENU, "Zurück im Hauptmenü")
+	# Jetzt liegt eine gebaute Karte vor: das Hauptmenü muss „Fortsetzen"
+	# zeigen, und „Neue Welt" muss nachfragen, statt sie zu überschreiben.
+	_check(MapData.has_save(), "Es gibt jetzt eine gebaute Karte")
+	_check(main._main_menu._continue.visible,
+		"Mit gespeicherter Karte steht „Fortsetzen\" im Hauptmenü")
+	await _shot("16_hauptmenue_fortsetzen")
+	main.ask_new_world()
+	await _frames(4)
+	_check(main.state == main.State.CONFIRM, "„Neue Welt\" fragt vorher nach")
+	await _shot("17_rueckfrage")
+	main._unhandled_input(_key("ui_cancel"))
+	await _frames(4)
+	_check(main.state == main.State.MENU, "ESC bricht die Rückfrage ab")
 	main.start_game()
 	await _frames(6)
 	_check(main._world != null and main._world != world, "Neustart erzeugt frische Welt")

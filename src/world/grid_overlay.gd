@@ -12,14 +12,24 @@ extends Node2D
 ##
 ## Gezeichnet wird nur der sichtbare Ausschnitt.
 
-const BLOCK_LINE := Color(0.90, 0.20, 0.22, 0.30)
-const CHUNK_LINE := Color(1.00, 0.85, 0.25, 0.80)
-const CHUNK_TEXT := Color(1.00, 0.90, 0.45, 0.60)
-const PLAYER_FILL := Color(1.00, 0.35, 0.35, 0.22)
-const PLAYER_LINE := Color(1.00, 0.55, 0.45, 0.95)
+## Die Rasterfarben sind bewusst zurückgenommen.
+##
+## Vorher waren die Blocklinien kräftig rot bei 30 % Deckkraft und die
+## Chunk-Linien gelb bei 80 %. Über den ganzen Bildschirm gelegt sah die Welt
+## damit aus wie Millimeterpapier — das ist der Eindruck eines
+## Entwicklerwerkzeugs, nicht der eines Spiels. Zum Planen reicht eine Linie,
+## die man sieht, wenn man sie sucht; sie muss nicht ins Auge springen.
+##
+## Die Funktion bleibt unverändert: G schaltet die Linien, die Bauvorschau
+## bleibt davon unberührt, und der Block unter der Figur ist weiter markiert.
+const BLOCK_LINE := Color(1.00, 1.00, 1.00, 0.055)
+const CHUNK_LINE := Color(1.00, 0.85, 0.35, 0.30)
+const CHUNK_TEXT := Color(1.00, 0.90, 0.50, 0.22)
+const PLAYER_FILL := Color(1.00, 0.85, 0.45, 0.10)
+const PLAYER_LINE := Color(1.00, 0.85, 0.45, 0.45)
 const CURSOR_LINE := Color(1.00, 1.00, 1.00, 0.95)
 const CURSOR_GHOST := Color(1.00, 1.00, 1.00, 0.55)   ## Deckkraft des Geistbilds
-const BORDER := Color(1.00, 0.45, 0.20, 0.85)
+const BORDER := Color(1.00, 0.55, 0.25, 0.75)
 
 var camera: GameCamera
 var player: Node2D

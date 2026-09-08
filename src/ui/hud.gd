@@ -24,7 +24,12 @@ func _ready() -> void:
 	add_child(root)
 
 	# Blockanzeige: Chunk, Block und Position der Figur.
-	_blocks = _make_label(20)
+	#
+	# Kleiner und blasser als früher (20 Punkt in vollem Weiss). Die Angaben
+	# sind nützlich, aber sie sind Nebeninformation — in voller Grösse und
+	# Helligkeit war die Ecke das Erste, was man im Bild sah, und das Spiel
+	# wirkte dadurch wie ein Werkzeug mit Weltansicht.
+	_blocks = _make_label(UiTheme.FONT_SMALL)
 	_blocks.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_blocks.offset_left = 24
 	_blocks.offset_top = 18
@@ -53,7 +58,7 @@ func _ready() -> void:
 	if Settings.show_hints:
 		# Unten ist kein Platz — dort liegt die Bau-Leiste. Die Steuerungshilfe
 		# kommt deshalb unter die Blockanzeige.
-		_label = _make_label(17)
+		_label = _make_label(UiTheme.FONT_SMALL)
 		_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		_label.offset_left = 24
 		_label.offset_top = 78
@@ -67,8 +72,8 @@ func _ready() -> void:
 func _make_label(size: int) -> Label:
 	var l := Label.new()
 	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", Palette.UI_TEXT)
-	l.add_theme_constant_override("outline_size", 5)
+	l.add_theme_color_override("font_color", Color(UiTheme.TEXT, 0.62))
+	l.add_theme_constant_override("outline_size", UiTheme.OUTLINE)
 	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
