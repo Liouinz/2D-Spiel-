@@ -106,8 +106,17 @@ func _run() -> void:
 	var counts := _count_tiles(map, GridOverlay.block_at(player.position), 40)
 	_check(counts.size() == 1 and counts.has(MapData.Tile.GRASS),
 		"Karte startet leer (nur Gras)")
-	_check(world.get_node("Sorted").get_child_count() == 1,
-		"Keine Requisiten auf der Karte")
+	# Unter „Sorted" hängen nur die Figur und der (leere) Behälter für Fackeln.
+	# Requisiten gibt es in diesem Spiel nicht mehr, und wenn wieder welche
+	# auftauchen, fällt es hier auf.
+	var sorted := world.get_node("Sorted")
+	var unexpected: Array[String] = []
+	for child: Node in sorted.get_children():
+		if not (child is Player or child is Torches):
+			unexpected.append(child.name)
+	_check(unexpected.is_empty() and world.torches.count() == 0,
+		"Keine Requisiten auf der Karte%s"
+		% ("" if unexpected.is_empty() else " (%s)" % ", ".join(unexpected)))
 	_check(map.is_solid(0, 10) and map.is_solid(Config.MAP_W - 1, 10),
 		"Unsichtbare Wand am Kartenrand")
 	var g: GridOverlay = world.grid
@@ -170,6 +179,7 @@ func _run() -> void:
 	await _check_building(world, map, player)
 	await _check_water(world, map, player)
 	await _check_terrain_shapes(world, map)
+	await _check_gaps(world, map)
 	await _check_build_feedback(world)
 	await _check_idle_cost(world)
 	await _check_toggle(world, map, player)
@@ -177,8 +187,10 @@ func _run() -> void:
 	await _check_design_system(world)
 	await _check_settings(world)
 	await _check_motion(world)
+	await _check_quality()
 	await _check_light(world)
 	await _check_figure(world)
+	await _check_torch_and_zoom(world)
 	await _check_input_lock(world, map, player)
 	await _check_input_map(world)
 	await _check_stress(world, map, player)
@@ -231,7 +243,8 @@ func _run() -> void:
 	# JEDE Kategorieseite wird abgelichtet. Eine Seite, die nie jemand ansieht,
 	# ist eine Seite, auf der etwas verrutschen kann, ohne dass es auffällt —
 	# und genau das ist hier schon zweimal passiert.
-	for entry: Array in [[1, "12_grafik"], [2, "13_leistung"], [3, "14_steuerung"]]:
+	for entry: Array in [[1, "12_grafik"], [2, "13_effekte"], [3, "14_leistung"],
+			[4, "15_steuerung"]]:
 		main._options_menu._show_page(entry[0])
 		await _shot(entry[1])
 	main._options_menu._show_page(0)
@@ -747,6 +760,21 @@ func _check_water(world: Node2D, map: MapData, player: Player) -> void:
 	player.velocity = Vector2.ZERO
 	await _frames(6)
 	_check(player.is_swimming(), "Figur schwimmt im Teich")
+
+	# Kielwellen: wer sich im Wasser bewegt, zieht eine Spur. Und sie hört
+	# wieder auf — eine Spur, die stehen bleibt, wäre ein Leck.
+	var water_fx: WaterFx = world.get_node("WaterFx")
+	water_fx._splashes.clear()
+	await _drive("move_right", 30)
+	_check(not water_fx._splashes.is_empty(),
+		"Durchs Wasser laufen zieht eine Spur (%d Wellen)" % water_fx._splashes.size())
+	_check(water_fx._splashes.size() <= WaterFx.MAX_WAVES,
+		"Und die Spur bleibt gedeckelt (%d von höchstens %d)"
+		% [water_fx._splashes.size(), WaterFx.MAX_WAVES])
+	player.velocity = Vector2.ZERO
+	await _frames(70)
+	_check(water_fx._splashes.is_empty(),
+		"Im Stehen läuft sie aus (%d übrig)" % water_fx._splashes.size())
 	await _drive("move_right", 20)
 	_check(player.velocity.length() <= Config.SWIM_SPEED + 1.0,
 		"Im Wasser höchstens Schwimmgeschwindigkeit (%.0f)" % player.velocity.length())
@@ -968,6 +996,100 @@ func _check_terrain_shapes(world: Node2D, map: MapData) -> void:
 	tool.place(pond, MapData.Tile.GRASS)
 	await _frames(2)
 
+## Eine echte Lücke muss eine sichtbare Lücke bleiben.
+##
+## Das war ein gemeldeter Fehler, und er stimmte:
+##
+##   [SAND][SAND][ leer ][SAND][SAND]
+##
+## Das leere Feld hat links UND rechts Sand. Der Übergang wächst aus den
+## Nachbarn heraus und setzt eine Ecke, sobald eines der drei dort anliegenden
+## Felder dazugehört — also alle vier. Maske 15, und die lag im Atlas hinter den
+## Teilkacheln: das leere Feld bekam eine VOLLKACHEL Sand und die Lücke war weg.
+##
+## Derselbe Fehler traf jeden einzeln entfernten Block mitten in einer Fläche:
+## acht Nachbarn ringsum, Maske 15, Vollkachel — das Entfernen war unsichtbar.
+##
+## Geprüft wird deshalb nicht die Maske (die ist in beiden Fällen 15), sondern
+## ob wirklich eine Vollkachel gesetzt wurde, und ob im Kachelbild noch Löcher
+## sind, durch die der Boden darunter zu sehen ist.
+func _check_gaps(world: Node2D, map: MapData) -> void:
+	var tool: BuildTool = world.build_tool
+	var sand := MapData.Tile.SAND
+	var origin := GridOverlay.block_at(world.player.global_position) + Vector2i(0, -8)
+	for oy in range(-2, 3):
+		for ox in range(-4, 5):
+			tool.place(origin + Vector2i(ox, oy), MapData.Tile.GRASS)
+	await _frames(2)
+
+	# --- Die gemeldete Reihe: [S][S][ ][S][S] ---
+	for ox: int in [-2, -1, 1, 2]:
+		tool.place(origin + Vector2i(ox, 0), sand)
+	await _frames(3)
+	_check(not _is_full(world, 1, origin),
+		"Die Lücke in [S][S][ ][S][S] bleibt eine Lücke")
+	var open_px := _open_pixels(world, 1, origin)
+	_check(open_px > 60,
+		"Durch die Lücke ist der Boden darunter zu sehen (%d von 1024 Punkten)" % open_px)
+
+	# --- Ein einzeln entfernter Block mitten in einer Fläche ---
+	for oy in range(-1, 2):
+		for ox in range(-1, 2):
+			tool.place(origin + Vector2i(ox, oy), sand)
+	await _frames(3)
+	_check(_is_full(world, 1, origin), "Mitten in der Fläche liegt eine Vollkachel")
+	tool.place(origin, MapData.Tile.GRASS)
+	await _frames(3)
+	_check(not _is_full(world, 1, origin),
+		"Ein entfernter Block mitten in der Fläche ist wirklich weg")
+	_check(_open_pixels(world, 1, origin) > 60,
+		"Und man sieht den Boden darunter (%d Punkte)" % _open_pixels(world, 1, origin))
+
+	# --- Zwei Felder Abstand bleiben zwei Felder ---
+	for oy in range(-2, 3):
+		for ox in range(-4, 5):
+			tool.place(origin + Vector2i(ox, oy), MapData.Tile.GRASS)
+	for ox: int in [-3, -2, 1, 2]:
+		tool.place(origin + Vector2i(ox, 0), sand)
+	await _frames(3)
+	var both_open := _open_pixels(world, 1, origin) + _open_pixels(world, 1, origin + Vector2i(-1, 0))
+	_check(both_open > 300,
+		"Zwei Felder Abstand bleiben deutlich offen (%d Punkte)" % both_open)
+
+	# Aufräumen.
+	for oy in range(-2, 3):
+		for ox in range(-4, 5):
+			tool.place(origin + Vector2i(ox, oy), MapData.Tile.GRASS)
+	await _frames(3)
+
+## Liegt auf diesem Feld dieser Schicht eine Vollkachel?
+func _is_full(world: Node2D, layer_pos: int, cell: Vector2i) -> bool:
+	var idx := _slot_index(world, layer_pos, cell)
+	return idx >= TerrainAtlas.FULL_START
+
+## Wie viele der 1024 Bildpunkte der gesetzten Kachel durchsichtig sind — also
+## wie viel vom Boden darunter zu sehen ist.
+func _open_pixels(world: Node2D, layer_pos: int, cell: Vector2i) -> int:
+	var layer: TileMapLayer = world.streamer.layers[layer_pos]
+	var coords := layer.get_cell_atlas_coords(cell)
+	if coords.x < 0:
+		return Config.TILE * Config.TILE          # gar keine Kachel = ganz offen
+	var src := layer.tile_set.get_source(layer.get_cell_source_id(cell)) as TileSetAtlasSource
+	var img := src.texture.get_image()
+	var n := 0
+	for y in Config.TILE:
+		for x in Config.TILE:
+			if img.get_pixel(coords.x * Config.TILE + x, coords.y * Config.TILE + y).a < 0.35:
+				n += 1
+	return n
+
+func _slot_index(world: Node2D, layer_pos: int, cell: Vector2i) -> int:
+	var layer: TileMapLayer = world.streamer.layers[layer_pos]
+	var coords := layer.get_cell_atlas_coords(cell)
+	if coords.x < 0:
+		return -1
+	return (world.streamer.ground._slots[layer_pos] as Array).find(coords)
+
 ## Die Eckmaske eines Feldes auf einer Bodenschicht.
 ##
 ## 0 – 14 sind Übergänge, 15 ist eine Vollkachel, −1 heisst: dort liegt nichts.
@@ -1111,14 +1233,95 @@ func _check_motion(world: Node2D) -> void:
 	Settings.changed_and_save()
 	await _frames(20)
 
+# --- Qualitätsprofile ---------------------------------------------------------
+
+## Profile müssen zwei Dinge können: wirklich etwas einstellen, und beim
+## Sparen die richtigen Dinge opfern.
+##
+## Der zweite Punkt ist der, um den es geht. Ein Profil, das jeden Regler nach
+## unten schiebt, ist keine Anpassung, sondern Aufgeben. Gemessen kostet die
+## Tönung des Tageslichts nichts und der Bewuchs am Boden nichts — beides
+## bleibt deshalb auch auf der niedrigsten Stufe an, und weggenommen wird, was
+## Füllrate frisst.
+func _check_quality() -> void:
+	var before := {}
+	for entry: Array in Quality.GIVE_UP:
+		before[entry[0]] = Settings.get(entry[0])
+	var shadows_before := Settings.shadows
+	var decor_before := Settings.decor
+
+	# 1. Jedes Profil stellt wirklich etwas ein und wird wiedererkannt.
+	var wrong: Array[String] = []
+	for level in Quality.NAMES.size():
+		Quality.apply(level)
+		if Quality.current() != level:
+			wrong.append("%s wird nicht wiedererkannt" % Quality.NAMES[level])
+	_check(wrong.is_empty(), "Jedes Profil stellt ein, was es verspricht%s"
+		% ("" if wrong.is_empty() else " (%s)" % ", ".join(wrong)))
+
+	# 2. „Eigene": sobald ein Regler nicht mehr passt, behauptet nichts mehr,
+	#    ein Profil sei eingestellt.
+	Quality.apply(Quality.Level.HOCH)
+	Settings.particles = 0
+	_check(Quality.current() < 0,
+		"Ein von Hand verstellter Regler heisst „Eigene\", nicht mehr „Hoch\"")
+
+	# 3. Die niedrigste Stufe behält, was gratis ist.
+	Quality.apply(Quality.Level.NIEDRIG)
+	_check(Settings.light >= 1 and Settings.decor >= 1,
+		"Auch „Niedrig\" behält Tagesverlauf und Bewuchs (Licht %d, Bewuchs %d)"
+		% [Settings.light, Settings.decor])
+	_check(Settings.particles == 0 and Settings.wind == 0,
+		"Und gibt auf, was Füllrate kostet")
+
+	# 4. Heruntergeregelt wird EINE Wirkung je Schritt, teuerste zuerst.
+	Quality.apply(Quality.Level.HOCH)
+	var first := Quality.step_down()
+	_check(first == "light" and Settings.light == 2,
+		"Zuerst fällt die Sichtgrenze (%s -> Licht %d)" % [first, Settings.light])
+	var steps := 0
+	while Quality.step_down() != "" and steps < 20:
+		steps += 1
+	_check(steps > 0 and steps < 20, "Und danach ist irgendwann Schluss (%d Schritte)" % steps)
+
+	# 5. Nach oben nie über das hinaus, was der Mensch eingestellt hat.
+	var ceiling := {"light": 2, "particles": 1, "wind": 0,
+		"water_detail": 0, "render_range": 0}
+	var guard := 0
+	while Quality.step_up(ceiling) != "" and guard < 20:
+		guard += 1
+	_check(Settings.light == 2 and Settings.particles == 1 and Settings.wind == 0,
+		"Die Automatik gibt nie mehr zurück, als eingestellt war (Licht %d, Staub %d, Wind %d)"
+		% [Settings.light, Settings.particles, Settings.wind])
+
+	# 6. Die Hardwareerkennung liefert echte Werte, keine Platzhalter.
+	var hw := Quality.hardware()
+	_check(int(hw["cores"]) > 0 and String(hw["gpu"]) != "",
+		"Hardware wird erkannt (%d Kerne, %s, %s)"
+		% [hw["cores"], hw["gpu"], Quality.gpu_kind(int(hw["gpu_type"]))])
+	var guess := Quality.suggest()
+	_check(guess >= 0 and guess < Quality.NAMES.size(),
+		"Und daraus folgt ein Vorschlag: %s" % Quality.NAMES[guess])
+
+	for key: String in before:
+		Settings.set(key, before[key])
+	Settings.shadows = shadows_before
+	Settings.decor = decor_before
+	Settings.changed_and_save()
+	await _frames(4)
+
 # --- Beleuchtung --------------------------------------------------------------
 
-## Das Tageslicht muss drei Dinge können: sich über den Tag ändern, der Figur
-## folgen, und auf Stufe „Aus" wirklich verschwinden.
+## Das Tageslicht muss vier Dinge können: sich über den Tag ändern, der Figur
+## folgen, auf Stufe „Aus" verschwinden — und dabei billig bleiben.
 ##
-## Der letzte Punkt ist der wichtigste. Ein CanvasModulate in Weiss und eine
-## Vignette mit Stärke 0 sehen aus wie „aus", werden aber weiterhin über jeden
-## Bildpunkt gerechnet — eine Einstellung, die nichts spart, ist eine Lüge.
+## Der letzte Punkt ist der, der diese Prüfungen nötig macht. Gemessen wurde
+## (Renderzeit des Viewports, llvmpipe): ein echtes `PointLight2D` kostete
+## +3,43 ms CPU-Renderzeit, ein Vollbild-Fragment-Shader als Vignette weitere
+## +1,69 CPU und +1,80 GPU — zusammen eine Verdopplung der Renderkosten, bei
+## Tag wie bei Nacht. Beides ist ersetzt; diese Prüfungen halten fest, dass es
+## ersetzt BLEIBT. Ein wieder eingebautes Light2D fiele sonst erst auf einem
+## fremden Rechner auf.
 func _check_light(world: Node2D) -> void:
 	var light: LightManager = world.light
 	var before := Settings.light
@@ -1127,7 +1330,7 @@ func _check_light(world: Node2D) -> void:
 	#    Morgen und Abend warm getönt statt neutral.
 	var night := LightManager.tint_at(0.0).get_luminance()
 	var noon := LightManager.tint_at(0.5).get_luminance()
-	_check(night < noon - 0.25,
+	_check(night < noon - 0.4,
 		"Die Nacht ist merklich dunkler als der Mittag (%.2f gegen %.2f)" % [night, noon])
 	var dusk := LightManager.tint_at(0.79)
 	_check(dusk.r > dusk.b + 0.2, "Der Abend ist warm getönt (r %.2f, b %.2f)" % [dusk.r, dusk.b])
@@ -1141,39 +1344,82 @@ func _check_light(world: Node2D) -> void:
 		prev = cur
 	_check(jump < 0.02, "Der Tagesverlauf springt nirgends (grösster Schritt %.4f)" % jump)
 
-	# 2. Tagesverlauf: die Uhr läuft, das Licht folgt der Figur.
-	Settings.light = 2
+	# 2. KEIN echtes 2D-Licht in der ganzen Welt. Das ist die eigentliche
+	#    Leistungsprüfung: ein Light2D zwingt den Canvas-Renderer in den
+	#    beleuchteten Pfad, und weil das Licht der Figur nachgeführt wird,
+	#    fällt diese Arbeit jedes Bild neu an.
+	var lights := _find_all_of_class(world, "Light2D")
+	_check(lights.is_empty(), "Kein echtes 2D-Licht in der Welt (%d gefunden)" % lights.size())
+
+	# 3. Und kein Vollbild-Shader: die Sichtgrenze ist eine gebackene Textur.
+	var night_layer: CanvasLayer = light.get_node("Nachtschicht")
+	var vignette: TextureRect = night_layer.get_node("Sichtgrenze")
+	_check(vignette.material == null and vignette.texture != null,
+		"Die Sichtgrenze ist eine gebackene Textur, kein Shader")
+
+	# 4. Tagesverlauf: die Uhr läuft, der Schein folgt der Figur.
+	var cycle_before := Settings.day_cycle
+	Settings.light = 3
+	Settings.day_cycle = true
 	Settings.changed_and_save()
+	light.set_time(0.0)
 	await _frames(4)
 	var t0 := light.time_of_day()
 	await _frames(30)
 	_check(light.active() and light.time_of_day() > t0, "Die Zeit läuft (%.4f -> %.4f)"
 		% [t0, light.time_of_day()])
-	var lamp: PointLight2D = light.get_node("Figurenlicht")
-	# Auf Brusthöhe, nicht am Knöchel: die Figur steht auf ihrem Standpunkt.
-	var want_at: Vector2 = world.player.global_position - Vector2(0.0, LightManager.LIGHT_LIFT)
-	_check(lamp.global_position.distance_to(want_at) < 1.0,
-		"Der Schein sitzt auf Brusthöhe bei der Figur (%.1f px Abstand)"
-		% lamp.global_position.distance_to(want_at))
 
-	# 3. Nachts brennt der Schein, mittags nicht. Beides an derselben Stelle
-	#    geprüft, damit keine Uhrzeit übrig bleibt, in der es stockdunkel ist.
-	light.set_time(0.0)
-	await _frames(2)
+	# Der Schein liegt auf einer Bildschirmebene; geprüft wird deshalb gegen die
+	# umgerechnete Weltposition der Figur, nicht gegen die Weltposition selbst.
+	var glow := light.player_glow()
+	var want: Vector2 = get_viewport().get_canvas_transform() \
+		* (world.player.global_position - Vector2(0.0, LightManager.LIGHT_LIFT))
+	_check(glow != null and glow.position.distance_to(want) < 1.5,
+		"Der Schein sitzt auf Brusthöhe bei der Figur (%.1f px Abstand)"
+		% (glow.position.distance_to(want) if glow != null else -1.0))
+
+	# 5. Nachts brennt der Schein, mittags nicht — und mittags ist die ganze
+	#    Nachtschicht unsichtbar, kostet also nichts.
 	var at_night := light.light_energy()
-	# Die Nacht wird abgelichtet. Eine Beleuchtung, die niemand ansieht, ist
-	# eine Beleuchtung, in der die Welt schwarz sein kann, ohne dass es auffällt.
-	await _shot("15_nacht")
+	await _shot("20_nacht")
 	light.set_time(0.79)
-	await _shot("16_abend")
+	await _shot("21_abend")
 	light.set_time(0.5)
-	await _frames(2)
+	await _frames(4)
 	var at_noon := light.light_energy()
 	_check(at_night > 0.5 and at_noon <= 0.01,
 		"Der Schein blendet nachts auf und mittags ab (%.2f / %.2f)" % [at_night, at_noon])
+	_check(not night_layer.visible,
+		"Am Mittag ist die Nachtschicht ganz abgeschaltet")
+	light.set_time(0.0)
+	await _frames(4)
+	_check(night_layer.visible and glow.visible,
+		"Nachts ist sie wieder da")
 
-	# 4. „Fest" hält die Zeit an — wer bauen will, soll bauen können.
-	Settings.light = 1
+	# 6. Die Stufen schalten wirklich einzeln. Das ist der Punkt der ganzen
+	#    Abstufung: wer „Einfach" wählt, soll den Tagesverlauf behalten und nur
+	#    die beiden Flächen loswerden, die Füllrate kosten.
+	var glow_root: Node2D = night_layer.get_node("Schein")
+	var steps: Array[String] = []
+	for entry: Array in [[1, false, false], [2, true, false], [3, true, true]]:
+		Settings.light = entry[0]
+		Settings.changed_and_save()
+		light.set_time(0.0)
+		await _frames(4)
+		if glow_root.visible != entry[1]:
+			steps.append("Stufe %d: Schein %s" % [entry[0], glow_root.visible])
+		if vignette.visible != entry[2]:
+			steps.append("Stufe %d: Sichtgrenze %s" % [entry[0], vignette.visible])
+		# Die Tönung muss auf JEDER Stufe wirken: sie ist der Teil, der die
+		# Nacht ausmacht, und sie ist gemessen gratis.
+		if light.tint().get_luminance() > 0.5:
+			steps.append("Stufe %d ohne Tönung (%.2f)" % [entry[0], light.tint().get_luminance()])
+	_check(steps.is_empty(), "Jede Lichtstufe schaltet genau ihren Teil zu%s"
+		% ("" if steps.is_empty() else " (%s)" % ", ".join(steps)))
+
+	# 7. „Fest" hält die Zeit an — wer bauen will, soll bauen können.
+	Settings.light = 3
+	Settings.day_cycle = false
 	Settings.changed_and_save()
 	await _frames(30)
 	_check(is_equal_approx(light.time_of_day(), LightManager.START_TIME),
@@ -1181,7 +1427,9 @@ func _check_light(world: Node2D) -> void:
 	_check(light.tint().get_luminance() > 0.9,
 		"„Fest\" steht am hellen Vormittag (%.2f)" % light.tint().get_luminance())
 
-	# 5. „Aus" hängt alles ab.
+	Settings.day_cycle = cycle_before
+
+	# 8. „Aus" hängt alles ab.
 	Settings.light = 0
 	Settings.changed_and_save()
 	await _frames(4)
@@ -1190,43 +1438,120 @@ func _check_light(world: Node2D) -> void:
 		off.append("läuft weiter")
 	if light.is_processing():
 		off.append("rechnet weiter")
-	for node: Node in [light.get_node("Tageslicht"), lamp, light.get_node("Vignette")]:
+	for node: Node in [light.get_node("Tageslicht"), night_layer]:
 		if node.get("visible"):
 			off.append("%s sichtbar" % node.name)
 	_check(off.is_empty(), "Beleuchtung „Aus\" kostet wirklich nichts%s"
 		% ("" if off.is_empty() else " (%s)" % ", ".join(off)))
 
-	# 6. Das Licht liegt auf der Welt, nicht auf der Oberfläche. Eine Vignette
-	#    über dem HUD würde die Anzeige eintrüben statt die Welt.
-	var vignette: CanvasLayer = light.get_node("Vignette")
-	_check(vignette.layer < world.hud.layer,
-		"Die Vignette liegt unter der Oberfläche (%d gegen %d)"
-		% [vignette.layer, world.hud.layer])
+	# 9. Das Licht liegt auf der Welt, nicht auf der Oberfläche.
+	_check(night_layer.layer < world.hud.layer,
+		"Die Nachtschicht liegt unter der Oberfläche (%d gegen %d)"
+		% [night_layer.layer, world.hud.layer])
 
-	# Was die Beleuchtung kostet, lässt sich hier NICHT in Millisekunden
-	# messen. Gemessen wurde (Software-Rasterizer, zwei Läufe hintereinander):
-	# „aus" 49,45 ms und „voll" 41,77 ms — die Beleuchtung kam scheinbar
-	# billiger heraus als gar keine. Die Bildzeit dieser Maschine schwankt
-	# zwischen zwei Läufen um mehr als das Doppelte; eine Messung, die Rauschen
-	# misst, prüft nichts.
-	#
-	# Zählbar ist dagegen die Zahl der Zeichenaufrufe, und die trifft genau die
-	# Gefahr: ein 2D-Licht lässt jeden Knoten in seinem Umkreis ein zweites Mal
-	# zeichnen. Ein Licht über die halbe Welt würde die Zahl verdoppeln.
+	# 10. Zeichenaufrufe: die Beleuchtung darf keinen zweiten Durchgang über die
+	#     Welt auslösen. Millisekunden schwanken auf dieser Maschine zu stark,
+	#     Aufrufe nicht.
 	var draws := {}
-	for entry: Array in [["aus", 0], ["voll", 2]]:
+	for entry: Array in [["aus", 0], ["voll", 3]]:
 		Settings.light = entry[1]
 		Settings.changed_and_save()
+		if entry[1] == 3:
+			light.set_time(0.0)
 		await _frames(20)
 		draws[entry[0]] = await _draw_calls()
 	print("  Licht: %d Zeichenaufrufe aus, %d voll" % [draws["aus"], draws["voll"]])
-	_check(draws["voll"] <= draws["aus"] + 20,
+	_check(draws["voll"] <= draws["aus"] + 8,
 		"Beleuchtung bleibt bei den Zeichenaufrufen bescheiden (%d gegen %d)"
 		% [draws["voll"], draws["aus"]])
 
 	Settings.light = before
 	Settings.changed_and_save()
 	await _frames(6)
+
+# --- Fackel und Zoom ----------------------------------------------------------
+
+## Die Fackel muss Licht machen, wieder verschwinden und einen Neustart
+## überstehen. Der Zoom muss GANZZAHLIG bleiben — daran hing schon einmal die
+## Schärfe des ganzen Bildes.
+func _check_torch_and_zoom(world: Node2D) -> void:
+	var tool: BuildTool = world.build_tool
+	var torches: Torches = world.torches
+	var light: LightManager = world.light
+	var map: MapData = world.map
+	var cell := GridOverlay.block_at(world.player.global_position) + Vector2i(2, 0)
+
+	# 1. Setzen: Bild in der Welt UND Licht auf der Nachtschicht.
+	var lights_before := light.source_count()
+	var on := torches.toggle(cell)
+	await _frames(3)
+	_check(on and torches.has_torch(cell), "Eine Fackel lässt sich setzen")
+	_check(light.source_count() == lights_before + 1,
+		"Und sie bringt eine Lichtquelle mit (%d -> %d)"
+		% [lights_before, light.source_count()])
+	_check(map.torches.has(cell), "Sie steht in der Karte, nicht nur im Bild")
+
+	# 2. Und sie ist KEIN echtes Licht — sonst wäre die zehnte Fackel nicht
+	#    mehr bezahlbar. Das ist die eigentliche Prüfung an dieser Stelle.
+	_check(_find_all_of_class(world, "Light2D").is_empty(),
+		"Auch mit Fackel gibt es kein echtes 2D-Licht")
+
+	# 3. Nochmal drücken nimmt sie wieder weg.
+	var off := torches.toggle(cell)
+	await _frames(3)
+	_check(not off and not torches.has_torch(cell), "Nochmal drücken nimmt sie weg")
+	_check(light.source_count() == lights_before, "Und das Licht geht mit")
+	_check(not map.torches.has(cell), "Auch aus der Karte")
+
+	# 4. Sie übersteht Speichern und Laden — über den echten Weg.
+	torches.toggle(cell)
+	await _frames(2)
+	map.save_user()
+	map.torches = []
+	MapData.loaded_torches = []
+	var reloaded := MapData.load_user()
+	_check(not reloaded.is_empty() and MapData.loaded_torches.has(cell),
+		"Fackeln überstehen Speichern und Laden (%d gefunden)"
+		% MapData.loaded_torches.size())
+	map.torches = [cell]
+	torches.toggle(cell)
+	await _frames(2)
+
+	# 5. Zoom: genau drei Stufen, alle ganzzahlig.
+	var crooked: Array[String] = []
+	for z: float in Config.ZOOM_STEPS:
+		if not is_equal_approx(z, floorf(z)):
+			crooked.append("%.2f" % z)
+	_check(crooked.is_empty(),
+		"Jede Zoomstufe ist ganzzahlig — sonst wären die Pixel wieder krumm%s"
+		% ("" if crooked.is_empty() else " (%s)" % ", ".join(crooked)))
+
+	var cam: GameCamera = world.camera
+	var zoom_before := Settings.zoom
+	Settings.zoom = 0
+	Settings.changed_and_save()
+	await _frames(3)
+	var wide := cam.visible_world_rect().size
+	Settings.zoom = 2
+	Settings.changed_and_save()
+	await _frames(3)
+	var close := cam.visible_world_rect().size
+	_check(is_equal_approx(cam.zoom.x, 3.0) and close.x < wide.x,
+		"Näher heran zeigt weniger Welt (%.0f gegen %.0f Pixel breit)" % [close.x, wide.x])
+
+	# 6. Und die Grenzen sind hart: kein Schritt über die Enden hinaus.
+	cam.step_zoom(1)
+	await _frames(2)
+	_check(Settings.zoom == 2, "Über die nächste Stufe hinaus geht es nicht")
+	Settings.zoom = 0
+	Settings.changed_and_save()
+	cam.step_zoom(-1)
+	await _frames(2)
+	_check(Settings.zoom == 0, "Und unter die weiteste auch nicht")
+
+	Settings.zoom = zoom_before
+	Settings.changed_and_save()
+	await _frames(4)
 
 # --- Die Figur ----------------------------------------------------------------
 
@@ -1504,6 +1829,16 @@ func _find_node_of_type(node: Node, type_name: String) -> Node:
 			return found
 	return null
 
+## Alle Knoten einer ENGINE-Klasse (nicht eines Skripts): `is_class` erfasst
+## auch die Ableitungen, ein `PointLight2D` gilt also als `Light2D`.
+func _find_all_of_class(node: Node, cls: String) -> Array[Node]:
+	var out: Array[Node] = []
+	if node.is_class(cls):
+		out.append(node)
+	for child: Node in node.get_children():
+		out.append_array(_find_all_of_class(child, cls))
+	return out
+
 func _find_all_of_type(node: Node, script_class: String) -> Array[Node]:
 	var out: Array[Node] = []
 	if node.get_script() != null and (node.get_script() as Script).get_global_name() == script_class:
@@ -1774,15 +2109,82 @@ func _check_input_lock(world: Node2D, map: MapData, player: Player) -> void:
 
 ## Eingaben zentral, Steuerungsübersicht ehrlich, Anzeigen wie verlangt.
 func _check_input_map(world: Node2D) -> void:
-	# 1. Jede Aktion der Übersicht existiert wirklich und hat eine Taste.
+	# 1. Jede belegbare Aktion existiert wirklich und hat eine Eingabe.
 	var missing: Array[String] = []
-	for entry: Array in Config.CONTROL_ROWS:
-		for one: String in String(entry[0]).split("+"):
-			if not InputMap.has_action(one) or Config.keys_for(one) == "—":
-				missing.append(one)
+	for entry: Array in Keybinds.ACTIONS:
+		var one: String = entry[0]
+		if not InputMap.has_action(one) or Config.keys_for(one) == "—":
+			missing.append(one)
 	_check(missing.is_empty(),
-		"Steuerungsübersicht zeigt nur Aktionen, die es gibt%s"
+		"Die Steuerungsseite zeigt nur Aktionen, die es gibt%s"
 		% ("" if missing.is_empty() else " (fehlt: %s)" % ", ".join(missing)))
+
+	# 2. Die SPIELLOGIK hängt an keiner festen Taste. Das ist der Kern der
+	#    freien Belegung: wer `KEY_W` in Welt, Figur oder Kamera stehen lässt,
+	#    macht jede Umbelegung zur Lüge.
+	#
+	#    Geprüft wird Welt, Figur, Kamera und Kern — nicht die Oberfläche. Ein
+	#    Menü darf Esc kennen: dass die Abbruchtaste Esc ist, ist eine Regel des
+	#    Betriebssystems und keine Spielsteuerung. `keybinds.gd` ist ohnehin
+	#    ausgenommen, dort STEHT die Belegung.
+	var hard_coded: Array[String] = []
+	for path: String in _gd_files("res://src"):
+		var logic := path.contains("/world/") or path.contains("/player/") \
+			or path.contains("/camera/") or path.contains("/core/")
+		if not logic or path.ends_with("keybinds.gd"):
+			continue
+		var text := FileAccess.get_file_as_string(path)
+		for line: String in text.split("\n"):
+			if line.split("#")[0].contains("KEY_"):
+				hard_coded.append(path.get_file())
+				break
+	_check(hard_coded.is_empty(), "Keine feste Taste in der Spiellogik%s"
+		% ("" if hard_coded.is_empty() else " (%s)" % ", ".join(hard_coded)))
+
+	# 3. Umbelegen wirkt wirklich — geprüft am echten Weg: belegen, nachsehen,
+	#    zurücksetzen.
+	var before_text := Config.keys_for("move_up")
+	var ev := InputEventKey.new()
+	ev.physical_keycode = KEY_I
+	var problem := Keybinds.replace("move_up", 0, ev)
+	_check(problem == "" and Config.keys_for("move_up").begins_with("I"),
+		"Vorwärts lässt sich auf I legen (%s)" % Config.keys_for("move_up"))
+	_check(InputMap.event_is_action(ev, "move_up"), "Und die Engine kennt die neue Taste")
+
+	# Konflikte werden erkannt, statt zwei Aktionen auf eine Taste zu legen.
+	var clash := InputEventKey.new()
+	clash.physical_keycode = KEY_I
+	var refused := Keybinds.add("jump", clash)
+	_check(refused != "" and refused.contains("Vorwärts"),
+		"Eine schon belegte Taste wird abgelehnt (%s)" % refused)
+
+	# Mehrere Eingaben je Aktion: die zweite bleibt, die letzte lässt sich nicht
+	# wegnehmen — eine Aktion ohne Eingabe wäre unerreichbar.
+	_check(Keybinds.events_of("move_up").size() >= 2,
+		"Eine Aktion trägt mehrere Eingaben (%d)" % Keybinds.events_of("move_up").size())
+	while Keybinds.events_of("move_up").size() > 1:
+		Keybinds.remove_at("move_up", 0)
+	_check(Keybinds.remove_at("move_up", 0) != "",
+		"Die letzte Eingabe lässt sich nicht wegnehmen")
+
+	# Und alles geht auf Standard zurück.
+	Keybinds.reset_all()
+	_check(Config.keys_for("move_up") == before_text,
+		"„Standard wiederherstellen\" holt die Auslieferung zurück (%s)"
+		% Config.keys_for("move_up"))
+
+	# Gespeichert wird die Belegung wirklich: schreiben, verstellen, neu laden.
+	ev = InputEventKey.new()
+	ev.physical_keycode = KEY_J
+	Keybinds.replace("move_left", 0, ev)
+	Settings.save_settings()
+	Keybinds.reset_all()
+	Settings.load_settings()
+	Keybinds.setup()
+	_check(Config.keys_for("move_left").begins_with("J"),
+		"Die eigene Belegung übersteht einen Neustart (%s)" % Config.keys_for("move_left"))
+	Keybinds.reset_all()
+	Settings.save_settings()
 
 	# 2. Die Tasten stimmen mit der tatsächlichen Belegung überein.
 	_check(Config.keys_for("inventory") == "E", "E öffnet das Inventar")
@@ -1792,6 +2194,7 @@ func _check_input_map(world: Node2D) -> void:
 	_check(Config.keys_for("build_slot_3") == "3", "Feld 3 liegt auf der 3")
 	_check(Config.keys_for("build_slot_1+build_slot_2+build_slot_3") == "1 2 3",
 		"Materialwahl steht als eine Zeile: 1 2 3")
+	_check(Config.keys_for("pause") == "Esc", "Pause liegt auf Esc und ist belegbar")
 	_check(not InputMap.has_action("build_slot_4"),
 		"Es gibt nur drei Materialtasten")
 	_check(Config.keys_for("save_map") == "F5", "F5 speichert")
@@ -1814,9 +2217,17 @@ func _check_input_map(world: Node2D) -> void:
 	_check(perf.visible, "Leistungsanzeige lässt sich einschalten")
 	var text: String = perf._label.text
 	_check(text.contains("FPS") and text.contains("Speicher")
-		and text.contains("CPU Render") and text.contains("GPU Render"),
-		"Leistungsanzeige nennt FPS, Speicher und beide Renderzeiten")
-	_check(not text.contains("%"), "Keine erfundene Prozentanzeige")
+		and text.contains("CPU Render") and text.contains("GPU Render")
+		and text.contains("1 % low"),
+		"Leistungsanzeige nennt FPS, 1 % low, Speicher und beide Renderzeiten")
+	# Keine erfundene Auslastung: Godot liefert keine Prozentzahl für Prozessor
+	# oder Grafikkarte. Ein Prozentzeichen in EINER Zeile mit „CPU" oder „GPU"
+	# wäre also ausgedacht. („1 % low" ist eine Bildrate, keine Auslastung.)
+	var fake := false
+	for line: String in text.split("\n"):
+		if (line.contains("CPU") or line.contains("GPU")) and line.contains("%"):
+			fake = true
+	_check(not fake, "Keine erfundene Auslastung in Prozent")
 	_check(OS.get_static_memory_usage() > 0 and Engine.get_frames_per_second() >= 0,
 		"Speicher und FPS liefern echte Werte (%s)" % [OS.get_static_memory_usage()])
 	Settings.show_perf = false
@@ -1829,11 +2240,30 @@ func _check_input_map(world: Node2D) -> void:
 	_check(dbg != null and not dbg.visible, "Entwicklerinfo startet ausgeschaltet")
 	dbg._unhandled_input(_key("debug_info"))
 	await _frames(3)
-	_check(dbg.visible and dbg._label.text.contains("Chunk")
-		and dbg._label.text.contains("Boden"),
+	await _frames(20)     # die Anzeige baut ihren Text viermal je Sekunde neu
+	var info: String = dbg.text()
+	_check(dbg.visible and info.contains("Chunk") and info.contains("Boden"),
 		"F3 zeigt Chunk, Feld, Boden und Zustand")
-	_check(not dbg._label.text.contains("Höhenstufe"),
+	_check(not info.contains("Höhenstufe"),
 		"Keine Höhenstufe mehr in der Entwicklerinfo")
+	# Die neuen Angaben: alles, was der Auftrag verlangt und die Engine wirklich
+	# misst. Fehlt eine Zeile, fällt es hier auf und nicht erst im Bild.
+	var want_rows := ["1 % low", "CPU Render", "GPU Render", "Zeichenaufrufe",
+		"Chunks", "Felder im Bild", "Lichtquellen", "Staubpunkte", "Figuren",
+		"Spiel", "System", "Grafik", "Fenster",
+		"Ansicht", "Massstab", "Kamerazoom", "letzter Chunk", "Uhr"]
+	var gaps: Array[String] = []
+	for row: String in want_rows:
+		if not info.contains(row):
+			gaps.append(row)
+	_check(gaps.is_empty(), "Die Entwicklerinfo nennt alles Gemessene%s"
+		% ("" if gaps.is_empty() else " (fehlt: %s)" % ", ".join(gaps)))
+	# Und nichts Erfundenes: keine Auslastung in Prozent.
+	var made_up := false
+	for line: String in info.split("\n"):
+		if (line.contains("CPU") or line.contains("GPU")) and line.contains("%"):
+			made_up = true
+	_check(not made_up, "Keine erfundene Auslastung in der Entwicklerinfo")
 	Settings.show_perf = true
 	Settings.changed.emit()
 	await _frames(6)

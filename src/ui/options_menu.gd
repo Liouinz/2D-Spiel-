@@ -30,7 +30,6 @@ const RAIL_W := 176
 const RAIL_H := 38
 
 const ROW_GAP := 4
-const KEY_W := 150          ## Tastenspalte der Steuerungsübersicht
 
 var _rail: VBoxContainer
 var _pages: VBoxContainer
@@ -41,6 +40,10 @@ var _fade: float = 1.0
 
 var _music: HSlider
 var _music_value: Label
+var _bind_rows: VBoxContainer
+var _bind_note: Label
+var _capture_action: String = ""
+var _capture_index: int = -1
 var _rows: Dictionary = {}      ## Name -> UiChoice, für refresh()
 
 func _build() -> void:
@@ -78,6 +81,7 @@ func _build() -> void:
 
 	_add_page("ALLGEMEIN", _page_general())
 	_add_page("GRAFIK", _page_video())
+	_add_page("EFFEKTE", _page_effects())
 	_add_page("LEISTUNG", _page_perf())
 	_add_page("STEUERUNG", _page_controls())
 	_show_page(0)
@@ -134,11 +138,31 @@ func _page_general() -> Control:
 	return _with_note(rows,
 		"Die Musik entsteht im Spiel selbst — es gibt keine Tondateien.")
 
+## Grafik: was das Bild ausmacht. Ganz oben das Profil — es setzt alle Regler
+## auf einen Schlag, und darunter kann man jeden einzeln nachziehen.
 func _page_video() -> Control:
 	var rows := _rows_box()
+	rows.add_child(_profile_row())
 	_choice(rows, "range", "Sichtweite (Chunks)", Graphics.RANGE_LABELS,
 		func() -> int: return Settings.render_range,
 		func(v: int) -> void: Settings.render_range = v)
+	_choice(rows, "light", "Beleuchtung", Graphics.LIGHT,
+		func() -> int: return Settings.light,
+		func(v: int) -> void: Settings.light = v)
+	_choice(rows, "daycycle", "Tageszeit", Graphics.DAY,
+		func() -> int: return 1 if Settings.day_cycle else 0,
+		func(v: int) -> void: Settings.day_cycle = v == 1)
+	_choice(rows, "shadows", "Schatten", Graphics.OFF_ON,
+		func() -> int: return 1 if Settings.shadows else 0,
+		func(v: int) -> void: Settings.shadows = v == 1)
+	return _with_note(rows,
+		"Die Beleuchtung ist abgestuft, weil ihre Teile unterschiedlich kosten: die\nTönung ist gemessen gratis, erst „Mittel“ und „Hoch“ kosten Füllrate.")
+
+## Effekte: was sich bewegt und was auf dem Boden liegt. Eigene Seite, damit
+## die Grafikseite nicht zu einer Liste aus neun Zeilen wird, durch die man
+## sich hindurchlesen muss.
+func _page_effects() -> Control:
+	var rows := _rows_box()
 	_choice(rows, "water", "Wasser", Graphics.DETAIL,
 		func() -> int: return Settings.water_detail,
 		func(v: int) -> void: Settings.water_detail = v)
@@ -151,14 +175,31 @@ func _page_video() -> Control:
 	_choice(rows, "decor", "Bewuchs am Boden", Graphics.STEPS,
 		func() -> int: return Settings.decor,
 		func(v: int) -> void: Settings.decor = v)
-	_choice(rows, "light", "Beleuchtung", Graphics.LIGHT,
-		func() -> int: return Settings.light,
-		func(v: int) -> void: Settings.light = v)
-	_choice(rows, "shadows", "Schatten", Graphics.OFF_ON,
-		func() -> int: return 1 if Settings.shadows else 0,
-		func(v: int) -> void: Settings.shadows = v == 1)
 	return _with_note(rows,
-		"Eine größere Sichtweite lädt mehr Chunks um die Figur — sie kommen nach und\nnach dazu. „Aus“ kostet wirklich nichts: die Wirkung wird abgehängt.")
+		"„Aus“ kostet wirklich nichts: die Wirkung wird abgehängt, nicht auf null\ngerechnet. Der Bewuchs ist eine Kachelschicht und damit fast umsonst.")
+
+## Die Profilzeile. Sie zeigt „Eigene", sobald die Regler zu keinem Profil mehr
+## passen — eine gespeicherte „aktuelle Stufe" würde irgendwann „Hoch"
+## behaupten, während drei Regler längst von Hand verstellt sind.
+func _profile_row() -> Control:
+	var labels: Array = Quality.NAMES.duplicate()
+	labels.append("Eigene")
+	var choice := UiChoice.new().setup(labels, _profile_index())
+	choice.changed.connect(func(v: int) -> void:
+		if v < Quality.NAMES.size():
+			Quality.apply(v)
+			Graphics.set_ceiling_from_settings()
+			Settings.changed_and_save()
+			refresh()
+		else:
+			# „Eigene" ist ein Zustand, kein Befehl — nichts anwenden.
+			choice.show_value(_profile_index()))
+	_rows["profile"] = choice
+	return _strip("Profil", choice)
+
+func _profile_index() -> int:
+	var c := Quality.current()
+	return c if c >= 0 else Quality.NAMES.size()
 
 func _page_perf() -> Control:
 	var rows := _rows_box()
@@ -168,31 +209,70 @@ func _page_perf() -> Control:
 	_choice(rows, "vsync", "Bildsynchronisierung", Graphics.OFF_ON,
 		func() -> int: return 1 if Settings.vsync else 0,
 		func(v: int) -> void: Settings.vsync = v == 1)
+	_choice(rows, "auto", "Automatik", Graphics.OFF_ON,
+		func() -> int: return 1 if Settings.auto_quality else 0,
+		func(v: int) -> void: Settings.auto_quality = v == 1)
 	_choice(rows, "perf", "Leistungsanzeige", Graphics.OFF_ON,
 		func() -> int: return 1 if Settings.show_perf else 0,
 		func(v: int) -> void: Settings.show_perf = v == 1)
 	return _with_note(rows,
-		"Eine Obergrenze hält die Bildabstände gleichmäßig. Eine Mindest-Bildrate\nkann kein Spiel zusichern — deshalb steht hier keine.")
+		"Die Automatik nimmt eine teure Wirkung weg, wenn es vier Sekunden lang unter\nrund 44 Bilder fällt, und gibt sie zurück, sobald wieder Luft ist — nie mehr,\nals hier eingestellt war. Eine Mindest-Bildrate kann kein Spiel zusichern.")
 
-## Steuerungsübersicht als Tabelle über die volle Seitenbreite.
+## Die Steuerungsseite: jede Aktion frei belegbar.
 ##
-## Die Tasten kommen aus der InputMap, nicht aus einer Liste im Code. Ändert
-## sich eine Belegung, ändert sich diese Anzeige mit — hier kann also nie eine
-## veraltete oder erfundene Taste stehen.
+## `W` `A` `S` `D` ist hier nur der Auslieferungszustand. Die Spiellogik fragt
+## nirgends eine Taste ab, sondern immer eine Aktion — deshalb kann jede
+## Belegung auf jede Taste, ohne dass am Spiel etwas geändert werden müsste.
 ##
-## Abwechselnd hinterlegte Zeilen statt einzelner Streifen: bei dreizehn Zeilen
-## wären Streifen mit Abstand zu unruhig, und die Zeilen sind zu flach, um
-## einzeln zu wirken.
+## Eine Aktion trägt mehrere Eingaben. Genau so funktionieren WASD und
+## Pfeiltasten gleichzeitig: sie liegen auf denselben vier Aktionen.
+##
+## Bedienung: eine Taste anklicken und die neue drücken. Rechtsklick nimmt eine
+## Belegung weg. Eine zweite Schaltfläche je Eintrag zum Löschen hätte die
+## Zeile verdoppelt, ohne etwas zu erklären.
 func _page_controls() -> Control:
-	var table := VBoxContainer.new()
-	table.add_theme_constant_override("separation", 0)
-	var i := 0
-	for entry: Array in Config.CONTROL_ROWS:
-		table.add_child(_key_row(Config.keys_for(entry[0]), entry[1], i % 2 == 1))
-		i += 1
-	return _with_note(table, "")
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", UiTheme.SPACE_S)
 
-func _key_row(keys: String, what: String, shaded: bool) -> Control:
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(PAGE_SIZE.x, PAGE_SIZE.y - 74)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	col.add_child(scroll)
+
+	_bind_rows = VBoxContainer.new()
+	_bind_rows.add_theme_constant_override("separation", 2)
+	_bind_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_bind_rows)
+	_rebuild_binds()
+
+	_bind_note = UiTheme.text_label(_HELP, UiTheme.FONT_TINY)
+	_bind_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	col.add_child(_bind_note)
+
+	var reset := UiTheme.button("STANDARD WIEDERHERSTELLEN").sized(300, 30)
+	reset.pressed.connect(func() -> void:
+		Keybinds.reset_all()
+		Settings.save_settings()
+		_say(_HELP)
+		_rebuild_binds())
+	reset.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	col.add_child(reset)
+	return col
+
+const _HELP := "Taste anklicken und die neue drücken · Rechtsklick nimmt eine Belegung weg · bis zu drei je Aktion"
+
+## Baut die Zeilenliste neu. Immer ganz, nie stückweise: eine Liste, die an
+## einer Stelle nachgezogen wird und an einer anderen nicht, ist der Anfang
+## jeder Anzeige, die etwas Falsches behauptet.
+func _rebuild_binds() -> void:
+	for child: Node in _bind_rows.get_children():
+		child.queue_free()
+	var i := 0
+	for entry: Array in Keybinds.ACTIONS:
+		_bind_rows.add_child(_bind_row(entry[0], entry[1], i % 2 == 1))
+		i += 1
+
+func _bind_row(action: String, label: String, shaded: bool) -> Control:
 	var strip := PanelContainer.new()
 	if shaded:
 		strip.add_theme_stylebox_override("panel",
@@ -200,26 +280,74 @@ func _key_row(keys: String, what: String, shaded: bool) -> Control:
 	else:
 		strip.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", UiTheme.SPACE_M)
+	row.add_theme_constant_override("separation", UiTheme.SPACE_S)
 	strip.add_child(row)
 
-	var key := Label.new()
-	key.text = keys
-	key.custom_minimum_size = Vector2(KEY_W, 22)
-	key.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	key.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	key.add_theme_color_override("font_color", UiTheme.ACCENT)
-	key.add_theme_font_size_override("font_size", UiTheme.FONT_SMALL)
-	row.add_child(key)
+	var name_label := Label.new()
+	name_label.text = label
+	name_label.custom_minimum_size = Vector2(176, 28)
+	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name_label.add_theme_color_override("font_color", UiTheme.TEXT)
+	name_label.add_theme_font_size_override("font_size", UiTheme.FONT_SMALL)
+	row.add_child(name_label)
 
-	var text := Label.new()
-	text.text = what
-	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	text.add_theme_color_override("font_color", UiTheme.TEXT)
-	text.add_theme_font_size_override("font_size", UiTheme.FONT_SMALL)
-	row.add_child(text)
+	var events := Keybinds.events_of(action)
+	for i in events.size():
+		row.add_child(_key_button(action, i, Keybinds.describe(events[i])))
+	if events.size() < Keybinds.MAX_PER_ACTION:
+		row.add_child(_key_button(action, -1, "+"))
 	return strip
+
+## Eine Belegung als Schaltfläche. `index` -1 heisst „hier kommt eine dazu".
+func _key_button(action: String, index: int, text: String) -> UiButton:
+	var b := UiTheme.button(text).sized(112 if index >= 0 else 34, 28, UiTheme.FONT_TINY)
+	b.pressed.connect(func() -> void: _start_capture(action, index, b))
+	# Rechtsklick nimmt weg. Godots Button meldet nur den Linksklick, also wird
+	# der rechte hier selbst abgefangen.
+	b.gui_input.connect(func(event: InputEvent) -> void:
+		if index < 0 or not (event is InputEventMouseButton):
+			return
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
+			_say(Keybinds.remove_at(action, index), _HELP)
+			Settings.save_settings()
+			_rebuild_binds())
+	return b
+
+## Nimmt die nächste Eingabe auf. Solange das läuft, kommt keine Taste im Spiel
+## an — sonst würde das Belegen von „Springen" beim Drücken gleich springen.
+func _start_capture(action: String, index: int, button: UiButton) -> void:
+	_capture_action = action
+	_capture_index = index
+	button.text = "…"
+	_say("Jetzt die neue Taste oder Maustaste drücken. Esc bricht ab.")
+
+func _input(event: InputEvent) -> void:
+	if _capture_action == "":
+		return
+	if not (event is InputEventKey or event is InputEventMouseButton):
+		return
+	if not event.is_pressed() or event.is_echo():
+		return
+	get_viewport().set_input_as_handled()
+	var action := _capture_action
+	var index := _capture_index
+	_capture_action = ""
+	if event is InputEventKey and (event as InputEventKey).keycode == KEY_ESCAPE:
+		_say("Abgebrochen.", _HELP)
+		_rebuild_binds()
+		return
+	var problem := Keybinds.add(action, event) if index < 0 \
+		else Keybinds.replace(action, index, event)
+	_say(problem, "%s: %s" % [Keybinds.label_of(action), Keybinds.describe_action(action)])
+	Settings.save_settings()
+	_rebuild_binds()
+
+## Sagt, was passiert ist. Ohne Rückmeldung drückt man eine belegte Taste und
+## nichts geschieht — und weiss nicht, ob das Menü kaputt ist oder die Taste.
+func _say(text: String, fallback: String = "") -> void:
+	if _bind_note != null:
+		_bind_note.text = text if text != "" else fallback
 
 # --- Bausteine einer Seite ---------------------------------------------------
 
@@ -349,16 +477,19 @@ func refresh() -> void:
 	_show_music_value()
 	_show_row("hints", 1 if Settings.show_hints else 0)
 	_show_row("fullscreen", 1 if Settings.fullscreen else 0)
+	_show_row("profile", _profile_index())
 	_show_row("range", Settings.render_range)
 	_show_row("water", Settings.water_detail)
 	_show_row("wind", Settings.wind)
 	_show_row("particles", Settings.particles)
 	_show_row("decor", Settings.decor)
 	_show_row("light", Settings.light)
+	_show_row("daycycle", 1 if Settings.day_cycle else 0)
 	_show_row("shadows", 1 if Settings.shadows else 0)
 	_show_row("fps", Settings.fps_limit)
 	_show_row("vsync", 1 if Settings.vsync else 0)
 	_show_row("perf", 1 if Settings.show_perf else 0)
+	_show_row("auto", 1 if Settings.auto_quality else 0)
 
 func _show_row(key: String, value: int) -> void:
 	var row: UiChoice = _rows.get(key)

@@ -25,12 +25,43 @@ extends RefCounted
 
 const T := Config.TILE
 const COLS := 8
-const PARTIAL := 15          ## Eckmasken 0..14
+
+## Eckmasken 0..15. Die 15 ist der Sonderfall und der Grund, warum sie hier
+## überhaupt steht: ein Feld, das RINGSUM von einem Boden umgeben ist, aber
+## selbst nicht dazugehört.
+##
+## Vorher endete die Tabelle bei 14, und Maske 15 griff damit hinter die
+## Teilkacheln — in die Vollkacheln. Ein leeres Feld zwischen zwei Sandflächen
+## bekam also eine volle Sandkachel und die Lücke verschwand:
+##
+##   [SAND][SAND][ leer ][SAND][SAND]   ->   eine durchgehende Sandfläche
+##
+## Genauso war jeder einzeln entfernte Block mitten in einer Fläche unsichtbar:
+## acht Nachbarn ringsum, Maske 15, Vollkachel. Man klickte, der Block war in
+## der Karte weg — und man sah es nicht.
+##
+## Maske 15 bekommt deshalb eine eigene Form: gefüllt, aber mit einer Öffnung,
+## durch die der Boden darunter zu sehen bleibt.
+const PARTIAL := 16
 
 ## Ausführungen je Maske. Drei reichen: die Kante ist ohnehin nur ein Streifen
 ## am Rand einer Fläche, und mehr Ausführungen kosten Atlasfläche für einen
 ## Unterschied, den niemand mehr bemerkt.
+##
+## Bei Maske 15 bedeuten dieselben drei Plätze etwas anderes: nicht drei
+## zufällige Ausführungen, sondern drei RICHTUNGEN der Öffnung (siehe HOLE_*).
+## Welche gilt, entscheidet dort die Lage der Nachbarn statt des Streuwerts.
 const EDGE_VARIANTS := 3
+
+## Öffnungsformen für Maske 15.
+const HOLE_ROUND := 0        ## ringsum umgeben: rundes Loch
+const HOLE_VERTICAL := 1     ## Boden links und rechts: die Lücke läuft senkrecht
+const HOLE_HORIZONTAL := 2   ## Boden oben und unten: die Lücke läuft waagerecht
+
+## Halbe Öffnungsbreite, bezogen auf die halbe Kachel. 0,44 ergibt bei einer
+## 32er-Kachel eine Öffnung von 14 Bildpunkten — bei Zoom 2 also 28 auf dem
+## Bildschirm. Das sieht man, und man sieht es als Absicht.
+const HOLE := 0.44
 
 ## Plätze 0 .. PARTIAL * EDGE_VARIANTS - 1 sind Teilkacheln, danach kommen die
 ## Vollkacheln (Maske 15).
@@ -54,7 +85,12 @@ static func build(variants: Array, rng: RandomNumberGenerator, hard: bool = fals
 	for mask in PARTIAL:
 		for v in EDGE_VARIANTS:
 			var src: Image = variants[mid + (mask * 5 + v * 3) % TileArt.VARIANTS]
-			var tile := _quads(src, mask, rng) if hard else _shape(src, mask, rng)
+			var tile: Image
+			if mask == 15:
+				# Umgeben, aber nicht dazugehörend: gefüllt mit Öffnung.
+				tile = _hole(src, v, rng)
+			else:
+				tile = _quads(src, mask, rng) if hard else _shape(src, mask, rng)
 			var pos := _slot_pos(mask * EDGE_VARIANTS + v)
 			img.blit_rect(tile, Rect2i(Vector2i.ZERO, tile.get_size()), pos * T)
 			slots.append(pos)
@@ -145,6 +181,33 @@ static func _roughen(img: Image, src: Image, rng: RandomNumberGenerator) -> void
 				img.set_pixel(x, y, Color(0, 0, 0, 0))
 			elif not filled and rng.randf() < 0.18:
 				img.set_pixel(x, y, src.get_pixel(x, y))
+
+## Maske 15: das Feld ist ringsum umgeben, gehört aber selbst nicht dazu.
+##
+## Gefüllt bis auf eine Öffnung in der Mitte, durch die der Boden darunter zu
+## sehen bleibt. Die Richtung der Öffnung folgt der Lage der Nachbarn: liegt
+## der Boden links und rechts, läuft die Lücke senkrecht weiter und die Öffnung
+## ist ein senkrechter Schlitz. Ein rundes Loch wäre dort falsch — es sähe aus
+## wie ein einzelnes Loch statt wie ein durchgehender Spalt.
+static func _hole(src: Image, kind: int, rng: RandomNumberGenerator) -> Image:
+	var img := Pixel.make(T, T)
+	var noise := _edge_noise(rng.randi())
+	var c := T * 0.5
+	for y in T:
+		for x in T:
+			var dx := (x + 0.5 - c) / c
+			var dy := (y + 0.5 - c) / c
+			var m := 0.0
+			match kind:
+				HOLE_VERTICAL: m = absf(dx)
+				HOLE_HORIZONTAL: m = absf(dy)
+				_: m = Vector2(dx, dy).length()
+			# Dieselbe Rauschschwelle wie an jeder anderen Kante: die Öffnung
+			# soll aussehen wie ausgewaschen, nicht wie ausgestanzt.
+			if m > HOLE + noise.get_noise_2d(x, y) * 0.13:
+				img.set_pixel(x, y, src.get_pixel(x, y))
+	_rim(img)
+	return img
 
 ## Freistehende Kachel: ein runder Fleck in der Mitte.
 static func _blob(src: Image, rng: RandomNumberGenerator) -> Image:

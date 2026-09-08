@@ -15,6 +15,7 @@ var streamer: ChunkStreamer
 var ambient: AmbientFx
 var build_fx: BuildFx
 var light: LightManager
+var torches: Torches
 
 const HudScene := preload("res://src/ui/hud.gd")
 
@@ -80,6 +81,7 @@ func _ready() -> void:
 	camera.snap_to_target()
 	water.camera = camera
 	player.splashed.connect(water.splash)
+	player.waded.connect(water.wake)
 
 	# Kurze Rückmeldung beim Bauen und beim Aufkommen.
 	build_fx = BuildFx.new()
@@ -99,7 +101,15 @@ func _ready() -> void:
 	light = LightManager.new()
 	light.name = "Light"
 	light.player = player
+	light.camera = camera
 	add_child(light)
+
+	# Fackeln: Bild in der Welt, Licht auf der Nachtschicht.
+	torches = Torches.new()
+	torches.name = "Fackeln"
+	torches.map = map
+	torches.light = light
+	_sorted.add_child(torches)
 
 	# Rotes Blockraster über allem — zeigt das sonst unsichtbare Grid.
 	grid = GridOverlay.new()
@@ -119,6 +129,7 @@ func _ready() -> void:
 		hud.debug.map = map
 		hud.debug.player = player
 		hud.debug.streamer = streamer
+		hud.debug.world = self
 
 	build_bar = BuildBar.new()
 	build_bar.name = "BuildBar"
@@ -135,6 +146,7 @@ func _ready() -> void:
 	build_tool.water = water
 	build_tool.minimap = hud.minimap
 	build_tool.fx = build_fx
+	build_tool.torches = torches
 	build_tool.main = get_parent()
 	add_child(build_tool)
 	build_bar.slot_clicked.connect(func(i: int) -> void:

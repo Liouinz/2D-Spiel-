@@ -31,6 +31,10 @@ var _rng := RandomNumberGenerator.new()
 ## Gezeichnete Zeichen im letzten Bild — nur Messung für den Selbsttest.
 var drawn: int = 0
 
+## Wie viele Zeichen gerade stehen — für die Entwicklerinfo.
+func mark_count() -> int:
+	return _marks.size()
+
 func _ready() -> void:
 	z_index = 400             ## über dem Boden, unter dem Raster
 	_rng.seed = 8123

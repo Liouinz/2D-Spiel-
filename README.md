@@ -222,21 +222,25 @@ deshalb keinen Block setzen.
 
 ## Einstellungen
 
-Vier Kategorien statt einer langen Liste: **Allgemein**, **Grafik**,
+Kategorien statt einer langen Liste: **Allgemein**, **Grafik**, **Effekte**,
 **Leistung**, **Steuerung**. Jede Zeile ist ein Streifen über die ganze
 Seitenbreite — Beschriftung links, Stufen rechts. Auch Schalter sind Stufen
 („Aus / An"), damit nicht Kästchen neben Auswahlfeldern stehen.
 
-Vier, nicht fünf: „Ton" bestand aus einem einzigen Regler und war eine fast
-leere Seite. Ein Thema, das aus einer Zeile besteht, ist kein Thema, sondern
+Kein „Ton": der bestand aus einem einzigen Regler und war eine fast leere
+Seite. Ein Thema, das aus einer Zeile besteht, ist kein Thema, sondern
 eine Zeile — die Musik steht jetzt bei „Allgemein", mit ihrem Wert in Prozent
 daneben.
 
 ![Einstellungen](docs/bilder/optionen.png)
 
-Unter **Grafik** stehen die sieben Stufen, die wirklich etwas am Bild ändern:
+Fünf Kategorien: **Allgemein**, **Grafik**, **Effekte**, **Leistung**,
+**Steuerung**. „Effekte" ist eine eigene Seite geworden, weil die Grafikseite
+sonst eine Liste aus neun Zeilen wäre, durch die man sich hindurchliest.
 
 ![Grafik](docs/bilder/grafik.png)
+
+![Effekte](docs/bilder/effekte.png)
 
 Unter **Steuerung** steht die vollständige Tastenbelegung als Tabelle über die
 volle Seitenbreite:
@@ -330,52 +334,124 @@ Strand sähe falsch aus.
 
 ## Licht und Tageszeit
 
-Bis hierher war die Welt völlig flach ausgeleuchtet: jede Kachel zu jeder Zeit
-gleich hell. Das ist der Unterschied zwischen einer Textur und einem Ort. Jetzt
-läuft ein **Tag** von acht Minuten durch, und die Welt läuft mit — Morgenrot,
+Ein **Tag** von acht Minuten läuft durch, und die Welt läuft mit — Morgenrot,
 heller Vormittag, Mittag, Abendgold, Dämmerung, blaue Nacht.
 
 ![Abend](docs/bilder/abend.png)
 
-Drei Mittel, alle billig:
+### Und eine Messung, die gar nichts gemessen hat
 
-- **`CanvasModulate`** färbt und dunkelt die ganze Welt. Das ist das Tageslicht
-  selbst — ein Knoten, ein Multiplizieren, unabhängig davon, wie viele Kacheln
-  im Bild sind.
-- **`PointLight2D`** ist ein weicher Schein um die Figur, auf Brusthöhe statt am
-  Knöchel. Er blendet **nach Helligkeit auf, nicht nach Uhrzeit**: gerechnet
-  wird aus der geltenden Tönung, also passt er automatisch, wenn sich der
-  Tagesverlauf einmal ändert.
-- Eine **Vignette** dunkelt die Bildränder ab, am Tag kaum wahrnehmbar, nachts
-  deutlich. Eine Vignette, die man am hellen Mittag bemerkt, ist ein Filter und
-  keine Beleuchtung.
+Die erste Fassung benutzte Godots eingebaute 2D-Beleuchtung: ein `PointLight2D`
+um die Figur und eine Vignette als Vollbild-Shader. Gemessen wurde damals mit
+`Performance.TIME_PROCESS` — und damit **gar nicht**: das ist die Zeit im
+`_process`-Schritt der Hauptschleife, das Zeichnen läuft danach und steckt
+nicht darin. Herausgekommen war, die Beleuchtung koste nichts.
+
+Es gibt einen Messharness, der die Engine selbst fragt:
+
+```bash
+godot --path . -- --profile
+```
+
+Er benutzt `viewport_get_measured_render_time_cpu` und `…_gpu`, und damit sieht
+man es sofort (Software-Rasterizer, 1280 × 720):
+
+| Fall | CPU-Render | GPU-Render |
+|---|---|---|
+| Beleuchtung aus | 6,07 ms | 2,66 ms |
+| nur Tönung | 6,06 ms | 2,75 ms |
+| + Figurenlicht | **9,48 ms** | 2,57 ms |
+| + Vignette | **11,58 ms** | **4,72 ms** |
+
+Eine Verdopplung der Renderkosten (+91 % CPU, +77 % GPU) — bei Tag wie bei
+Nacht. Zwei Ursachen: ein echtes `Light2D` zwingt den Canvas-Renderer in den
+beleuchteten Pfad und lässt jedes Element im Umkreis ein zweites Mal einreihen,
+und ein Vollbild-Fragment-Shader rechnet für 921 600 Bildpunkte je Bild.
+
+### Was stattdessen passiert
+
+- **`CanvasModulate`** färbt und dunkelt die Welt über den Tag. Gemessen
+  **gratis** — ein Multiplizieren, unabhängig von der Zahl der Kacheln. Das ist
+  der Teil, der die Stimmung macht, und der bleibt genau so.
+- **Der Schein** um die Figur ist ein additives Sprite statt eines Lichts. Ein
+  Viereck je Lichtquelle, keine zweiten Durchgänge über die Welt.
+- **Die Sichtgrenze** am Bildrand ist eine einmal gebackene Verlaufstextur
+  statt eines Shaders.
+
+Der Unterschied zum echten Licht: ein `Light2D` multipliziert mit der Farbe des
+Untergrunds, ein additiver Schein legt warmes Licht darüber. Für eine Fackel
+ist das zweite ohnehin das richtige Bild.
+
+Am Tag hängt die **ganze Nachtschicht ab** und kostet nichts. Vorher lag die
+Vignette auch mittags über dem Bild — sichtbar war davon fast nichts, bezahlt
+wurde sie voll.
 
 ![Nacht](docs/bilder/nacht.png)
 
-Der Verlauf ist bewusst **zahm**. Eine Nacht, in der man nichts mehr sieht, ist
-in einem Bauspiel keine Atmosphäre, sondern eine Zwangspause: der dunkelste
-Punkt liegt bei knapp der halben Helligkeit, und die Figur bringt ihr eigenes
-Licht mit. Wer trotzdem lieber durchgehend Vormittag hätte, stellt die
-Beleuchtung auf **„Fest"**.
+### Vier Stufen, nicht ein Schalter
 
-Das Licht liegt auf der **Welt**, nicht auf der Oberfläche: `CanvasModulate`
-wirkt nur in seiner eigenen `CanvasLayer`, und HUD (5), Bauleiste (6) und
-Inventar (8) liegen auf eigenen. Die Vignette hängt auf Ebene 1 — über der
-Welt, unter jeder Anzeige. Ein abendlich oranges Menü wäre ein Fehler, keine
-Stimmung.
+Weil die drei Mittel sehr unterschiedlich kosten, sind sie einzeln abstufbar:
 
-**„Aus" kostet wirklich nichts.** Ein `CanvasModulate` in Weiß und eine
-Vignette mit Stärke 0 sehen aus wie „aus", werden aber weiterhin über jeden
-Bildpunkt gerechnet. Auf Stufe 0 werden alle drei Knoten unsichtbar geschaltet
-und der Prozessschritt abgestellt; der Selbsttest prüft genau das.
+| Stufe | Was dazukommt | Aufschlag gegenüber „Aus" |
+|---|---|---|
+| **Aus** | nichts, kein Prozessschritt | — |
+| **Einfach** | die Tönung, also der ganze Tagesverlauf | CPU −0,10 ms, GPU −0,09 ms |
+| **Mittel** | dazu der Schein um die Figur | GPU +2,03 ms |
+| **Hoch** | dazu die Sichtgrenze am Bildrand | CPU +2,32 ms, GPU +4,14 ms |
 
-Was die Beleuchtung kostet, lässt sich auf dem Software-Rasterizer der
-Testmaschine **nicht** in Millisekunden messen — dort kam „aus" mit 49,45 ms
-teurer heraus als „voll" mit 41,77 ms, weil die Bildzeit zwischen zwei Läufen
-um mehr als das Doppelte schwankt. Zählbar ist dagegen, was die eigentliche
-Gefahr wäre: ein 2D-Licht lässt jeden Knoten in seinem Umkreis ein zweites Mal
-zeichnen. Gemessen wurden **53 Zeichenaufrufe ohne und 56 mit Beleuchtung** —
-der Selbsttest schlägt fehl, wenn daraus mehr als 20 zusätzliche werden.
+Wer auf einem schwachen Laptop spielt, verliert mit „Einfach" also nicht die
+Nacht, sondern nur die beiden Flächen, die Füllrate kosten. Die **Tageszeit**
+ist eine eigene Zeile: ein stehender Tag kostet genauso viel wie ein laufender,
+das ist eine Frage des Spielgefühls.
+
+## Fackeln
+
+**F** setzt eine Fackel auf das Feld unter dem Zeiger, **F** nimmt sie wieder
+weg. Sie leuchtet warm, flackert leicht und wird mit der Karte gespeichert.
+
+Dass es Fackeln überhaupt geben kann, hängt an der Messung oben: ein einziges
+echtes 2D-Licht kostete +3,43 ms CPU-Renderzeit. Zehn Fackeln wären damit nicht
+bezahlbar gewesen. Ein additives Sprite kostet ein Viereck — und ausserhalb des
+Bildes gar nichts, weil es dort erst gar nicht gezeichnet wird.
+
+## Zoom
+
+Drei feste Stufen: **weit (1×)**, **normal (2×)**, **nah (3×)**. Umgeschaltet
+wird mit **+** und **−**.
+
+Ganzzahlig, und das ist keine Bequemlichkeit: bei einem Zoom von 1,5 wird aus
+einem Weltpixel mal ein, mal zwei Bildschirmpunkte, und jede Figurenkante ist
+abwechselnd ein und zwei Punkte dick. Genau deshalb steht der Zoom überhaupt
+auf 2. Stufen wie „85 %" würden diesen Fehler zurückholen — sichtbar, an jeder
+Kante. Ein stufenloses Zoomen gäbe es hier nur um den Preis unsauberer Pixel.
+
+## Qualitätsprofile
+
+Drei Profile — **Niedrig**, **Mittel**, **Hoch** —, und sie stellen **nicht
+alles nach unten**. Das wäre keine Anpassung, sondern Aufgeben. Gemessen kostet
+die Tönung des Tageslichts nichts und der Bewuchs am Boden nichts; beides bleibt
+deshalb auch auf der niedrigsten Stufe an. Weggenommen wird, was Füllrate
+frisst.
+
+Zeigt ein Regler nicht mehr auf ein Profil, steht dort **„Eigene"** — eine
+gespeicherte „aktuelle Stufe" würde irgendwann „Hoch" behaupten, während drei
+Regler längst von Hand verstellt sind.
+
+Dazu eine **Automatik** (Leistung → Automatik). Fällt die Bildzeit vier
+Sekunden lang unter rund 44 Bilder, nimmt sie **eine** teure Wirkung weg —
+teuerste zuerst, nach der Messreihe oben. Ist wieder Luft, gibt sie eine
+zurück, aber nie mehr, als eingestellt war. Immer nur eine je Schritt: mehrere
+gleichzeitig wären ein sichtbarer Sprung, und hinterher wüsste niemand, was
+geholfen hat.
+
+Beim ersten Start wird ein Profil vorgeschlagen. Dabei eine ehrliche
+Einschränkung: **im GL-Compatibility-Renderer meldet Godot die Bauart der
+Grafikkarte gar nicht** — `get_video_adapter_type()` liefert „unbekannt", auch
+auf einem Rechner mit eigener Karte. Sicher erkennen lässt sich am Namen nur
+der eine Fall, der wirklich eine Stufe nach unten gehört: ein
+Software-Rasterizer. Der Rest ist eine grobe Einordnung nach Kernen und
+Arbeitsspeicher — ein Anfangswert, kein Urteil. Entschieden wird danach an der
+gemessenen Bildzeit.
 
 ## Anzeigen
 
@@ -390,8 +466,26 @@ Zahlen, die eine ganze Sitzung lang dieselben bleiben und die Engine
 beschreiben statt den Ort, an dem die Figur steht. Wer sie sehen will, drückt
 **F3**.
 
-**F3** blendet davon getrennt die Entwicklerinfo ein: Chunk, Feld, Bodentyp,
-Begehbarkeit, geladene Kollisionsformen und Zustand der Figur.
+**F3** blendet davon getrennt die **Entwicklerinfo** ein — zwei Spalten: links,
+was die Welt gerade ist, rechts, was sie kostet.
+
+| links | rechts |
+|---|---|
+| Feld, Chunk, Position im Chunk | FPS, Mittelwert, **1 % low**, Bildzeit |
+| Bodentyp, begehbar, schwimmbar | CPU- und GPU-Renderzeit, Zeichenaufrufe |
+| Zustand und Tempo der Figur | Figuren, Staubpunkte, Baumarken, Lichtquellen |
+| geladene Chunks, davon im Bild | Spielspeicher, freier Systemspeicher, Grafikspeicher |
+| Kollisionsformen, Felder im Bild | Fenster, Ansicht, Bildmassstab, Kamerazoom |
+| Ladezeit des letzten Chunks | |
+| Uhrzeit und Dunkelheit | |
+
+Es steht dort **nichts, was nicht wirklich gemessen wird**. Godot liefert keine
+Prozessor- oder Grafikkartenauslastung in Prozent — also steht so etwas dort
+auch nicht, obwohl es gut aussähe. Wo ein Treiber einen Zähler nicht füllt,
+steht ein Strich statt einer Null: eine Null sieht aus wie ein Messwert.
+
+Und die Anzeige kostet selbst fast nichts: der Text wird viermal je Sekunde
+gebaut, nicht sechzigmal, und nur solange sie sichtbar ist.
 
 ![Leistungsanzeige und Entwicklerinfo](docs/bilder/anzeigen.png)
 
@@ -404,24 +498,53 @@ automatisch gesichert**, mit **F5** auch von Hand. Sie liegt in
 umgesetzt; passen Fassung oder Kartenmaße gar nicht, wird die Datei übergangen
 statt zu stürzen.
 
-## Steuerung
+## Steuerung — frei belegbar
+
+`W` `A` `S` `D` ist **nicht die Steuerung**, sondern nur der
+Auslieferungszustand. Die Spiellogik fragt nirgends eine Taste ab, sondern
+immer eine Aktion (`Input.is_action_pressed("move_up")`). Welche Taste das
+auslöst, entscheidet allein die Steuerungsseite — deshalb kann jede Aktion auf
+jede Taste, ohne dass am Spiel eine Zeile geändert werden müsste. Der
+Selbsttest prüft das: in Welt, Figur, Kamera und Kern darf kein einziger
+`KEY_`-Code stehen.
+
+![Steuerung](docs/bilder/steuerung.png)
+
+Eine Aktion trägt **mehrere Eingaben** (bis zu drei). Genau so funktionieren
+WASD und Pfeiltasten gleichzeitig: sie liegen auf denselben vier Aktionen.
+
+- Eine Taste **anklicken** und die neue drücken.
+- **Rechtsklick** nimmt eine Belegung weg. Die letzte bleibt stehen — eine
+  Aktion ohne Eingabe wäre unerreichbar, und man sähe im Menü nicht, dass sie
+  es ist.
+- Eine Taste, die schon woanders liegt, wird **abgelehnt**, mit Angabe wo.
+- **Standard wiederherstellen** holt die Auslieferung zurück.
+
+Gespeichert werden **physische** Tastencodes: die Taste an der Stelle, an der
+auf einer amerikanischen Tastatur `W` sitzt. Auf einer französischen Tastatur
+liegt dort `Z`, und genau die läuft dann vorwärts — sonst müsste jeder mit
+einer anders angeordneten Tastatur die Steuerung von Hand neu belegen.
+Angezeigt wird trotzdem der Buchstabe, der wirklich auf der Taste steht.
+
+### Standardbelegung
 
 | Eingabe | Aktion |
 |---|---|
 | **W A S D** oder **Pfeiltasten** | Laufen |
 | **Shift** | Rennen (nicht im Wasser) |
 | **Leertaste** | Springen |
+| **Linke Maustaste** | Block setzen |
+| **Rechte Maustaste** | Block zurücksetzen |
+| **F** | Fackel setzen / wegnehmen |
+| **1 – 3** / **Mausrad** | Material wählen |
 | **E** | Inventar öffnen / schliessen |
+| **+** / **−** | Näher heran / weiter weg |
 | **G** | Blockraster ein / aus (beim Start aus) |
 | **M** | Minimap ein / aus |
 | **H** | Anzeige oben links ein / aus |
 | **F3** | Entwicklerinfo ein / aus |
-| **1 – 3** / **Mausrad** | Material wählen |
-| **Linke Maustaste** | Block setzen |
-| **Rechte Maustaste** | Block zurücksetzen |
 | **F5** | Karte speichern |
-| **ESC** | Pause-Menü öffnen / schließen |
-| **Maus** | Menüs bedienen |
+| **Esc** | Pause-Menü öffnen / schliessen |
 
 ## Was drin ist
 
@@ -472,7 +595,10 @@ scenes/main.tscn           Einstiegsszene — alles Weitere entsteht im Code
 src/core/config.gd         Konstanten (Kachelgröße, Tempo, Zoom) + Tastenbelegung
 src/core/palette.gd        Die eine Farbpalette für alle Grafiken
 src/core/settings.gd       Autoload: Einstellungen — nur Daten und Persistenz
-src/core/graphics.gd       Autoload: wendet Bild- und Leistungseinstellungen an
+src/core/graphics.gd       Autoload: wendet Einstellungen an, regelt Qualität nach
+src/core/perf.gd           Autoload: Bild- und Renderzeiten, 1 % low — eine Quelle
+src/core/quality.gd        Grafikprofile und was der Rechner davon verträgt
+src/core/keybinds.gd       Tastenbelegung: Standard, Änderungen, Konflikte
 src/core/main.gd           Zustandsautomat MENÜ / SPIEL / PAUSE / OPTIONEN / INVENTAR / RÜCKFRAGE
 
 src/gfx/pixel.gd           Zeichen-Werkzeuge auf Images, mit umlaufendem Kachelrand
@@ -492,7 +618,8 @@ src/world/build_tool.gd    Blöcke setzen und entfernen, Speichern
 src/world/water_fx.gd      Glitzern und Uferschaum (nur im Sichtbereich)
 src/world/ambient_fx.gd    Staub und Pollen in der Luft (nur im Sichtbereich)
 src/world/build_fx.gd      Kurze Rückmeldung: gesetzter Block, Landung
-src/world/light_manager.gd Tageslicht, Schein um die Figur, Vignette
+src/world/light_manager.gd Tageslicht, Schein um die Figur, Sichtgrenze
+src/world/torches.gd       Gesetzte Fackeln: Bild in der Welt, Licht darüber
 src/world/grid_overlay.gd  Raster darüber, Bodenmarken darunter
 src/world/world.gd         Setzt die Spielwelt zusammen
 
@@ -519,6 +646,7 @@ src/ui/perf_overlay.gd     Leistungsanzeige (nur gemessene Werte)
 src/ui/debug_overlay.gd    Entwicklerinfo auf F3
 
 src/audio/audio.gd         Autoload: prozedurale Musik (ohne Klangeffekte)
+src/dev/profiler.gd        Misst, was das BILD kostet (--profile)
 src/dev/self_test.gd       Automatischer Selbsttest
 
 prototype_godsim/          Früherer God-Sim-Prototyp, unverändert archiviert
@@ -535,7 +663,7 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **251 Prüfungen**.
+Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **297 Prüfungen**.
 Darunter unter anderem:
 
 - genau drei Bodentypen in Aufzählung, Kachelstapel, Leiste, Inventar und Minimap
@@ -563,6 +691,20 @@ Darunter unter anderem:
 - Beleuchtung: der Tagesverlauf springt nirgends, der Schein sitzt auf
   Brusthöhe bei der Figur und blendet nachts auf, „Fest“ hält die Zeit an,
   „Aus“ hängt alles ab, und das Licht bleibt bei den Zeichenaufrufen bescheiden
+- **kein einziges echtes `Light2D`** in der Welt — auch nicht mit Fackeln; das
+  ist die Prüfung, die den gemessenen Aufschlag von +3,43 ms fernhält
+- jede Lichtstufe schaltet genau ihren Teil zu, und die Tönung bleibt auf allen
+- eine echte Lücke bleibt eine Lücke: `[S][S][ ][S][S]` und ein einzeln
+  entfernter Block mitten in einer Fläche zeigen den Boden darunter
+- Profile stellen nicht alles nach unten, die Automatik gibt nie mehr zurück,
+  als eingestellt war, und die Hardwareerkennung liefert echte Werte
+- die Entwicklerinfo nennt alles Gemessene — und nichts Erfundenes
+- **keine feste Taste in der Spiellogik**, Umbelegen wirkt, Konflikte werden
+  abgelehnt, die letzte Eingabe lässt sich nicht wegnehmen, und die eigene
+  Belegung übersteht einen Neustart
+- Fackeln setzen, wegnehmen und speichern; jede Zoomstufe ist ganzzahlig und
+  die Grenzen halten
+- durchs Wasser laufen zieht eine Spur, sie bleibt gedeckelt und läuft aus
 - die Figur: drei verschiedene Stellungen je Laufrichtung, der Körper bleibt
   unter Wasser zu ahnen, der Wellenkragen ist ein Ring und kein Brett, der
   Bodenschatten fällt nach unten rechts
@@ -600,8 +742,17 @@ Die Architektur ist auf Erweiterung ausgelegt, aber bewusst schlank. Naheliegend
 wären weitere Materialien (dann aber einzeln und geprüft), Figurenskins,
 mehrere Speicherstände und Wetter.
 
+**Die Wasserkante ist noch eckig, und das ist Absicht mit Ablaufdatum.** Wasser
+bekommt als einzige Schicht keine weichen Übergangskacheln: das Eck-Autotiling
+legt die Geländegrenze eine halbe Kachel versetzt zum Blockraster, Uferband und
+Brandung sitzen aber am Block — mit weichem Auslauf landete die Brandung auf
+dem Sand. Das sauber zu lösen heisst, die Uferzeichnung auf dasselbe
+Eckraster umzustellen, und das ist eine eigene Runde wert, keine Zeile
+nebenbei. Bis dahin ist die Wasserfläche selbst abwechslungsreich (zehn
+Ausführungen in drei Helligkeitsstufen), ihre Aussenkante aber blockgenau.
+
 Was es bewusst **noch nicht** gibt, damit hier nichts versprochen wird, das
-nicht da ist: NPCs, Gegner, aufsammelbare Gegenstände, Feuer und Rauch,
+nicht da ist: NPCs, Gegner, aufsammelbare Gegenstände, Fische, Feuer und Rauch,
 Wettereffekte und eine Parallaxe im Hintergrund — das Spiel ist von oben
 gesehen und hat keine Hintergrundebene, in der eine Parallaxe stattfinden
 könnte.

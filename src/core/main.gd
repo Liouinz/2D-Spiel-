@@ -76,6 +76,10 @@ func _ready() -> void:
 		var test := preload("res://src/dev/self_test.gd").new()
 		test.main = self
 		add_child(test)
+	elif OS.get_cmdline_user_args().has("--profile"):
+		var prof := preload("res://src/dev/profiler.gd").new()
+		prof.main = self
+		add_child(prof)
 
 ## ESC und E. Läuft auch, während der Baum pausiert ist.
 ##
@@ -92,7 +96,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if toggle_inventory():
 			get_viewport().set_input_as_handled()
 		return
-	if not event.is_action_pressed("ui_cancel"):
+	# „pause" ist die belegbare Aktion, `ui_cancel` bleibt daneben stehen: die
+	# Menüs von Godot hängen daran, und Esc soll dort weiter zurückführen, auch
+	# wenn jemand Pause auf eine andere Taste legt.
+	if not (event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel")):
 		return
 	match state:
 		State.PLAYING:
@@ -174,6 +181,10 @@ func start_game(fresh: bool = false) -> void:
 	_busy = false
 	_set_state(State.PLAYING)
 	Audio.play_music("world")
+	# Erst ab hier darf die Automatik nachregeln. Im Menü ist das Bild ohnehin
+	# billig; dort würde sie fröhlich hochregeln, was in der Welt gleich wieder
+	# klemmt.
+	Graphics.in_world = true
 
 func _make_loading() -> Label:
 	var l := Label.new()
@@ -214,6 +225,7 @@ func close_options() -> void:
 	_set_state(_return_state)
 
 func to_main_menu() -> void:
+	Graphics.in_world = false
 	_save_world()
 	if is_instance_valid(_world):
 		_world.queue_free()
