@@ -24,6 +24,22 @@ const COLORS := {
 	MapData.Tile.WATER: Color8(64, 118, 172),
 }
 
+## Wie stark ein Feld an einer Materialgrenze abgedunkelt wird.
+##
+## Ohne diese Kante ist die Minimap eine Ansammlung von Farbflaechen: man sieht,
+## DASS dort Wasser ist, aber nicht, welche Form es hat. Mit ihr bekommt jeder
+## Teich einen Umriss und wird auf 3 Bildpunkten je Block lesbar.
+const RIM_DARKEN := 0.30
+
+## Wie viele Helligkeitsstufen ein Bodentyp auf der Karte bekommt.
+##
+## Die Hauptansicht hat seit dieser Runde Flecken, Halme und Kiesel; die
+## Minimap war daneben eine glatte Farbflaeche. Drei Stufen mit knapp vier
+## Prozent Abstand geben ihr die gleiche Koernung — genug, dass man Gelaende
+## sieht statt Papier, und wenig genug, dass die Umrisse davon nicht leiden.
+const LEVELS := 3
+const LEVEL_STEP := 0.038
+
 var map: MapData
 var player: Node2D
 
@@ -31,6 +47,7 @@ var _tex: ImageTexture
 var _img: Image
 var _buf := PackedByteArray()
 var _lut := PackedByteArray()      ## Bodentyp -> RGBA, einmal vorbereitet
+var _lut_rim := PackedByteArray()  ## dasselbe, eine Stufe dunkler: die Kante
 var _accum: float = 0.0
 var _last := Vector2i(-9999, -9999)
 var _label: Label
@@ -45,13 +62,17 @@ func _ready() -> void:
 	offset_bottom = 18 + SIZE
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	_lut.resize(256 * 4)
+	# Nachschlagetabelle: Bodentyp mal Helligkeitsstufe. Einmal aufgebaut,
+	# danach kostet ein Kartenpunkt nur noch vier Bytes kopieren.
+	_lut.resize(256 * LEVELS * 4)
+	_lut_rim.resize(256 * LEVELS * 4)
 	for t in 256:
 		var c: Color = COLORS.get(t, Color8(96, 152, 78))
-		_lut[t * 4] = int(c.r8)
-		_lut[t * 4 + 1] = int(c.g8)
-		_lut[t * 4 + 2] = int(c.b8)
-		_lut[t * 4 + 3] = 255
+		for l in LEVELS:
+			var amount := (float(l) - float(LEVELS - 1) * 0.5) * LEVEL_STEP
+			var shaded := c.lightened(amount) if amount > 0.0 else c.darkened(-amount)
+			_write(_lut, (t * LEVELS + l) * 4, shaded)
+			_write(_lut_rim, (t * LEVELS + l) * 4, shaded.darkened(RIM_DARKEN))
 
 	_buf.resize(BLOCKS * BLOCKS * 4)
 	_img = Image.create(BLOCKS, BLOCKS, false, Image.FORMAT_RGBA8)
@@ -69,6 +90,12 @@ func _ready() -> void:
 	_label.add_theme_constant_override("outline_size", 5)
 	_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	add_child(_label)
+
+static func _write(buf: PackedByteArray, at: int, c: Color) -> void:
+	buf[at] = int(c.r8)
+	buf[at + 1] = int(c.g8)
+	buf[at + 2] = int(c.b8)
+	buf[at + 3] = 255
 
 func _process(delta: float) -> void:
 	if map == null or not is_instance_valid(player):
@@ -104,10 +131,21 @@ func refresh() -> void:
 				# Ausserhalb der Welt: dunkel, damit der Rand sichtbar wird.
 				_buf[o] = 26; _buf[o + 1] = 28; _buf[o + 2] = 34; _buf[o + 3] = 255
 				continue
-			var s := tiles[y * w + x] * 4
-			_buf[o] = _lut[s]
-			_buf[o + 1] = _lut[s + 1]
-			_buf[o + 2] = _lut[s + 2]
+			var here := tiles[y * w + x]
+			# Randfelder dunkler. Das ist der ganze Unterschied zwischen einer
+			# Karte und einem Farbfeld: ohne Kante sind drei gruene Blocks und
+			# eine gruene Flaeche dasselbe Bild. Geprueft werden die vier
+			# direkten Nachbarn — vier Vergleiche je Punkt, 4096 Punkte,
+			# sechsmal je Sekunde.
+			var rim := (y > 0 and tiles[(y - 1) * w + x] != here) \
+				or (y < h - 1 and tiles[(y + 1) * w + x] != here) \
+				or (x > 0 and tiles[y * w + x - 1] != here) \
+				or (x < w - 1 and tiles[y * w + x + 1] != here)
+			var src: PackedByteArray = _lut_rim if rim else _lut
+			var si := (here * LEVELS + Config.hash2(x, y) % LEVELS) * 4
+			_buf[o] = src[si]
+			_buf[o + 1] = src[si + 1]
+			_buf[o + 2] = src[si + 2]
 			_buf[o + 3] = 255
 
 	_img.set_data(BLOCKS, BLOCKS, false, Image.FORMAT_RGBA8, _buf)
@@ -131,15 +169,32 @@ func _draw() -> void:
 	var step := Config.CHUNK * SCALE
 	var first_x := (posmod(-x0, Config.CHUNK)) * SCALE
 	var first_y := (posmod(-y0, Config.CHUNK)) * SCALE
+	# Schwaecher als im Spiel: dort liegt eine Linie ueber 32 Bildpunkten
+	# Kachel, hier ueber dreien. Bei gleicher Deckkraft ueberdeckt das Gitter
+	# die Karte, die es einteilen soll.
+	var grid := Color(GridOverlay.CHUNK_LINE, GridOverlay.CHUNK_LINE.a * 0.45)
 	for gx in range(first_x, SIZE, step):
-		draw_line(Vector2(gx, 0), Vector2(gx, SIZE), GridOverlay.CHUNK_LINE, 1.0)
+		draw_line(Vector2(gx, 0), Vector2(gx, SIZE), grid, 1.0)
 	for gy in range(first_y, SIZE, step):
-		draw_line(Vector2(0, gy), Vector2(SIZE, gy), GridOverlay.CHUNK_LINE, 1.0)
+		draw_line(Vector2(0, gy), Vector2(SIZE, gy), grid, 1.0)
 
 	# Die Figur sitzt immer in der Mitte.
-	var mid := Vector2(SIZE, SIZE) * 0.5
-	draw_rect(Rect2(mid - Vector2(3, 3), Vector2(6, 6)), Color(0, 0, 0, 0.75), true)
-	draw_rect(Rect2(mid - Vector2(2, 2), Vector2(4, 4)), Color(1, 1, 1, 0.95), true)
+	#
+	# Vorher ein weisses Quadrat mit schwarzem Saum — dieselbe Form, die ein
+	# Spieler anderswo im Bild fuer eine vergessene Markierung gehalten hat.
+	# Eine Raute in der Akzentfarbe des Spiels ist an derselben Stelle
+	# eindeutig: sie zeigt nach oben, sie ist warm, und sie sieht nach nichts
+	# anderem aus.
+	var mid := (Vector2(SIZE, SIZE) * 0.5).round()
+	var ring := PackedVector2Array([mid + Vector2(0, -6), mid + Vector2(5, 0),
+		mid + Vector2(0, 6), mid + Vector2(-5, 0)])
+	draw_colored_polygon(ring, Color(0, 0, 0, 0.70))
+	var core := PackedVector2Array([mid + Vector2(0, -4), mid + Vector2(3, 0),
+		mid + Vector2(0, 4), mid + Vector2(-3, 0)])
+	draw_colored_polygon(core, Color(Palette.UI_ACCENT, 0.98))
+	draw_colored_polygon(PackedVector2Array([mid + Vector2(0, -4),
+		mid + Vector2(3, 0), mid + Vector2(0, 0), mid + Vector2(-3, 0)]),
+		Color(Palette.UI_ACCENT.lightened(0.35), 0.95))
 	draw_rect(box, Color(0.85, 0.80, 0.62, 0.75), false, 2.0)
 
 ## Farbe eines Bodentyps auf der Minimap — für den Selbsttest.

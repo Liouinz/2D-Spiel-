@@ -14,10 +14,26 @@ extends Node2D
 const SPEED := 14.0            ## Grunddrift in Bildpunkten je Sekunde
 const REDRAW_HZ := 30.0
 
-## Warmes Weiss. Der Boden ist stark gekörnt; ein blasser sandfarbener Punkt
-## verschwand darin restlos — erst ein heller Kern hebt sich ab, ohne dass die
-## Punkte wie Bildfehler wirken.
-const CORE := Color(1.0, 0.97, 0.88)
+## Blasses Stroh, nicht Weiss.
+##
+## Vorher stand hier fast reines Weiss bei bis zu 62 % Deckkraft. Auf dem
+## gruenen Boden war das der hellste Punkt im ganzen Bild — heller als jede
+## Grasspitze, heller als der Sand. Genau so hat ein Spieler sie auch gelesen:
+## als vergessene Marker neben der Figur, nicht als Pollen in der Luft.
+##
+## Ein Staubkorn in der Sonne ist warm und schwach. Es darf sich vom Boden
+## abheben, aber es darf nicht das Hellste im Bild sein — sonst zieht es den
+## Blick genau dorthin, wo nichts passiert.
+##
+## Die Grenze ist heller Sand: was blasser ist als der hellste Boden, den es in
+## dieser Welt gibt, liest sich als Teil der Szene. Der Selbsttest haelt genau
+## das fest — der erste Versuch (0,97 / 0,93 / 0,74) lag noch darueber und ist
+## daran gescheitert.
+const CORE := Color(0.84, 0.80, 0.58)
+
+## Obergrenze der Deckkraft. Bewusst als eigene Zahl: sie ist die eine
+## Stellschraube zwischen „Luft" und „Bildfehler".
+const PEAK := 0.34
 
 var camera: GameCamera
 
@@ -61,8 +77,11 @@ func _new_mote(area: Rect2, anywhere: bool) -> Dictionary:
 		"drift": _rng.randf_range(0.6, 1.5),      ## wie schnell er treibt
 		# In WELTpixeln. Bei Zoom 2 sind das zwei bzw. vier Bildschirmpunkte —
 		# mehr wirkt nicht wie Staub, sondern wie Schmutz auf dem Bildschirm.
-		"size": 1.0 if _rng.randf() < 0.72 else 2.0,
-		"alpha": _rng.randf_range(0.30, 0.62),
+		# Der grosse Punkt ist jetzt die Ausnahme (12 % statt 28 %): vier
+		# Bildschirmpunkte am Stueck lesen sich als Quadrat, und ein Quadrat
+		# liest sich als Marke.
+		"size": 1.0 if _rng.randf() < 0.88 else 2.0,
+		"alpha": _rng.randf_range(0.16, PEAK),
 	}
 
 func _visible_rect() -> Rect2:
@@ -105,6 +124,6 @@ func _draw() -> void:
 		# Weicher Hof unter dem Kern: ein einzelnes helles Quadrat sähe wie ein
 		# defekter Bildpunkt aus, mit Hof wie etwas, das in der Luft schwebt.
 		draw_rect(Rect2(at - Vector2.ONE, Vector2(s + 2.0, s + 2.0)),
-			Color(CORE, a * 0.28), true)
+			Color(CORE, a * 0.22), true)
 		draw_rect(Rect2(at, Vector2(s, s)), Color(CORE, a), true)
 		drawn += 1

@@ -146,6 +146,38 @@ Autotiling fällt damit sofort auf.
 
 ![Bauen mit der Leiste](docs/bilder/bauen.png)
 
+### Das Wasser zieht sich zurück
+
+Wasser war die einzige Schicht mit einer harten Kante — und das sah man:
+rechteckige Becken mit lineargezogenen Ufern. Weiche Übergänge wie bei Sand
+gingen aber nicht, aus zwei Gründen: die Karte weiss, welches Feld Wasser ist,
+und daran hängt das Schwimmen (die Figur liefe sichtbar auf Wasser, ohne zu
+schwimmen); und Uferband und Brandung sassen am Blockrand.
+
+Jetzt zieht sich das Wasser **innerhalb seines eigenen Feldes zurück**. Eine
+Ecke gilt nur, wenn alle drei dort anliegenden Felder Wasser sind — sonst
+frisst dieselbe Rauschkante wie überall sonst ein Stück davon weg. Darunter
+liegt Sand, der dabei zum Vorschein kommt.
+
+![Ufer](docs/bilder/ufer.png)
+
+Ein einzelnes Wasserfeld wird dadurch eine **runde Pfütze** statt eines
+Quadrats, und ein Becken bekommt geschwungene Ufer und weiche Ecken — ohne dass
+Karte und Bild auseinanderlaufen.
+
+Schaum und Tiefe stehen dabei **in der Wasserkachel selbst**: aussen ein heller
+Schaumsaum, nach innen ein dunkleres Tiefenband. Vorher lagen sie in einer
+zweiten Schicht am Blockrand, und das Ergebnis war eindeutig: um jeden Teich
+lief ein schnurgerades dunkles Rechteck durch den Sand, während die Wasserlinie
+daneben geschwungen verlief. Zwei Beschreibungen derselben Küste, die sich
+widersprechen — und die falsche war die gerade. Die Kantenschicht ist deshalb
+weg; es gibt nur noch eine Quelle.
+
+Die Wasserfläche selbst hat vier Lagen: weiche Tiefenbänder, eine mittlere Lage,
+die sie aufbricht, Glanzkanten mit Schatten darunter (erst der Schatten macht
+daraus eine Welle) und sparsames Funkeln. Dazu ein einzelner heller Reflex je
+Kachel, oben links — dort, wo in dieser Welt das Licht herkommt.
+
 Gesetztes **Wasser lässt sich durchschwimmen** — die Figur sinkt ein, wird
 langsamer und bekommt einen Wellenkragen. Unter der Wasserlinie wird sie nicht
 abgeschnitten, sondern **eingetaucht**: durchscheinend und zur Wasserfarbe hin
@@ -187,6 +219,30 @@ Im Bild unten sieht man alle drei Zustände auf einmal: **Gras** gewählt,
 **Sand** überfahren, **Wasser** ruhig.
 
 ![Inventar](docs/bilder/inventar.png)
+
+### Die Bauleiste liegt über der Welt
+
+Sie ist deshalb **durchscheinend** — Rahmen und Felder lassen den Boden
+darunter durch. Nicht zu weit: unter der Leiste steht mal Gras, mal Sand, mal
+Wasser, und die Materialnamen müssen auf jedem davon lesbar bleiben. Dieselbe
+Klasse baut die Felder im Inventar, dort aber **undurchsichtig**: hinter dem
+Inventar liegt ohnehin ein abgedunkelter Hintergrund, und ein durchscheinendes
+Feld wäre da nur unruhig. Ein Schalter, zwei Aufträge — zwei Kopien derselben
+Zeichnung wären die sichere Art, dass eine davon irgendwann anders aussieht.
+
+Zwischen den Feldern stehen **Fugen**. Drei Felder mit Luft dazwischen lesen
+sich als drei einzelne Schaltflächen, die zufällig nebeneinander liegen; eine
+Linie in jeder Lücke macht daraus eine Leiste mit drei Fächern.
+
+Die Auswahl ist **kein gelber Kasten** mehr. Vorher trug die Farbe die ganze
+Aussage und die Form gar keine — über der Welt las sich das als aufgeklebtes
+Rechteck. Jetzt sind es vier Eckwinkel, ein kurzer Fußstrich und der Schein,
+den es schon gab; der Rahmen selbst bleibt zurückhaltend.
+
+Und die Materialbilder sind **Brocken statt Farbproben**: dasselbe Stück
+echten Bodens wie vorher, aber mit Lichtkante oben links, Schattenkante unten
+rechts und abgerundeten Ecken. Ein 64 × 64 großes Stück Gras ohne Form ist ein
+grünes Rechteck — technisch richtig, aber es sagt nichts.
 
 ## Menüs
 
@@ -318,6 +374,47 @@ vorher verdeckt hatte: sie sind von 3,5 % auf 1,8 % zurückgenommen. Die große
 Helligkeitsbewegung kommt jetzt ohnehin vom Wind, und die läuft über
 Kachelkanten hinweg weich durch.
 
+### Was groß ist, muss überall gleich sein
+
+Gras und Sand haben seither **je zwei zusätzliche Farbtöne**: eine trockene
+Stelle, die ins Gelbe zieht, und eine beschattete, die ins Blaue geht. Beim
+Sand entsprechend eine sonnige und eine feuchte. Dazu Halme mit Neigung,
+kleine Büschel, Kiesel, trockene Halme und winzige Blüten im Boden selbst.
+
+Beim ersten Versuch steckte all das in den **Flecken** — den großen weichen
+Farbwolken, die jede Kachelvariante für sich auswürfelt. Das war ein Fehler,
+und er ist messbar:
+
+```bash
+godot --headless --path . -- --selftest   # „Nähte zwischen VERSCHIEDENEN Varianten"
+```
+
+Der Selbsttest legt jede Kachelvariante gegen jede andere derselben Stufe und
+vergleicht den Farbsprung an der Stoßkante mit dem Sprung zwischen zwei
+benachbarten Punkten im Kachelinneren. 1,0 heißt „so glatt wie innen".
+
+| | vorher | erster Versuch | jetzt |
+|---|---|---|---|
+| Gras | 1,59 | 1,72 | **1,43** |
+| Sand | 1,35 | 1,46 | **1,05** |
+| Wasser | **1,94** | — | **1,11** |
+
+Wasser war der schlechteste Wert im Projekt, und man sah es: die Tiefenbänder
+liefen über die volle Kachelbreite und hörten an der Kante auf. Stieß dort eine
+Kachel ohne Band an, sprang die Helligkeit — über eine ruhige Wasserfläche
+hinweg als Gitter zu sehen. Sie stehen jetzt **in jeder Variante an derselben
+Stelle**.
+
+Daraus die Regel, die für jede Kachelgrafik mit Varianten gilt und die im Code
+an drei Stellen steht: **was groß ist, muss in allen Varianten gleich sein,
+sonst sieht man die Fuge. Was sich unterscheiden darf, muss klein oder weich
+sein.** Die Farbe ist deshalb aus den Flecken in die **Halme und Körner**
+gezogen — dort trägt sie dasselbe und kostet keine Naht.
+
+Die alte Prüfung („ist eine Kachel mit SICH SELBST nahtlos?") gab es schon; sie
+war nötig, aber sie hat nie die Frage gestellt, die auf dem Bildschirm gestellt
+wird — dort liegt neben Variante 3 die Variante 7.
+
 ### Die Welt hat Dinge
 
 Auf Gras und Sand liegt **Streu-Dekoration**: Grasbüschel, rote, gelbe und
@@ -331,6 +428,62 @@ Zufall beim Laden: derselbe Fleck Wiese sieht nach dem Nachladen eines Chunks
 wieder genauso aus. Auf Gras steht deutlich mehr als auf Sand — eine Wiese ist
 bewachsen, ein Strand ist überwiegend leer, und ein gleichmäßig bestreuter
 Strand sähe falsch aus.
+
+## Drei Dinge, die wie Markierungen aussahen
+
+Auf einem Bildschirmfoto standen helle Formen in der Welt, die dort niemand
+hingesetzt hatte — kleine weiße Quadrate neben der Figur, weiße Kreuze auf der
+Wiese und ein blass gestricheltes Rechteck um jeden Teich. Es war naheliegend,
+sie für vergessene Entwicklermarken zu halten. Waren sie nicht. Es waren drei
+verschiedene Sachen, und zwei davon waren echte Fehler.
+
+**Das gestrichelte Rechteck war einer.** Die Wasserwirkung malte einen
+animierten Schaumsaum an die Kachelkanten jeder Wasserzelle der **Karte**. Seit
+sich die Wasser*zeichnung* um eine halbe Kachel zurückzieht, liegt diese Kante
+nicht mehr am Wasser, sondern einen halben Block draußen im Sand — dieselbe
+Sorte Fehler wie das dunkle Rechteck, das eine Runde vorher gelöscht wurde, nur
+in Hellgrau. Es wäre möglich gewesen, den Saum auf die gezeichnete Linie zu
+schieben; die verläuft aber verrauscht durch die Kachelmitte, und ein Saum
+daneben stünde wieder als Linie da. Also gilt dieselbe Regel wie beim Ufer:
+**eine Quelle.** Der Schaum ist gebacken, und was sich bewegt, bewegt sich
+innerhalb der Wasserfläche. Auch das Glitzern liegt jetzt nur noch auf Feldern,
+deren acht Nachbarn Wasser sind — sonst läge es auf dem Strand.
+
+**Die weißen Kreuze waren Blumen.** Fünf Punkte im Kreuz, der hellste in der
+Mitte, in reinem Weiß auf grünem Grund: der stärkste Kontrast im ganzen Bild,
+sternförmig, mit leuchtendem Kern. Jetzt hat der Kopf eine zweite Reihe (aus
+dem Kreuz wird eine Form mit Ober- und Unterseite), und der Kern ist nicht mehr
+die hellste, sondern eine **andere** Farbe. Eine weiße Blüte mit gelbem Kern
+liest man sofort als Blume; ein weißer Stern mit weißem Kern nicht.
+
+**Die Quadrate neben der Figur waren die Bauvorschau.** Vier Eckwinkel in
+reinem Weiß bei 95 % — ohne Farbe, die zum Spiel gehört, und ohne etwas, worauf
+sie sich sichtbar bezogen: das gewählte Material war Gras, das Geistbild lag
+auf Gras, also sah man nur die Winkel. Sie sind jetzt warm (dieselbe
+Akzentfarbe wie die gewählte Kachel in der Leiste) und rahmen einen schwachen
+Schleier ein, damit sie auf etwas zeigen.
+
+**Und der Staub in der Luft** war zwar keine Markierung, aber fast reines Weiß
+bei bis zu 62 % — heller als jede Grasspitze und heller als der Sand. Er ist
+jetzt blasses Stroh bei höchstens 34 %. Die Grenze steht als Prüfung im
+Selbsttest: *blasser als der hellste Boden, den es in dieser Welt gibt.* Wer
+ihn ganz abschalten will, findet ihn unter **Einstellungen → Effekte → Staub**.
+
+Auch die Figurenmarke auf der Minimap war ein weißes Quadrat mit schwarzem
+Saum — dieselbe Form. Sie ist jetzt eine Raute in der Akzentfarbe.
+
+## Die Minimap zeigt Formen
+
+Die Übersichtskarte oben rechts war eine Ansammlung von Farbflächen: man sah,
+*dass* dort Wasser ist, aber nicht, welche Form es hat. Jedes Feld an einer
+Materialgrenze wird jetzt **dunkler gezeichnet** — vier Nachbarvergleiche je
+Punkt, 4096 Punkte, sechsmal je Sekunde. Damit bekommt jeder Teich einen
+Umriss und wird auf drei Bildpunkten je Block lesbar.
+
+Dazu drei Helligkeitsstufen je Bodentyp mit knapp vier Prozent Abstand, damit
+die Karte dieselbe Körnung hat wie die Hauptansicht, und ein deutlich
+schwächeres Chunk-Gitter: im Spiel liegt eine Linie über 32 Bildpunkten Kachel,
+hier über dreien.
 
 ## Licht und Tageszeit
 
@@ -386,6 +539,34 @@ Am Tag hängt die **ganze Nachtschicht ab** und kostet nichts. Vorher lag die
 Vignette auch mittags über dem Bild — sichtbar war davon fast nichts, bezahlt
 wurde sie voll.
 
+### Die Nacht war grün
+
+In der Farbtabelle stand seit jeher `[0.00, Color(0.26, 0.30, 0.50)] ## tiefe
+Nacht, blau`. Auf dem Bildschirm war die Nacht trotzdem **dunkelgrün**.
+
+Der Grund ist eine Zeile Rechnung: `CanvasModulate` **multipliziert**. Gras ist
+(78, 138, 68) — darin steckt fast kein Blau, das sich verstärken ließe. Mal
+(0,26 / 0,30 / 0,50) ergibt (20, 41, 34), und das ist dunkles Grün. Eine blaue
+Tönung kann aus einer grünen Wiese keine blaue Nacht machen.
+
+Blau muss also **dazukommen**, nicht durchmultipliziert werden. Das ist eine
+einzelne halbdurchsichtige Fläche über der Welt — ein Viereck, kein Shader —,
+und sie liegt bewusst **unter** den Scheinen: so fällt das warme Fackellicht in
+eine kalte Umgebung, und der Kontrast, den eine Nachtszene braucht, entsteht
+von selbst.
+
+Gemessen (llvmpipe, 1280 × 720): **ein zusätzlicher Zeichenaufruf, +0,19 ms
+Bildzeit.** Auf echter Hardware ist ein einzelnes überblendetes Vollbildviereck
+noch billiger; auf einem Software-Rasterizer schlägt es als Füllrate voll durch,
+und genau deshalb steht hier die Bildzeit und nicht die CPU-Renderzeit.
+
+Die Fackel hat dazu einen **zweiten, kleinen Schein** bekommen. Ein einzelner
+weicher Verlauf über 76 Pixel hellt auf, aber er beleuchtet niemanden; eine
+Flamme hat einen Kern. Zwei übereinandergelegte Verläufe ergeben diese Kurve —
+und weil additiv addiert heißt, war der erste Versuch (0,50 + 0,50) prompt
+wieder der weiße Fleck, den es hier schon einmal gab. Die **Summe** ist jetzt
+0,53, und der Selbsttest rechnet sie nach.
+
 ![Nacht](docs/bilder/nacht.png)
 
 ### Vier Stufen, nicht ein Schalter
@@ -404,10 +585,57 @@ Nacht, sondern nur die beiden Flächen, die Füllrate kosten. Die **Tageszeit**
 ist eine eigene Zeile: ein stehender Tag kostet genauso viel wie ein laufender,
 das ist eine Frage des Spielgefühls.
 
+## Der Sprung ist eine Bewegung
+
+Der Sprung war vorher **nur eine Verschiebung**: dasselbe Standbild, ein Stück
+weiter oben. Das liest sich als Objekt, das jemand hochhebt. Jetzt gibt es drei
+Stellungen — gehockt (Absprung *und* Landung), gestreckt (der Aufstieg, Beine
+angezogen) und fallend (Beine auseinander) — und nach dem Aufkommen federt die
+Figur ein Sechstel einer Sekunde nach.
+
+Gezeichnet, nicht skaliert: eine Figur, die man auf 1,08 streckt, hat an dieser
+Stelle ungleich breite Pixel, und genau das ist der Fehler, wegen dem der Zoom
+ganzzahlig ist.
+
+### Und die Kleidung hat Stoff
+
+Der Rumpf bestand aus drei senkrechten Streifen — hell, mittel, dunkel. Das ist
+**Beleuchtung**, keine Textur: es sagt, woher das Licht kommt, aber nichts
+darüber, dass da Stoff hängt. Jetzt liegen zwei schwache Falten darin, ein Saum
+über dem Gürtel, eine Lichtkante auf dem Gürtel und ein Schatten des Gürtels
+auf der Tunika darüber — erst dadurch liegt er *auf* der Tunika, statt in ihr
+zu stecken. Die Hosenbeine haben eine Kniefalte und die Stiefel eine Sohle: ein
+Hosenbein aus einer einzigen Farbe ist ein Balken.
+
+Die Schultern sind einen Bildpunkt breiter als die Taille. Ein Rechteck von
+Hals bis Gürtel hat keine Haltung; ein einziger Punkt Ausladung macht daraus
+eine Gestalt mit Schultern.
+
 ## Fackeln
+
+**Nachts trägt die Figur eine Fackel in der Hand.** Sie erscheint, sobald es
+wirklich dämmert (ab 22 % Dunkelheit), verschwindet im Wasser, und ihre Flamme
+läuft über vier Bilder mit wechselnder Höhe, Breite und Helligkeit — eine
+Flamme, die stillsteht, ist kein Feuer.
+
+Sie hängt an derselben Dunkelheit wie die Beleuchtung, nicht an einer eigenen
+Uhr: sonst hielte die Figur bei abgeschalteter Beleuchtung mitten am Tag eine
+brennende Fackel.
 
 **F** setzt eine Fackel auf das Feld unter dem Zeiger, **F** nimmt sie wieder
 weg. Sie leuchtet warm, flackert leicht und wird mit der Karte gespeichert.
+
+Gesetzte Fackeln flackern genauso, und ihr Schein reicht weiter als die
+Handfackel (96 gegen 76 Pixel): eine gesetzte Fackel steht fest und leuchtet
+einen Platz aus, die Figur trägt nur ein Licht mit sich. Bewegt wird dabei nur,
+was gerade im Bild liegt.
+
+Die Handfackel hat inzwischen eine **Faust** um den Stiel. Vorher war sie ein
+Stiel mit einer Flamme, gesetzt neben die Figur — und genau so sah sie aus: als
+schwebte sie dort. Was gefehlt hat, ist die Hand. Sechs Bildpunkte mit zwei
+Fingerfugen machen aus zwei Dingen nebeneinander ein Ding, das gehalten wird.
+Sie gehört ins Fackelbild und nicht in die Figur: sie muss mitwandern, wenn der
+Arm schwingt, und sie darf nur da sein, wenn wirklich eine Fackel getragen wird.
 
 Dass es Fackeln überhaupt geben kann, hängt an der Messung oben: ein einziges
 echtes 2D-Licht kostete +3,43 ms CPU-Renderzeit. Zehn Fackeln wären damit nicht
@@ -606,7 +834,6 @@ src/gfx/tile_art.gd        Die drei Bodenkacheln in Varianten und Helligkeitsstu
 src/gfx/tile_icon.gd       Materialbild der Oberfläche aus echten Bodenkacheln
 src/gfx/world_shaders.gd   Wind über dem Gras, Licht auf dem Wasser
 src/gfx/terrain_atlas.gd   Übergangskacheln für das Eck-Autotiling
-src/gfx/edge_art.gd        Uferband auf dem Land, Tiefenband im Wasser
 src/gfx/actor_art.gd       Spielerfigur (Idle, Laufzyklus, Schwimmen, Bodenschatten)
 src/gfx/decor_art.gd       Streu-Dekoration: Büschel, Blumen, Kiesel, Treibholz
 
@@ -663,7 +890,14 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **297 Prüfungen**.
+Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **327 Prüfungen**.
+
+Der Lauf startet dabei auf den **Auslieferungswerten**, nicht auf dem, was der
+letzte Lauf hinterlassen hat. Vorher erbte er die `settings.cfg` — und ein
+früherer Lauf hatte dort den Staub auf 0 stehen lassen, worauf die Prüfung „Mit
+Staub rechnet er wieder" in jedem folgenden Lauf fehlschlug, ohne dass sich am
+Code etwas geändert hätte. Ein Test, dessen Ergebnis vom letzten Test abhängt,
+prüft nicht mehr den Code.
 Darunter unter anderem:
 
 - genau drei Bodentypen in Aufzählung, Kachelstapel, Leiste, Inventar und Minimap
@@ -705,6 +939,14 @@ Darunter unter anderem:
 - Fackeln setzen, wegnehmen und speichern; jede Zoomstufe ist ganzzahlig und
   die Grenzen halten
 - durchs Wasser laufen zieht eine Spur, sie bleibt gedeckelt und läuft aus
+- ein einzelnes Wasserfeld wird eine runde Pfütze, die Mitte einer Fläche bleibt
+  voll, ihre Ecke zieht sich zurück, und die Kante trägt ihren Schaum selbst
+- der Sprung hat drei verschiedene Stellungen je Richtung, und sie sind nicht
+  das Standbild
+- die Handfackel ist nachts da, am Mittag weg, ihre Flamme bewegt sich, und sie
+  leuchtet kürzer als eine gesetzte Fackel
+- **beide Anzeigen passen in ihren Rahmen und auf den Bildschirm** — genau das
+  war kaputt
 - die Figur: drei verschiedene Stellungen je Laufrichtung, der Körper bleibt
   unter Wasser zu ahnen, der Wellenkragen ist ein Ring und kein Brett, der
   Bodenschatten fällt nach unten rechts
@@ -741,15 +983,6 @@ godot --path . -- --selftest --shots=/tmp/shots
 Die Architektur ist auf Erweiterung ausgelegt, aber bewusst schlank. Naheliegend
 wären weitere Materialien (dann aber einzeln und geprüft), Figurenskins,
 mehrere Speicherstände und Wetter.
-
-**Die Wasserkante ist noch eckig, und das ist Absicht mit Ablaufdatum.** Wasser
-bekommt als einzige Schicht keine weichen Übergangskacheln: das Eck-Autotiling
-legt die Geländegrenze eine halbe Kachel versetzt zum Blockraster, Uferband und
-Brandung sitzen aber am Block — mit weichem Auslauf landete die Brandung auf
-dem Sand. Das sauber zu lösen heisst, die Uferzeichnung auf dasselbe
-Eckraster umzustellen, und das ist eine eigene Runde wert, keine Zeile
-nebenbei. Bis dahin ist die Wasserfläche selbst abwechslungsreich (zehn
-Ausführungen in drei Helligkeitsstufen), ihre Aussenkante aber blockgenau.
 
 Was es bewusst **noch nicht** gibt, damit hier nichts versprochen wird, das
 nicht da ist: NPCs, Gegner, aufsammelbare Gegenstände, Fische, Feuer und Rauch,

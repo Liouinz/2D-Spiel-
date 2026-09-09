@@ -67,11 +67,21 @@ const HOLE := 0.44
 ## Vollkacheln (Maske 15).
 const FULL_START := PARTIAL * EDGE_VARIANTS
 
+## Wie der Rand einer Teilkachel behandelt wird.
+##
+## SOFT   eine Spur dunkler — der Saum, mit dem Sand auf Gras aufliegt.
+## SHORE  Uferlinie: aussen ein heller Schaumsaum, nach innen ein dunkleres
+##        Tiefenband. Damit trägt die Wasserkachel ihre eigene Küstenlinie,
+##        statt sie aus einer zweiten Schicht danebenlegen zu müssen — und
+##        zwei getrennt erzeugte Bilder können sich nicht mehr widersprechen.
+enum Rim { SOFT, SHORE }
+
 ## `variants` ist TileArt.base[typ]: SHADES * VARIANTS Vollkacheln.
 ## `hard` = gebaute Fläche: eckige Quadranten statt runder Formen. Für die
 ## drei Naturböden wird das nicht gebraucht, die Möglichkeit bleibt.
 ## -> {"texture", "slots": Array[Vector2i], "full_start": int}
-static func build(variants: Array, rng: RandomNumberGenerator, hard: bool = false) -> Dictionary:
+static func build(variants: Array, rng: RandomNumberGenerator, hard: bool = false,
+		rim: int = Rim.SOFT) -> Dictionary:
 	var full_count := variants.size()
 	var total := FULL_START + full_count
 	var rows := int(ceil(float(total) / COLS))
@@ -91,6 +101,8 @@ static func build(variants: Array, rng: RandomNumberGenerator, hard: bool = fals
 				tile = _hole(src, v, rng)
 			else:
 				tile = _quads(src, mask, rng) if hard else _shape(src, mask, rng)
+			if rim == Rim.SHORE:
+				_shore(tile)
 			var pos := _slot_pos(mask * EDGE_VARIANTS + v)
 			img.blit_rect(tile, Rect2i(Vector2i.ZERO, tile.get_size()), pos * T)
 			slots.append(pos)
@@ -222,6 +234,55 @@ static func _blob(src: Image, rng: RandomNumberGenerator) -> Image:
 				img.set_pixel(x, y, src.get_pixel(x, y))
 	_rim(img)
 	return img
+
+## Uferlinie in die Kachel hinein: aussen Schaum, nach innen Tiefe.
+##
+## Gerechnet wird über den Abstand zum Rand der FORM (nicht der Kachel): die
+## äusserste Reihe wird zum Schaum hin aufgehellt, die beiden darunter
+## abgedunkelt. Der Kachelrand selbst zählt nicht als Formrand — sonst läge an
+## jeder Kachelgrenze mitten im Wasser ein Schaumstreifen.
+static func _shore(img: Image) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	var dist := PackedInt32Array()
+	dist.resize(w * h)
+	dist.fill(9)
+	for y in h:
+		for x in w:
+			if img.get_pixel(x, y).a <= 0.0:
+				continue
+			for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				var nx := x + o.x
+				var ny := y + o.y
+				if nx < 0 or ny < 0 or nx >= w or ny >= h:
+					continue                      # Kachelrand: keine Küste
+				if img.get_pixel(nx, ny).a <= 0.0:
+					dist[y * w + x] = 0
+					break
+	# Zwei Ausbreitungsschritte: daraus werden die Abstände 1 und 2.
+	for step in 2:
+		var copy := dist.duplicate()
+		for y in h:
+			for x in w:
+				if copy[y * w + x] != 9 or img.get_pixel(x, y).a <= 0.0:
+					continue
+				for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+					var nx := x + o.x
+					var ny := y + o.y
+					if nx < 0 or ny < 0 or nx >= w or ny >= h:
+						continue
+					if copy[ny * w + nx] == step:
+						dist[y * w + x] = step + 1
+						break
+	for y in h:
+		for x in w:
+			var c := img.get_pixel(x, y)
+			if c.a <= 0.0:
+				continue
+			match dist[y * w + x]:
+				0: img.set_pixel(x, y, c.lerp(Palette.WATER_FOAM, 0.62))
+				1: img.set_pixel(x, y, c.lerp(Palette.WATER_FOAM, 0.24))
+				2: img.set_pixel(x, y, c.darkened(0.14))
 
 ## Dunkelt die innerste Pixelreihe an der Schnittkante leicht ab. An den
 ## Kachelraendern passiert das nicht, dort waere sonst das Raster sichtbar.

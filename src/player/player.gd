@@ -29,6 +29,33 @@ var _was_moving: bool = false
 var _jump_time: float = -1.0   ## < 0 = am Boden, sonst Fortschritt in Sekunden
 var _swimming: bool = false
 var _wake_timer: float = 0.0
+
+## Wie lange die Landung noch nachfedert. Ohne das endet der Sprung damit, dass
+## die Figur schlagartig wieder steht — und dann war der ganze Sprung wieder
+## nur eine Verschiebung.
+var _land_time: float = 0.0
+const LAND_TIME := 0.14
+
+## Die Handfackel bei Nacht.
+var light: LightManager        ## von World gesetzt; wird nur gelesen
+var _torch: Sprite2D
+var _torch_time: float = 0.0
+const TORCH_FPS := 9.0
+
+## Wo die Fackel je Blickrichtung in der Hand sitzt. In Bildpunkten, vom
+## Standpunkt der Figur aus gerechnet.
+## Die Hand der Figur liegt auf Gürtelhöhe, nicht auf Schulterhöhe: der Griff
+## der Fackel gehört dorthin, die Flamme steht darüber. Das Bild ist mittig
+## gesetzt und 15 Punkte hoch, der Griff sitzt also 7 Punkte unter dem Anker.
+const TORCH_AT := {
+	ActorArt.Dir.DOWN: Vector2(11, -18),
+	ActorArt.Dir.UP: Vector2(-11, -20),
+	ActorArt.Dir.SIDE: Vector2(9, -18),
+}
+
+## Ab welcher Dunkelheit sie hervorgeholt wird. Nicht bei jedem Wölkchen —
+## erst, wenn es wirklich dämmert.
+const TORCH_FROM := 0.22
 var map: MapData               ## um zu wissen, worauf die Figur steht
 
 ## Schwimmt die Figur gerade?
@@ -68,6 +95,16 @@ func _ready() -> void:
 	_sprite.centered = false
 	_sprite.offset = Vector2(-ActorArt.W * 0.5, -ActorArt.H)
 	add_child(_sprite)
+
+	# Die Fackel liegt ÜBER der Figur, aber unter nichts anderem: sie wird in
+	# der Hand getragen, nicht davor hergeschoben.
+	_torch = Sprite2D.new()
+	_torch.name = "Handfackel"
+	_torch.centered = true
+	_torch.visible = false
+	_torch.z_index = 1
+	add_child(_torch)
+
 	_update_sprite(0.0)
 
 func _physics_process(delta: float) -> void:
@@ -100,6 +137,41 @@ func _physics_process(delta: float) -> void:
 		_anim_time = 0.0
 	_was_moving = moving
 	_update_sprite(velocity.length())
+	_update_torch(delta)
+
+## Welche Sprungstellung gerade gilt.
+##
+## Der Absprung dauert nur ein paar Hundertstel: lange genug, dass man die
+## Hocke sieht, kurz genug, dass der Sprung nicht träge wirkt.
+func _jump_phase() -> int:
+	if _jump_time < 0.0:
+		return ActorArt.JUMP_CROUCH            # Landung federt nach
+	var t := _jump_time / Config.JUMP_TIME
+	if t < 0.16:
+		return ActorArt.JUMP_CROUCH
+	return ActorArt.JUMP_RISE if t < 0.55 else ActorArt.JUMP_FALL
+
+## Die Fackel in der Hand — nur, wenn es dunkel genug ist.
+##
+## Sie hängt an derselben Dunkelheit wie die Beleuchtung selbst, nicht an einer
+## eigenen Uhrzeit: sonst hielte die Figur bei abgeschalteter Beleuchtung mitten
+## am Tag eine brennende Fackel in der Hand.
+func _update_torch(delta: float) -> void:
+	var dark: float = light.darkness() if is_instance_valid(light) and light.active() else 0.0
+	var show := dark > TORCH_FROM and not _swimming
+	if _torch.visible != show:
+		_torch.visible = show
+	if not show:
+		return
+	_torch_time += delta * TORCH_FPS
+	var flames: Array = _frames["torch"]
+	_torch.texture = flames[int(_torch_time) % flames.size()]
+	var at: Vector2 = TORCH_AT[_dir]
+	if _flip:
+		at.x = -at.x
+	_torch.flip_h = _flip
+	# Im Sprung wandert sie mit der Figur nach oben.
+	_torch.position = at - Vector2(0.0, lift())
 
 ## Kielwellen hinter der Figur, solange sie sich im Wasser bewegt.
 ##
@@ -158,6 +230,7 @@ func _jump(delta: float) -> void:
 	_jump_time += delta
 	if _jump_time >= Config.JUMP_TIME:
 		_jump_time = -1.0
+		_land_time = LAND_TIME
 		landed.emit(global_position)
 
 func _face(input: Vector2) -> void:
@@ -172,9 +245,16 @@ func _face(input: Vector2) -> void:
 
 func _update_sprite(speed: float) -> void:
 	var moving := speed > 6.0
+	if _land_time > 0.0:
+		_land_time = maxf(_land_time - get_physics_process_delta_time(), 0.0)
 	var set_name := "swim" if _swimming else ("walk" if moving else "idle")
 	var frames: Array = _frames[set_name][_dir]
 	var idx := int(_anim_time) % frames.size()
+	# Sprung und Landung haben eigene Stellungen. Ohne sie wäre der Sprung
+	# dasselbe Standbild, nur weiter oben — und genau so sah er auch aus.
+	if _jump_time >= 0.0 or _land_time > 0.0:
+		frames = _frames["jump"][_dir]
+		idx = _jump_phase()
 	_sprite.texture = frames[idx]
 	_sprite.flip_h = _flip
 	# Beim Spiegeln muss der Versatz mitgespiegelt werden

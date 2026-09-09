@@ -46,11 +46,25 @@ const FONT_NUMBER := UiTheme.FONT_TINY
 const GROW_HOVER := 1.0
 const GROW_SELECTED := 2.0
 
+## Wie viel von der Deckkraft eines Feldes uebrig bleibt, wenn es ueber der
+## Welt liegt. Weit genug herunter, dass man den Boden darunter erkennt; hoch
+## genug, dass das Materialbild nicht mit dem Untergrund verschwimmt.
+const OVERLAY_ALPHA := 0.62
+
 signal pressed
 
 var kind: int = Kind.CARD
 var tile: int = MapData.Tile.GRASS
 var number: int = 0                   ## 0 = keine Nummer anzeigen
+
+## Liegt dieses Feld ueber der WELT statt in einem Menue?
+##
+## Ein Feld im Inventar steht auf einem abgedunkelten Hintergrund; dort darf es
+## undurchsichtig sein. Ein Feld der Bauleiste liegt direkt auf Gras, Sand oder
+## Wasser — und der Auftrag verlangt dort einen durchscheinenden Hintergrund.
+## Dieselbe Klasse, ein Schalter: zwei Kopien derselben Zeichnung waeren die
+## sichere Art, dass eine davon irgendwann anders aussieht.
+var overlay: bool = false
 
 var selected: bool = false: set = set_selected
 var disabled: bool = false: set = set_disabled
@@ -150,6 +164,11 @@ func _draw() -> void:
 		_draw_caption(GroundTileSet.NAMES[tile], band.position.y, band.size.y, FONT_SLOT)
 	if number > 0:
 		_draw_number()
+	# Zuletzt: die Auswahlmarke liegt ueber dem Materialbild. Zeichnet man sie
+	# vorher, verdeckt das 64 x 64 grosse Bild die Eckwinkel vollstaendig —
+	# genau das war beim ersten Versuch der Fall.
+	if _sel > 0.01:
+		_draw_selection(frame)
 
 ## Das Kachelbild sitzt in einer leicht vertieften Mulde und wird 1:1
 ## gezeichnet — keine Streckung, kein angeschnittener Ausschnitt.
@@ -166,6 +185,41 @@ func _draw_icon(pos: Vector2) -> void:
 		var lift := _hover * 0.10 + _sel * 0.12
 		tint = Color(1.0 + lift, 1.0 + lift, 1.0 + lift, 1.0)
 	draw_texture_rect(_icon, Rect2(pos, Vector2(ICON, ICON)), false, tint)
+
+## Die Auswahlmarke.
+##
+## Vorher war das gewaehlte Feld ein gelb umrandeter Kasten — die Farbe sagte
+## „gewaehlt", die Form sagte gar nichts, und ueber der Welt las sich das als
+## aufgeklebtes Rechteck. Drei Teile sagen es besser:
+##
+##   vier Eckwinkel   — sie fassen das Feld, ohne es zu umschliessen
+##   ein Fussstrich   — die Grundlinie, auf der die Auswahl steht
+##   der Schein       — schon vorher da, siehe `frame_style`
+##
+## Alles drei blendet mit `_sel` auf, damit der Wechsel eine Bewegung bleibt
+## und kein Umschalten.
+func _draw_selection(frame: Rect2) -> void:
+	var col := Color(UiTheme.ACCENT, _sel)
+	var arm: float = minf(frame.size.x, frame.size.y) * 0.22
+	var t := 2.0
+	for corner: Array in [
+			[frame.position, 1.0, 1.0],
+			[Vector2(frame.end.x, frame.position.y), -1.0, 1.0],
+			[Vector2(frame.position.x, frame.end.y), 1.0, -1.0],
+			[frame.end, -1.0, -1.0]]:
+		var p: Vector2 = corner[0]
+		var dx: float = corner[1]
+		var dy: float = corner[2]
+		# Nach innen versetzt, sonst liegen die Winkel auf dem Rahmen und man
+		# sieht sie nicht.
+		p += Vector2(dx, dy) * 2.0
+		draw_rect(Rect2(minf(p.x, p.x + arm * dx), p.y - t * 0.5, arm, t), col, true)
+		draw_rect(Rect2(p.x - t * 0.5, minf(p.y, p.y + arm * dy), t, arm), col, true)
+	# Fussstrich: kuerzer als das Feld, damit er als Marke liest und nicht als
+	# zweiter Rahmen.
+	var w := frame.size.x * 0.44
+	draw_rect(Rect2(frame.position.x + (frame.size.x - w) * 0.5,
+		frame.end.y - 2.0, w, 2.0), Color(UiTheme.ACCENT, _sel * 0.85), true)
 
 func _draw_number() -> void:
 	var box := UiTheme.box(Color(UiTheme.SCRIM, 0.78), Color(0, 0, 0, 0), 0, 3)
@@ -216,8 +270,15 @@ func frame_style() -> StyleBoxFlat:
 	# Fläche: ruhig, hellt beim Überfahren auf, im gewählten Zustand warm getönt.
 	var bg := UiTheme.SURFACE_RAISED.lerp(UiTheme.SURFACE_HOVER, _hover) \
 		.lerp(UiTheme.SURFACE_ACTIVE, _sel)
-	# Rahmen: dezent, beim Überfahren Holzton, gewählt in der Akzentfarbe.
-	var border := UiTheme.LINE.lerp(UiTheme.ACCENT_LINE, _hover).lerp(UiTheme.ACCENT, _sel)
+	if overlay:
+		bg.a *= OVERLAY_ALPHA
+	# Rahmen: dezent, beim Überfahren Holzton, gewählt im gedaempften Holzton.
+	#
+	# Bewusst NICHT mehr in der vollen Akzentfarbe: die Auswahl wird jetzt von
+	# den Eckwinkeln und dem Fussstrich getragen (siehe `_draw_selection`). Ein
+	# kraeftig gelber Rahmen ZUSAETZLICH dazu waere wieder der gelbe Kasten,
+	# nur mit Verzierung.
+	var border := UiTheme.LINE.lerp(UiTheme.ACCENT_LINE, maxf(_hover, _sel * 0.30))
 	var box := UiTheme.box(bg, border,
 		int(round(lerpf(UiTheme.BORDER, UiTheme.BORDER_STRONG, _sel))), UiTheme.RADIUS_S)
 

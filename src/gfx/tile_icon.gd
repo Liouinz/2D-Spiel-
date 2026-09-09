@@ -39,4 +39,34 @@ static func _one(art: TileArt, tile: int) -> Texture2D:
 		var src: Image = list[middle + i % TileArt.VARIANTS]
 		img.blit_rect(src, Rect2i(0, 0, Config.TILE, Config.TILE),
 			Vector2i(i % TILES, i / TILES) * Config.TILE)
+	_emboss(img)
 	return Pixel.tex(img)
+
+## Macht aus der Flaeche einen Brocken Material.
+##
+## Ein 64 x 64 grosses Stueck Gras ist in einem Feld der Bauleiste ein gruenes
+## Rechteck — technisch richtig, aber es sagt nichts. Was fehlt, ist eine FORM:
+## eine Lichtkante oben links, ein Schatten unten rechts, abgerundete Ecken.
+## Damit liest man ein Stueck Boden, das man aufheben und hinlegen kann, und
+## nicht eine Farbprobe.
+##
+## Dieselbe Lichtrichtung wie ueberall sonst im Spiel — oben links.
+static func _emboss(img: Image) -> void:
+	var n := SIZE
+	# Lichtkante oben und links.
+	for i in n:
+		Pixel.px(img, i, 0, Color(1, 1, 1, 0.26))
+		Pixel.px(img, i, 1, Color(1, 1, 1, 0.12))
+		Pixel.px(img, 0, i, Color(1, 1, 1, 0.22))
+		Pixel.px(img, 1, i, Color(1, 1, 1, 0.10))
+	# Schattenkante unten und rechts.
+	for i in n:
+		Pixel.px(img, i, n - 1, Color(0, 0, 0, 0.34))
+		Pixel.px(img, i, n - 2, Color(0, 0, 0, 0.16))
+		Pixel.px(img, n - 1, i, Color(0, 0, 0, 0.30))
+		Pixel.px(img, n - 2, i, Color(0, 0, 0, 0.14))
+	# Ecken abrunden: zwei Bildpunkte je Ecke wegnehmen. Ein Quadrat mit
+	# scharfen Ecken sitzt in einem Feld mit runden Ecken wie eingeklemmt.
+	for c: Vector2i in [Vector2i(0, 0), Vector2i(n - 1, 0),
+			Vector2i(0, n - 1), Vector2i(n - 1, n - 1)]:
+		img.set_pixelv(c, Color(0, 0, 0, 0))

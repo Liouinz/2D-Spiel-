@@ -1,14 +1,31 @@
 class_name WaterFx
 extends Node2D
-## Animiertes Wasser: Glitzern und Uferschaum.
+## Animiertes Wasser: Glitzern, Eintauchringe und Kielwellen.
 ##
-## Zwei Sparmaßnahmen halten das billig:
-## 1. Die Uferkanten werden einmal beim Weltaufbau ermittelt, nicht pro Bild.
-## 2. Der Schaum wird in Segmenten statt pro Pixel gezeichnet, und das ganze
-##    Bild wird nur rund 24-mal pro Sekunde neu gezeichnet.
+## Hier steht NUR, was sich bewegt. Alles Feste am Wasser — Uferschaum,
+## Tiefenbaender, Reflexe — steckt in der Kachel selbst und wird einmal
+## gezeichnet.
+##
+## Das war nicht immer so, und die Trennung ist teuer erkauft: es gab hier
+## einen `_foam()`, der einen Schaumsaum an die Kachelkanten jeder Wasserzelle
+## malte. Seit sich die Wasserzeichnung um eine halbe Kachel ZURUECKZIEHT
+## (siehe `GroundTileSet.SHRINK`), liegt diese Kante nicht mehr am Wasser,
+## sondern einen halben Block draussen im Sand. Auf dem Bildschirm war das ein
+## blasses, gestricheltes Rechteck rund um jeden Teich — dieselbe Sorte Fehler
+## wie das dunkle Rechteck von EdgeArt, nur in Hellgrau.
+##
+## Es waere moeglich gewesen, den Saum auf die gezeichnete Linie zu schieben.
+## Die verlaeuft aber verrauscht durch die Kachelmitte; ein Saum daneben traefe
+## mal Wasser, mal Sand, und stuende wieder als Linie da. Also gilt hier
+## dieselbe Regel wie beim Ufer: EINE Quelle. Der Schaum ist gebacken
+## (`TerrainAtlas.Rim.SHORE`), und was hier lebt, lebt gut sichtbar INNERHALB
+## der Wasserflaeche.
+##
+## Zwei Sparmassnahmen halten das billig:
+## 1. Gezeichnet wird nur der sichtbare Ausschnitt.
+## 2. Das Bild wird nur rund 24-mal je Sekunde neu aufgebaut.
 
 const T := Config.TILE
-const FOAM_SEG := 4          ## Segmentbreite des Schaums in Pixeln
 const SPLASH_TIME := 0.55    ## Lebensdauer eines Wellenrings
 const WAKE_TIME := 0.9       ## Lebensdauer einer Kielwelle — länger, sie ist leiser
 const WAKE_EVERY := 0.16     ## Abstand zwischen zwei Kielwellen in Sekunden
@@ -17,12 +34,6 @@ const WAKE_EVERY := 0.16     ## Abstand zwischen zwei Kielwellen in Sekunden
 ## grossen Teichs entstünden sonst hunderte; ab einem Dutzend sieht man ohnehin
 ## keine einzelne mehr, sondern nur noch eine helle Spur.
 const MAX_WAVES := 18
-
-## Bits der Uferrichtungen je Kachel
-const UP := 1
-const DOWN := 2
-const LEFT := 4
-const RIGHT := 8
 
 var camera: GameCamera
 var prims: int = 0           ## gezeichnete Rechtecke im letzten Bild (nur Messung)
@@ -35,26 +46,6 @@ var _accum: float = 0.0
 ## Muss vor dem ersten Zeichnen aufgerufen werden.
 func setup(map: MapData) -> void:
 	_map = map
-
-## Ufermaske einer einzelnen Kachel.
-##
-## Früher lag sie für die ganze Karte in einem Feld. Gezeichnet wird aber
-## ohnehin nur der sichtbare Ausschnitt — rund 400 Kacheln bei 24 Bildern je
-## Sekunde. Vier Nachbarabfragen je Kachel sind dafür billiger als 4,2 MB
-## Speicher plus Nachführen bei jedem gesetzten Block.
-func _mask_at(x: int, y: int) -> int:
-	if not _map.is_water(x, y):
-		return 0
-	var mask := 0
-	if _map.in_bounds(x, y - 1) and not _map.is_water(x, y - 1):
-		mask |= UP
-	if _map.in_bounds(x, y + 1) and not _map.is_water(x, y + 1):
-		mask |= DOWN
-	if _map.in_bounds(x - 1, y) and not _map.is_water(x - 1, y):
-		mask |= LEFT
-	if _map.in_bounds(x + 1, y) and not _map.is_water(x + 1, y):
-		mask |= RIGHT
-	return mask
 
 ## Nach einer Änderung an einer Kachel neu zeichnen.
 func refresh(_cell: Vector2i) -> void:
@@ -113,13 +104,29 @@ func _draw() -> void:
 
 	for y in range(y0, y1):
 		for x in range(x0, x1):
-			if not _map.is_water(x, y):
+			if not _solid_water(x, y):
 				continue
 			_glint(x, y)
-			var mask := _mask_at(x, y)
-			if mask != 0:
-				_foam(x, y, mask)
 	_draw_splashes()
+
+## Liegt auf diesem Feld WIRKLICH ueberall Wasser — auch im Bild?
+##
+## Das ist nicht dasselbe wie `is_water`. Die Karte sagt, wo Wasser ist; die
+## Zeichnung zieht sich an der Grenze um eine halbe Kachel zurueck. Auf einem
+## Randfeld liegt deshalb zur Haelfte Sand, und ein Glitzern an der falschen
+## Stelle laege auf dem Strand.
+##
+## Die Bedingung ist dieselbe, die `GroundTileSet` fuer die volle Kachel
+## verlangt (dort `keep == 15`): alle acht Nachbarn sind Wasser. Sie steht hier
+## noch einmal, weil dort mit der Kacheltabelle gerechnet wird und hier mit der
+## Karte — dieselbe Regel, zwei Zugriffswege. Der Selbsttest prueft, dass beide
+## dasselbe sagen.
+func _solid_water(x: int, y: int) -> bool:
+	for dy in [-1, 0, 1]:
+		for dx in [-1, 0, 1]:
+			if not _map.is_water(x + dx, y + dy):
+				return false
+	return true
 
 ## Der Ring wächst und wird blasser — wie eine Welle, die sich ausbreitet.
 ## Gezeichnet als Kranz kurzer Striche, nicht als glatter Kreis: ein sauberer
@@ -176,32 +183,3 @@ func _glint(x: int, y: int) -> void:
 	if (h % 5) == 0:
 		draw_rect(Rect2(x * T + ox + 1, y * T + oy + 2, w - 1.0, 1.0), Color(Palette.WATER_LIGHT, a * 0.8), true)
 		prims += 1
-
-## Zeichnet den Schaum in Segmenten unterschiedlicher Höhe — die Kachelkante
-## bleibt dadurch unsichtbar, kostet aber nur ein Viertel der Rechenzeit.
-func _foam(tx: int, ty: int, mask: int) -> void:
-	var segments := T / FOAM_SEG
-	for i in segments:
-		var world_i := tx * T + ty * T + i * FOAM_SEG
-		# Luecken: der Schaum darf die Kachelkante nicht nachzeichnen, sonst
-		# sieht man das Raster durch die Brandung hindurch.
-		var gate := ((tx * 31 + ty * 17 + i * 7) % 5)
-		if gate == 0:
-			continue
-		var wave := sin(_time * 1.7 + world_i * 0.31) * 0.5 + 0.5
-		var h := 1.0 + roundf(wave * 1.4)
-		var col := Color(Palette.WATER_FOAM, 0.22 + wave * 0.26)
-		var ox := float(tx * T + i * FOAM_SEG)
-		var oy := float(ty * T + i * FOAM_SEG)
-		if mask & UP:
-			draw_rect(Rect2(ox, ty * T, FOAM_SEG, h), col, true)
-			prims += 1
-		if mask & DOWN:
-			draw_rect(Rect2(ox, ty * T + T - h, FOAM_SEG, h), col, true)
-			prims += 1
-		if mask & LEFT:
-			draw_rect(Rect2(tx * T, oy, h, FOAM_SEG), col, true)
-			prims += 1
-		if mask & RIGHT:
-			draw_rect(Rect2(tx * T + T - h, oy, h, FOAM_SEG), col, true)
-			prims += 1
