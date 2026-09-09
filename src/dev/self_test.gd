@@ -219,7 +219,7 @@ func _run() -> void:
 	await _check_light(world)
 	await _check_figure(world)
 	await _check_torch_and_zoom(world)
-	await _check_jump_and_torch(world)
+	await _check_jump_and_hands(world)
 	await _check_shore(world)
 	await _check_input_lock(world, map, player)
 	await _check_input_map(world)
@@ -1522,6 +1522,18 @@ func _check_light(world: Node2D) -> void:
 	var occ := _find_all_of_class(world, "LightOccluder2D")
 	_check(many.size() == 1 and (many[0] as Light2D).shadow_enabled,
 		"Und es wirft Schatten (%d Verdecker in der Welt)" % occ.size())
+
+	#     Und es steht dort, wo auch der gezeichnete Schein steht: auf
+	#     Brusthoehe der Figur. Zwei Wege zu einem Punkt — laufen sie
+	#     auseinander, wechselt beim Umschalten der Lichtstufe sichtbar die
+	#     Stelle, an der es hell ist.
+	if many.size() == 1:
+		var lamp := many[0] as Node2D
+		var lamp_want: Vector2 = world.player.global_position \
+			- Vector2(0.0, LightManager.LIGHT_LIFT)
+		_check(lamp.global_position.distance_to(lamp_want) < 1.0,
+			"Das echte Licht steht am selben Punkt wie der Schein (%.2f px)"
+			% lamp.global_position.distance_to(lamp_want))
 	Settings.light = 3
 	Settings.changed_and_save()
 	await _frames(3)
@@ -1565,8 +1577,8 @@ func _check_light(world: Node2D) -> void:
 	#     addiert. Ihre Summe muss unter der Saettigung bleiben, sonst steht
 	#     nachts ein weisser Fleck an der Stelle der Figur — genau das war beim
 	#     ersten Versuch der Fall.
-	var peak := LightManager.GLOW_PEAK * (1.0 + 0.32)
-	_check(peak < 0.56, "Die beiden Scheine der Figur summieren sich auf %.2f" % peak)
+	var peak := LightManager.GLOW_PEAK * LightManager.SIGHT_STRENGTH * (1.0 + 0.32)
+	_check(peak < 0.40, "Die beiden Scheine der Figur summieren sich auf %.2f" % peak)
 
 	# 4. Tagesverlauf: die Uhr läuft, der Schein folgt der Figur.
 	var cycle_before := Settings.day_cycle
@@ -1580,59 +1592,49 @@ func _check_light(world: Node2D) -> void:
 	_check(light.active() and light.time_of_day() > t0, "Die Zeit läuft (%.4f -> %.4f)"
 		% [t0, light.time_of_day()])
 
-	# Der Schein sitzt an der FLAMME der Handfackel — nicht auf Brusthöhe.
+	# Der Schein sitzt auf Brusthoehe der Figur — und die Figur traegt nichts.
 	#
-	# Vorher hing er an einem festen Punkt in der Mitte der Figur, während das
-	# Feuer daneben in der Hand brannte: der Lichtkegel ging vom Bauch aus.
-	#
-	# Geprüft wird über einen ZWEITEN Weg. Die Lichtquelle bekommt ihren
-	# Ankerpunkt von `player.gd`; hier wird er stattdessen aus dem gesetzten
-	# Fackel-SPRITE zurückgerechnet. Stimmen beide überein, sitzen Bild und
-	# Licht am selben Fleck — und genau das ging vorher auseinander, ohne dass
-	# es jemand gemerkt hätte.
+	# Die Handfackel ist ersatzlos entfallen: sie sah als Bild schlecht aus,
+	# und ein schlechtes Bild ist hier kein halber Erfolg. Was bleibt, ist ein
+	# ruhiger Sichtkreis. Geprueft wird beides — dass er am richtigen Punkt
+	# sitzt, und dass wirklich kein Fackelknoten mehr an der Figur haengt.
 	var glow := light.player_glow()
-	var torch := world.player.get_node("Handfackel") as Sprite2D
-	_check(torch != null and torch.visible, "Die Figur hält nachts eine Fackel")
-	# Kunstpixel mal DRAW_SCALE ergibt Weltpixel — die Zeichnung ist doppelt so
-	# fein wie die Welt, und das Sprite wird entsprechend halb dargestellt.
-	var flame_off := (ActorArt.TORCH_FLAME
-		- Vector2(ActorArt.TORCH_W, ActorArt.TORCH_H) * 0.5) * ActorArt.DRAW_SCALE
-	if torch != null and torch.flip_h:
-		flame_off.x = -flame_off.x
+	_check(world.player.get_node_or_null("Handfackel") == null,
+		"Die Figur traegt keine Fackel mehr")
 	var want: Vector2 = get_viewport().get_canvas_transform() \
-		* (torch.global_position + flame_off)
+		* (world.player.global_position - Vector2(0.0, LightManager.LIGHT_LIFT))
 	_check(glow != null and glow.position.distance_to(want) < 1.5,
-		"Der Schein sitzt an der Flamme, nicht auf Brusthöhe (%.1f px Abstand)"
+		"Ihr Schein sitzt auf Brusthoehe (%.1f px Abstand)"
 		% (glow.position.distance_to(want) if glow != null else -1.0))
 
-	# Und die Fackel liegt IN der Hand: der Griff im Fackelbild muss auf dem
-	# Handfeld des Figurenbildes sitzen. Zwei Punkte daneben — und genau so
-	# stand es vorher — reichen, damit es auf dem Bildschirm nebeneinander
-	# aussieht statt gehalten.
-	var grip_off := (ActorArt.TORCH_GRIP
-		- Vector2(ActorArt.TORCH_W, ActorArt.TORCH_H) * 0.5) * ActorArt.DRAW_SCALE
-	if torch != null and torch.flip_h:
-		grip_off.x = -grip_off.x
-	var grip: Vector2 = torch.global_position + grip_off
-	var pose: Vector2i = world.player.hand_pose()
-	var hand_world: Vector2 = world.player.global_position \
-		+ ActorArt.hand_offset(ActorArt.Dir.DOWN, pose.x, pose.y, torch.flip_h)
-	_check(grip.distance_to(hand_world) < 1.0,
-		"Der Griff der Fackel liegt auf der Hand der Figur (%.2f px Abstand)"
-		% grip.distance_to(hand_world))
+	# Und er steht STILL.
+	#
+	# Flackern gehoert zu einer Flamme. Ohne Fackel ist ein zuckender Schein
+	# nur ein Fehler, den man nicht erklaeren kann — also wird hier gemessen,
+	# dass die Helligkeit ueber mehrere Bilder dieselbe bleibt.
+	var e0 := light.light_energy()
+	await _frames(8)
+	var e1 := light.light_energy()
+	_check(is_equal_approx(e0, e1),
+		"Und er flackert nicht (%.4f -> %.4f)" % [e0, e1])
 
-	# Und ueber der Flamme steigt Glut auf.
+	# Glut steigt nur noch ueber GESETZTEN Fackeln auf.
 	#
 	# Ein Funke ist EIN Bildpunkt — ob er da ist, sieht man auf einem
 	# Bildschirmfoto nicht sicher. Also wird gezaehlt, was gezeichnet wurde;
-	# „Partikel vorhanden" waere sonst eine Behauptung.
-	#
-	# Diese Pruefung stand zuerst weiter oben und meldete null Funken. Nicht,
-	# weil keine da waren, sondern weil dort noch Tag war: ohne Dunkelheit
-	# zeichnet der Lichtverwalter gar nichts. Eine Pruefung an der falschen
-	# Stelle misst den falschen Zustand.
+	# „Partikel vorhanden" waere sonst eine Behauptung. Dafuer wird hier eine
+	# Fackel gesetzt und gleich wieder weggenommen: die Pruefung braucht
+	# Dunkelheit, und die gibt es nur an dieser Stelle im Testlauf.
+	_check(light.embers_drawn == 0,
+		"Ohne Feuer keine Funken (%d)" % light.embers_drawn)
+	var spark_cell := GridOverlay.block_at(world.player.global_position) + Vector2i(2, 0)
+	world.torches.toggle(spark_cell)
+	await _frames(30)
 	_check(light.embers_drawn > 0,
-		"Ueber der Flamme steigt Glut auf (%d Funken im Bild)" % light.embers_drawn)
+		"Ueber einer gesetzten Fackel steigt Glut auf (%d Funken im Bild)"
+		% light.embers_drawn)
+	world.torches.toggle(spark_cell)
+	await _frames(3)
 
 	# 5. Nachts brennt der Schein, mittags nicht — und mittags ist die ganze
 	#    Nachtschicht unsichtbar, kostet also nichts.
@@ -1725,11 +1727,11 @@ func _check_light(world: Node2D) -> void:
 	Settings.changed_and_save()
 	await _frames(6)
 
-# --- Sprung, Handfackel, Ufer -------------------------------------------------
+# --- Sprung, leere Haende, Ufer -----------------------------------------------
 
-## Der Sprung muss eine Bewegung sein, keine Verschiebung; die Handfackel muss
-## bei Nacht da sein und am Tag weg; das Ufer muss Schaum tragen.
-func _check_jump_and_torch(world: Node2D) -> void:
+## Der Sprung muss eine Bewegung sein, keine Verschiebung; die Figur muss
+## nichts mehr in der Hand tragen; das Ufer muss Schaum tragen.
+func _check_jump_and_hands(world: Node2D) -> void:
 	var player: Player = world.player
 	var light: LightManager = world.light
 	var frames: Dictionary = player._frames
@@ -1766,37 +1768,25 @@ func _check_jump_and_torch(world: Node2D) -> void:
 		"Beim Springen wechselt die Figur wirklich die Stellung")
 	await _frames(50)
 
-	# 3. Die Handfackel: nachts da, tags weg.
+	# 3. Die Figur traegt nichts in der Hand — auch nicht nachts.
+	#
+	# Die Handfackel ist entfallen. Diese Pruefung haelt das fest: sonst
+	# kaeme sie beim naechsten Umbau unbemerkt zurueck, und genau das war der
+	# Punkt, an dem das Bild schlecht wurde.
 	var before_light := Settings.light
 	Settings.light = 3
 	Settings.changed_and_save()
-	light.set_time(0.5)                       # Mittag
-	await _frames(4)
-	player._update_torch(0.0)
-	var torch: Sprite2D = player.get_node("Handfackel")
-	_check(not torch.visible, "Am Mittag trägt die Figur keine Fackel")
 	light.set_time(0.0)                       # Mitternacht
 	await _frames(4)
-	player._update_torch(0.0)
-	_check(torch.visible and torch.texture != null,
-		"Nachts hält sie eine Fackel in der Hand")
+	_check(player.get_node_or_null("Handfackel") == null,
+		"Auch nachts haelt die Figur nichts in der Hand")
+	_check(not frames.has("torch"),
+		"Und es gibt gar keine Fackelbilder mehr in der Figurengrafik")
 
-	# 4. Und die Flamme steht nicht still.
-	var flame := torch.texture
-	var moved := false
-	for i in 30:
-		player._update_torch(0.05)
-		if torch.texture != flame:
-			moved = true
-			break
-	_check(moved, "Die Flamme bewegt sich")
-	_check((frames["torch"] as Array).size() >= 3,
-		"Sie hat mehrere Bilder (%d)" % (frames["torch"] as Array).size())
-
-	# 5. Sie ist kleiner als eine gesetzte Fackel — sie wird getragen, nicht
-	#    aufgestellt.
+	# 4. Der Schein um sie herum ist kleiner als eine gesetzte Fackel: er ist
+	#    Restsicht, kein Feuer.
 	_check(LightManager.PLAYER_RADIUS < Torches.RADIUS,
-		"Die Handfackel leuchtet kürzer als eine gesetzte (%.0f gegen %.0f)"
+		"Ihr Sichtkreis reicht kuerzer als eine gesetzte Fackel (%.0f gegen %.0f)"
 		% [LightManager.PLAYER_RADIUS, Torches.RADIUS])
 
 	Settings.light = before_light

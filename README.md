@@ -421,19 +421,6 @@ seltene einmal. Das hält die Auswahl bei einem einzigen Streuwert je Feld, und
 damit bleibt sie **deterministisch**: derselbe Seed ergibt dieselbe Wiese, auch
 nach dem Nachladen eines Chunks.
 
-### Der Schatten weicht dem Fackellicht aus
-
-Am Tag kommt das Licht von oben links, und der Bodenschatten liegt fest unten
-rechts — so ist er gezeichnet. Nachts ist die stärkste Lichtquelle im Bild aber
-die Fackel in der Hand, und die steht seitlich neben der Figur. Ein Schatten,
-der dann immer noch nach unten rechts fällt, während das Feuer rechts brennt,
-widerspricht dem, was man sieht.
-
-Er wird deshalb von der Flamme **weggeschoben**, umso weiter, je dunkler es
-ist. Bei Tag steht er, wo er immer stand. Das ist kein echter Schattenwurf —
-den gibt es nur auf der Stufe „Sehr hoch" — aber es erzählt dasselbe und kostet
-nichts.
-
 ### Was groß ist, muss überall gleich sein
 
 Gras und Sand haben seither **je zwei zusätzliche Farbtöne**: eine trockene
@@ -649,8 +636,8 @@ Frage des Spielgefühls.
 
 ### „Sehr hoch": echtes 2D-Licht, und was es kostet
 
-Diese Stufe legt als einzige ein echtes `PointLight2D` an — an der Flamme, als
-Kind der Fackel, also der Hand folgend. Sie bringt zwei Dinge, die ein additives
+Diese Stufe legt als einzige ein echtes `PointLight2D` an — am selben Punkt wie
+der gezeichnete Schein, auf Brusthöhe der Figur. Sie bringt zwei Dinge, die ein additives
 Viereck grundsätzlich nicht kann:
 
 - Ein echtes Licht **multipliziert** mit dem Untergrund, statt Helligkeit
@@ -702,52 +689,27 @@ eine Gestalt mit Schultern.
 
 ## Fackeln
 
-**Nachts trägt die Figur eine Fackel in der Hand.** Sie erscheint, sobald es
-wirklich dämmert (ab 22 % Dunkelheit), verschwindet im Wasser, und ihre Flamme
-läuft über vier Bilder mit wechselnder Höhe, Breite und Helligkeit — eine
-Flamme, die stillsteht, ist kein Feuer.
+**Die Figur trägt keine Fackel.** Es gab einmal eine in ihrer Hand — mit
+Fingern um den Stiel, mit Armschwung, mit dem Licht genau an der Flamme. Sie war
+technisch richtig und sah trotzdem schlecht aus: ein Gegenstand, fast so groß
+wie der Oberkörper, direkt vor der Figur, der in jeder Blickrichtung das Bild
+bestimmte. Eine Lösung, die funktioniert, aber schlecht aussieht, gilt hier als
+nicht fertig — also ist sie ersatzlos entfallen, samt Fackelbildern,
+Griffrechnung und dem Schatten, der ihr auswich.
 
-Sie hängt an derselben Dunkelheit wie die Beleuchtung, nicht an einer eigenen
-Uhr: sonst hielte die Figur bei abgeschalteter Beleuchtung mitten am Tag eine
-brennende Fackel.
+Was bleibt, ist ein ruhiger **Sichtkreis** um die Figur: kein Feuer, kein
+Flackern, keine Funken — nur so viel Restlicht, dass man nachts die nächsten
+Schritte erkennt. Er ist gedämpft (62 % Stärke) und fast neutral gefärbt.
+Ein fast weißer Schein legte sich als milchiger Nebel über die ganze Umgebung;
+ein blauer hellte über der blauen Nacht nur das Blau auf. Beides macht den
+Boden zu einer Fläche ohne eigene Farbe.
 
 **F** setzt eine Fackel auf das Feld unter dem Zeiger, **F** nimmt sie wieder
-weg. Sie leuchtet warm, flackert leicht und wird mit der Karte gespeichert.
-
-Gesetzte Fackeln flackern genauso, und ihr Schein reicht weiter als die
-Handfackel (120 gegen 92 Pixel): eine gesetzte Fackel steht fest und leuchtet
-einen Platz aus, die Figur trägt nur ein Licht mit sich. Bewegt wird dabei nur,
-was gerade im Bild liegt.
-
-### Sie wird wirklich gehalten
-
-Die Fackel ist in der Reihenfolge aufgebaut, in der man sie sieht — und das ist
-hier keine Formsache, sondern der ganze Unterschied zwischen „gehalten" und
-„danebengelegt":
-
-| | |
-|---|---|
-| 1. Handrücken | **hinter** dem Stiel — die Fläche, gegen die er gedrückt wird |
-| 2. Stiel | darüber, läuft oben und unten aus der Faust heraus |
-| 3. Finger | **vor** dem Stiel, drei Glieder mit Fugen dazwischen |
-| 4. Daumen | an der Lichtseite |
-| 5. Wicklung | Leder um den Kopf, mit Schnur |
-| 6. Flamme | vor allem, und ohne schwarzen Umriss |
-
-Nach Schritt 3 bleibt **eine Spalte des Stiels sichtbar** zwischen Fingern und
-Handrücken. Genau daran liest man, dass die Hand darum greift: Haut davor, Holz
-in der Mitte, Haut dahinter.
-
-Und sie sitzt an der richtigen Stelle. Vorher stand die Fackelposition als
-eigene Tabelle in `player.gd`, von Hand eingestellt — **zwei Bildpunkte neben
-der Hand der Figur**, mit einem Streifen Haut dazwischen. Auf einem
-Bildschirmfoto sah man die Faust *neben* der Hand. Jetzt steht die Handposition
-genau einmal (`ActorArt.HAND_AT`, abgelesen aus der Figurenzeichnung), und die
-Fackel setzt ihren Griff darauf. Der Selbsttest misst den Abstand: **0,00 px.**
-
-Die Fackel folgt außerdem dem **Armschwung**. Beim Laufen hebt und senkt sich
-die Hand um zwei Bildpunkte je Bild; die Fackel bekommt dieselben Werte, mit
-denen das Figurenbild gezeichnet wurde. Ohne das hinge sie sichtbar hinterher.
+weg. Sie leuchtet warm, flackert, sprüht Funken und wird mit der Karte
+gespeichert — sie ist jetzt die einzige echte Flamme im Spiel. Ihr Schein reicht
+weiter als der Sichtkreis der Figur (120 gegen 78 Bildpunkte): eine gesetzte
+Fackel leuchtet einen Platz aus, die Figur sieht nur bis vor die Füße. Das ist
+Absicht — wer nachts etwas sehen will, stellt Licht auf.
 
 ### Die Flamme flackert unregelmäßig
 
@@ -765,27 +727,26 @@ Spitze: unten am Docht schmal, über der Wicklung am breitesten, nach oben
 auslaufend — und die Spitze biegt sich, während der Fuß stehen bleibt. Vier
 Farbbänder von außen nach innen: rot, orange, gelb, weiß-gelber Kern.
 
-Handfackel **11 fps**, gesetzte Fackel **9 fps** — eine im Halter steht still,
-eine in der Hand wird bewegt.
+Gesetzte Fackel **9 fps** — langsam genug, dass man die einzelnen Bilder nicht
+zählt, schnell genug, dass es lebt.
 
 ![Nacht](docs/bilder/nacht.png)
 
-### Das Licht sitzt an der Flamme
+### Das Licht der Figur
 
-Vorher hing es an einem festen Punkt 18 Bildpunkte über den Füßen — also in der
-Mitte der Figur. Der Lichtkegel ging vom Bauch aus, während das Feuer daneben
-in der Hand brannte.
+Der Sichtkreis sitzt auf **Brusthöhe** (18 Bildpunkte über den Füßen) und
+besteht aus zwei übereinanderliegenden Verläufen: einem weiten über 78
+Bildpunkte und einem kleinen Kern darin. Ein einzelner weicher Verlauf ist ein
+gleichmäßiger Hauch — er hellt auf, aber er beleuchtet niemanden.
 
-Jetzt folgt die Quelle **derselben Rechnung wie das Bild**: wandert die Hand,
-wandert das Licht. Der Selbsttest rechnet den Punkt über einen zweiten Weg
-zurück — aus dem gesetzten Fackel-Sprite statt aus der Lichtquelle — und
-vergleicht: **0,0 px Abstand.** Genau das ging vorher auseinander, ohne dass es
-jemand gemerkt hätte.
+Beide stehen **still**. Flackern gehört zu einer Flamme; ohne Fackel wäre ein
+zuckender Schein nur ein Fehler, den man nicht erklären kann. Der Selbsttest
+misst deshalb die Helligkeit über mehrere Bilder und verlangt, dass sie sich
+nicht ändert.
 
-Weil die Quelle seither *neben* der Figur sitzt statt in ihr, ist der Abfall
-flacher geworden (`pow(t, 1.45)` statt `1.7`) und der Radius von 76 auf 92
-Bildpunkten gewachsen. Sonst läge der halbe Körper im Auslauf. Farbe **#FFAF64**
-— warmes Orange, nicht Gelb: Gelb über einer blauen Nacht ergibt Grün.
+Zusammen liegen sie bei **0,34** statt vorher 0,55 Deckung. Additiv aufgetragen
+ist voller Anschlag ein weißer Fleck — und dann sieht man die Figur nicht mehr,
+die er zeigen soll.
 
 ### Flackern ist ein Zufallsgang, keine Schwingung
 
@@ -793,7 +754,8 @@ Vorher waren es zwei Sinus mit ungleicher Frequenz. Das ist besser als einer,
 aber es bleibt periodisch. Jetzt springt die Helligkeit alle **0,05 bis 0,19
 Sekunden** auf einen neuen Wert (±16 %) und läuft schnell darauf zu — weder die
 Höhe der Sprünge noch ihr Abstand wiederholt sich. Der Radius atmet halb so
-stark mit; voll mitzupulsieren sähe aus, als würde die Fackel gezoomt.
+stark mit; voll mitzupulsieren sähe aus, als würde die Fackel gezoomt. Das
+gilt für gesetzte Fackeln — der Schein der Figur flackert gar nicht.
 
 ### Glut
 
@@ -1164,8 +1126,9 @@ Darunter unter anderem:
   voll, ihre Ecke zieht sich zurück, und die Kante trägt ihren Schaum selbst
 - der Sprung hat drei verschiedene Stellungen je Richtung, und sie sind nicht
   das Standbild
-- die Handfackel ist nachts da, am Mittag weg, ihre Flamme bewegt sich, und sie
-  leuchtet kürzer als eine gesetzte Fackel
+- die Figur trägt **nichts** in der Hand — auch nicht nachts, und es gibt keine
+  Fackelbilder mehr in ihrer Grafik; ihr Schein steht still und reicht kürzer
+  als eine gesetzte Fackel
 - **beide Anzeigen passen in ihren Rahmen und auf den Bildschirm** — genau das
   war kaputt
 - die Figur: drei verschiedene Stellungen je Laufrichtung, der Körper bleibt

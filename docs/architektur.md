@@ -846,8 +846,8 @@ sähe falsch aus.
 **Die Welt war flach ausgeleuchtet.** Jede Kachel zu jeder Zeit gleich hell —
 das ist der Unterschied zwischen einer Textur und einem Ort. Der `LightManager`
 bringt drei Mittel mit, alle billig: ein `CanvasModulate` färbt und dunkelt die
-ganze Welt über einen Tag von acht Minuten, ein `PointLight2D` auf Brusthöhe
-folgt der Figur, und eine Vignette dunkelt die Bildränder. Der Schein blendet
+ganze Welt über einen Tag von acht Minuten, ein Schein auf Brusthöhe folgt der
+Figur, und eine Vignette dunkelt die Bildränder. Der Schein blendet
 **nach Helligkeit** auf, nicht nach Uhrzeit — dadurch passt er automatisch,
 wenn sich der Verlauf einmal ändert. Das Licht liegt auf der Welt, nicht auf
 der Oberfläche: `CanvasModulate` wirkt nur in seiner eigenen `CanvasLayer`, und
@@ -1040,9 +1040,9 @@ Knie), gestreckt, fallend. Gezeichnet und nicht skaliert: eine Figur, die auf
 1,08 gestreckt wird, hat ungleich breite Pixel, und genau dieser Fehler war der
 Grund, den Zoom ganzzahlig zu machen.
 
-Die Handfackel hängt an derselben Dunkelheit wie die Beleuchtung, nicht an
-einer eigenen Uhr — sonst hielte die Figur bei abgeschalteter Beleuchtung
-mitten am Tag eine brennende Fackel.
+Eine Handfackel gab es hier einmal auch. Sie ist entfallen — nicht weil sie
+falsch gerechnet hätte, sondern weil sie schlecht aussah; siehe den Nachtrag
+weiter unten.
 
 ## Nachtrag: ein Test, der vom letzten Test abhing
 
@@ -1140,35 +1140,49 @@ Wirkung. Für den Staub in der Luft steht sie jetzt da: *blasser als der hellste
 Boden, den es in dieser Welt gibt.* Der erste Versuch, ihn zu entschärfen, ist
 daran gescheitert — er war immer noch heller als Sand.
 
-## Nachtrag: eine Zahl, die an zwei Stellen stand
+## Nachtrag: eine Zahl, die an zwei Stellen stand — und ein Gegenstand zu viel
 
 Die Handfackel sass zwei Bildpunkte neben der Hand der Figur. Auf einem
 Bildschirmfoto sah man die Faust NEBEN der Hand stehen, mit einem Streifen Haut
 dazwischen — und deshalb wirkte die Fackel angeklebt, obwohl sie eine Faust
 hatte und die Zeichenreihenfolge stimmte.
 
-Die Ursache ist die uebliche: dieselbe Zahl an zwei Stellen. Die Hand wird in
-`ActorArt._draw_body` gezeichnet (ein 5 x 5 grosses Rechteck bei `y + 10`), und
-wo die Fackel hingehoert, stand als eigene Tabelle `TORCH_AT` in `player.gd` —
-von Hand eingestellt, einmal richtig gewesen, und beim naechsten Umbau der Figur
-nicht mitgewandert.
+Die Ursache war die uebliche: dieselbe Zahl an zwei Stellen. Die Hand wird in
+`ActorArt._draw_body` gezeichnet, und wo die Fackel hingehoert, stand als eigene
+Tabelle `TORCH_AT` in `player.gd` — von Hand eingestellt, einmal richtig
+gewesen, und beim naechsten Umbau der Figur nicht mitgewandert. Danach stand die
+Handposition genau einmal (`HAND_AT`), und alles andere leitete sich daraus ab:
+das Fackelbild, die Flamme, das Licht. Der Selbsttest mass den Abstand zwischen
+Griff und Hand und bekam 0,00 px.
 
-Jetzt steht die Handposition genau einmal (`HAND_AT`), und alles andere leitet
-sich daraus ab: wohin das Fackelbild gehoert, wo die Flamme steht, wo das Licht
-sitzt. Der Selbsttest misst den Abstand zwischen Griff und Hand und bekommt
-0,00 px.
+Und dann ist die ganze Fackel geflogen.
 
-Bemerkenswerter als der Fehler ist, wie er sich gehalten hat. Die Fackel war
-ueber zwei Runden hinweg Thema, sie hat eine Faust bekommen und wurde zweimal
-begutachtet — aber geprueft wurde immer, ob sie DA ist, nie, ob sie am
-richtigen Fleck ist. Die neue Pruefung rechnet den Punkt ueber einen zweiten
-Weg zurueck (aus dem gesetzten Sprite statt aus der Quelle) und vergleicht.
-Erst ein zweiter Weg macht aus einer Zusicherung eine Messung.
+Das ist der lehrreichere Teil. Sie war zu diesem Zeitpunkt technisch in
+Ordnung: die Finger griffen um den Stiel, der Griff lag auf 0,00 px genau auf
+der Hand, das `PointLight2D` hing als Kind der Fackel an der Flamme und folgte
+dem Armschwung. Jede Pruefung gruen. Nur sah das Bild schlecht aus — ein
+Gegenstand von der halben Groesse des Oberkoerpers, in jeder Blickrichtung
+mitten im Bild.
 
-Dasselbe beim Licht: es hing an einem festen Punkt in der Mitte der Figur,
-waehrend das Feuer daneben brannte. Der Lichtkegel ging vom Bauch aus. Auch das
-hat niemand bemerkt, weil ein weicher Verlauf ueber 76 Bildpunkten seinen
-Mittelpunkt nicht verraet.
+Kein Test dieser Welt haette das gemeldet. Sie pruefen Abstaende, Knotenbaeume
+und Sichtbarkeiten; „zu dominant" ist keine Zahl. Der Auftrag stand von Anfang
+an dabei — *funktioniert, sieht aber schlecht aus, gilt als nicht fertig* — und
+genau dieser Fall war gemeint.
+
+Entfallen sind: die Fackelbilder (`_torch_frame`), die Griffrechnung
+(`HAND_AT`, `torch_offset`, `torch_flame_offset`, `hand_offset`), der
+Fackelknoten an der Figur, das Flackern und die Funken ihres Scheins, und der
+Bodenschatten, der der Flamme auswich. Geblieben ist ein ruhiger Sichtkreis auf
+Brusthoehe. Die Selbsttests, die vorher die Anwesenheit der Fackel sicherten,
+pruefen jetzt ihre Abwesenheit — sonst kaeme sie beim naechsten Umbau
+unbemerkt zurueck.
+
+Beim Aufraeumen fiel gleich der naechste Fehler an: das echte `PointLight2D`
+hing vorher an der Fackel und erbte damit deren Ort. Als es wieder ein eigener
+Knoten wurde, blieb es am Tag stehen, wo es angelegt worden war — die Schleife,
+die es nachfuehrt, laeuft nur bei Dunkelheit. Der Selbsttest mass **46 758 px**
+Abstand. Nachgefuehrt wird es jetzt vor jedem Abbruch, einmal je Bild; ein
+gesetzter Ort kostet nichts, ein falscher kostet die Nacht.
 
 ## Nachtrag: Flackern ohne Takt
 
