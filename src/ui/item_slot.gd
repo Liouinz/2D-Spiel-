@@ -7,12 +7,11 @@ extends Control
 ## mehrere einzelne Schaltflächen nebeneinander statt wie ein System. Hier
 ## liegen Form, Farbe und Verhalten an genau einer Stelle.
 ##
-## Vier Zustände, klar auseinanderzuhalten:
+## Drei Zustände, klar auseinanderzuhalten:
 ##
 ##   NORMAL     ruhiges Feld
 ##   HOVER      hellt auf und wächst einen Hauch
 ##   SELECTED   Rahmen in der Akzentfarbe mit weichem Schein
-##   DISABLED   abgedunkelt, nimmt keine Klicks an
 ##
 ## Gezeichnet wird alles in `_draw()`: Rahmen, Kachelbild, Nummer, Name. Damit
 ## gibt es keine verschachtelten Knoten und keine NodePaths, die brechen können.
@@ -67,7 +66,6 @@ var number: int = 0                   ## 0 = keine Nummer anzeigen
 var overlay: bool = false
 
 var selected: bool = false: set = set_selected
-var disabled: bool = false: set = set_disabled
 
 var _icon: Texture2D
 var _hover := 0.0                     ## 0 … 1, animiert
@@ -103,18 +101,7 @@ func set_selected(value: bool) -> void:
 	selected = value
 	set_process(true)
 
-func set_disabled(value: bool) -> void:
-	if disabled == value:
-		return
-	disabled = value
-	if disabled:
-		_over = false
-	set_process(true)
-	queue_redraw()
-
 func _on_enter() -> void:
-	if disabled:
-		return
 	_over = true
 	set_process(true)
 
@@ -123,8 +110,6 @@ func _on_exit() -> void:
 	set_process(true)
 
 func _gui_input(event: InputEvent) -> void:
-	if disabled:
-		return
 	if event is InputEventMouseButton and event.pressed \
 			and event.button_index == MOUSE_BUTTON_LEFT:
 		pressed.emit()
@@ -178,12 +163,9 @@ func _draw_icon(pos: Vector2) -> void:
 	if _icon == null:
 		return
 	var tint := Color(1, 1, 1, 1)
-	if disabled:
-		tint = Color(0.5, 0.5, 0.55, 0.7)
-	else:
-		# Beim Überfahren und im gewählten Zustand hellt das Bild leicht auf.
-		var lift := _hover * 0.10 + _sel * 0.12
-		tint = Color(1.0 + lift, 1.0 + lift, 1.0 + lift, 1.0)
+	# Beim Überfahren und im gewählten Zustand hellt das Bild leicht auf.
+	var lift := _hover * 0.10 + _sel * 0.12
+	tint = Color(1.0 + lift, 1.0 + lift, 1.0 + lift, 1.0)
 	draw_texture_rect(_icon, Rect2(pos, Vector2(ICON, ICON)), false, tint)
 
 ## Die Auswahlmarke.
@@ -228,13 +210,11 @@ func _draw_number() -> void:
 	draw_style_box(box, rect)
 	var col: Color = UiTheme.ACCENT if selected else UiTheme.TEXT
 	_text(str(number), rect.position.x, rect.size.x, rect.position.y, rect.size.y,
-		FONT_NUMBER, col if not disabled else UiTheme.TEXT_DIM)
+		FONT_NUMBER, col)
 
 func _draw_caption(text: String, y: float, height: float, font_size: int) -> void:
 	var col: Color = UiTheme.TEXT
-	if disabled:
-		col = UiTheme.TEXT_DIM
-	elif selected:
+	if selected:
 		col = UiTheme.ACCENT
 	_text(text, 0.0, size.x, y, height, font_size, col)
 
@@ -263,10 +243,6 @@ func hover_strength() -> float:
 ## Ebenfalls öffentlich: der Selbsttest liest daran ab, dass ein gewähltes Feld
 ## wirklich anders aussieht und nicht nur eine Spur heller ist.
 func frame_style() -> StyleBoxFlat:
-	if disabled:
-		return UiTheme.box(Color(0.09, 0.10, 0.12, 0.55), Color(0.24, 0.24, 0.26, 0.6),
-			UiTheme.BORDER, UiTheme.RADIUS_S)
-
 	# Fläche: ruhig, hellt beim Überfahren auf, im gewählten Zustand warm getönt.
 	var bg := UiTheme.SURFACE_RAISED.lerp(UiTheme.SURFACE_HOVER, _hover) \
 		.lerp(UiTheme.SURFACE_ACTIVE, _sel)

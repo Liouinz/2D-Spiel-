@@ -184,7 +184,3 @@ func save() -> bool:
 	if is_instance_valid(bar):
 		bar.flash("Karte gespeichert" if ok else "Karte konnte nicht gespeichert werden")
 	return ok
-
-## Kollisionsformen der geladenen Chunks — für den Selbsttest.
-func shape_count() -> int:
-	return streamer.shape_count()

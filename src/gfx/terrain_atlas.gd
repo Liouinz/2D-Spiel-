@@ -77,10 +77,8 @@ const FULL_START := PARTIAL * EDGE_VARIANTS
 enum Rim { SOFT, SHORE }
 
 ## `variants` ist TileArt.base[typ]: SHADES * VARIANTS Vollkacheln.
-## `hard` = gebaute Fläche: eckige Quadranten statt runder Formen. Für die
-## drei Naturböden wird das nicht gebraucht, die Möglichkeit bleibt.
 ## -> {"texture", "slots": Array[Vector2i], "full_start": int}
-static func build(variants: Array, rng: RandomNumberGenerator, hard: bool = false,
+static func build(variants: Array, rng: RandomNumberGenerator,
 		rim: int = Rim.SOFT) -> Dictionary:
 	var full_count := variants.size()
 	var total := FULL_START + full_count
@@ -100,7 +98,7 @@ static func build(variants: Array, rng: RandomNumberGenerator, hard: bool = fals
 				# Umgeben, aber nicht dazugehörend: gefüllt mit Öffnung.
 				tile = _hole(src, v, rng)
 			else:
-				tile = _quads(src, mask, rng) if hard else _shape(src, mask, rng)
+				tile = _shape(src, mask, rng)
 			if rim == Rim.SHORE:
 				_shore(tile)
 			var pos := _slot_pos(mask * EDGE_VARIANTS + v)
@@ -151,48 +149,6 @@ static func _shape(src: Image, mask: int, rng: RandomNumberGenerator) -> Image:
 				img.set_pixel(x, y, src.get_pixel(x, y))
 	_rim(img)
 	return img
-
-## Gebaute Fläche: die vier Viertel werden ganz oder gar nicht gefüllt, die
-## Innenkanten nur leicht aufgeraut.
-static func _quads(src: Image, mask: int, rng: RandomNumberGenerator) -> Image:
-	var img := Pixel.make(T, T)
-	var half := T / 2
-	var origin := [Vector2i(0, 0), Vector2i(half, 0), Vector2i(half, half), Vector2i(0, half)]
-	if mask == 0:
-		# Einzeln stehende Kachel: kleines Feld in der Mitte
-		for y in range(half / 2, T - half / 2):
-			for x in range(half / 2, T - half / 2):
-				img.set_pixel(x, y, src.get_pixel(x, y))
-	else:
-		for c in 4:
-			if not (mask & (1 << c)):
-				continue
-			var o: Vector2i = origin[c]
-			for y in range(o.y, o.y + half):
-				for x in range(o.x, o.x + half):
-					img.set_pixel(x, y, src.get_pixel(x, y))
-	_roughen(img, src, rng)
-	_rim(img)
-	return img
-
-## Verschiebt einzelne Pixel an der Innenkante, damit die Quadranten nicht wie
-## mit dem Lineal geschnitten wirken. Der Kachelrand bleibt unangetastet.
-static func _roughen(img: Image, src: Image, rng: RandomNumberGenerator) -> void:
-	var copy := Image.create_from_data(T, T, false, Pixel.FMT, img.get_data())
-	for y in range(1, T - 1):
-		for x in range(1, T - 1):
-			var filled := copy.get_pixel(x, y).a > 0.0
-			var contact := false
-			for o: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-				if (copy.get_pixel(x + o.x, y + o.y).a > 0.0) != filled:
-					contact = true
-					break
-			if not contact:
-				continue
-			if filled and rng.randf() < 0.28:
-				img.set_pixel(x, y, Color(0, 0, 0, 0))
-			elif not filled and rng.randf() < 0.18:
-				img.set_pixel(x, y, src.get_pixel(x, y))
 
 ## Maske 15: das Feld ist ringsum umgeben, gehört aber selbst nicht dazu.
 ##

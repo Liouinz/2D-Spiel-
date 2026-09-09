@@ -62,35 +62,6 @@ const JUMP_HEIGHT := 14.0             ## Scheitelhöhe in Bildpunkten
 const SWIM_SPEED := 68.0
 
 
-## Kamerazoom. MUSS ganzzahlig sein.
-##
-## Vorher stand hier 1,5, damit das Sichtfeld bei der Verdopplung der
-## Kachelgröße gleich blieb. Der Preis dafür war hoch und fiel erst beim
-## Hineinzoomen ins Bild auf: bei Faktor 1,5 wird aus einem Weltpixel mal ein,
-## mal zwei Bildschirmpunkte. Jede Kante einer Figur war dadurch abwechselnd
-## ein und zwei Punkte dick, Augen waren unterschiedlich breit, Umrisse
-## ausgefranst — genau das, was Pixel-Art nicht sein darf, und durch keine
-## bessere Zeichnung zu heilen.
-##
-## Mit Faktor 2 ist jeder Weltpixel exakt zwei Bildschirmpunkte. Das Sichtfeld
-## wird dabei kleiner (20 x 11 statt 27 x 15 Blöcke) — das ist die Gegenleistung
-## und in etwa die Bildeinstellung, die Aufbauspiele dieser Art benutzen.
-const CAMERA_ZOOM := 2.0
-
-## Die wählbaren Zoomstufen. GANZZAHLIG, und das ist keine Bequemlichkeit.
-##
-## Bei einem Zoom von 1,5 wird aus einem Weltpixel mal ein, mal zwei
-## Bildschirmpunkte — dieselbe Ursache, die weiter oben beschrieben ist und
-## wegen der der Zoom überhaupt auf 2 gesetzt wurde. Stufen wie „85 %" oder
-## „70 %" würden diesen Fehler zurückholen, und zwar sichtbar an jeder
-## Figurenkante. Deshalb gibt es drei ganze Stufen statt Prozentwerten:
-##
-##   1x   weit    40 x 22 Blöcke im Bild
-##   2x   normal  20 x 11 Blöcke
-##   3x   nah     13 x 7 Blöcke
-##
-## Mehr braucht es nicht, und ein stufenloses Zoomen gäbe es hier nur um den
-## Preis unsauberer Pixel.
 ## Zoomstufen — nur GERADE Werte.
 ##
 ## Die Figur wird mit doppelter Pixeldichte gezeichnet und mit Faktor 0,5
@@ -102,7 +73,6 @@ const CAMERA_ZOOM := 2.0
 ## Bildpunkte auf derselben Flaeche UND mehr Flaeche im Bild schliessen sich
 ## aus; „Normal" ist heute, was frueher „Normal" war.
 const ZOOM_STEPS := [2.0, 4.0, 6.0]
-const ZOOM_NAMES := ["Normal", "Nah", "Sehr nah"]
 const ZOOM_DEFAULT := 0        ## Index in ZOOM_STEPS
 
 static func zoom_of(step: int) -> float:

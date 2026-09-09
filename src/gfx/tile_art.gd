@@ -102,10 +102,6 @@ func _mottle(img: Image, rng: RandomNumberGenerator, count: int, tint: Color, st
 			rng.randf_range(T * 0.16, T * 0.34), rng.randf_range(T * 0.12, T * 0.26),
 			Color(tint.r, tint.g, tint.b, strength))
 
-func _grain(img: Image, rng: RandomNumberGenerator, count: int, c: Color) -> void:
-	for i in count:
-		Pixel.px(img, rng.randi_range(0, T - 1), rng.randi_range(0, T - 1), c)
-
 ## Verteilt Marken auf einem VERWACKELTEN RASTER statt rein zufällig.
 ##
 ## Das ist der Kern einer ruhigen Bodenfläche. Rein zufällige Punkte ballen sich

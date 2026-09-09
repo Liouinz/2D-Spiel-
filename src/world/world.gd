@@ -120,7 +120,6 @@ func _ready() -> void:
 
 	hud = HudScene.new()
 	hud.player = player
-	hud.grid = grid
 	add_child(hud)
 	if is_instance_valid(hud.minimap):
 		hud.minimap.map = map

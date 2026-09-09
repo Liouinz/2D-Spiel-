@@ -137,6 +137,3 @@ func draw_calls() -> int:
 
 func render_objects() -> int:
 	return int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))
-
-func nodes() -> int:
-	return int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))

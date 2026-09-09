@@ -18,11 +18,9 @@ var _hover := 0.0
 var _press := 0.0
 var _held := false
 
-func setup(label: String, wide: bool = true) -> UiButton:
+func setup(label: String) -> UiButton:
 	text = label
-	custom_minimum_size = Vector2(
-		UiTheme.BUTTON_W if wide else UiTheme.BUTTON_W_SMALL,
-		UiTheme.BUTTON_H if wide else UiTheme.BUTTON_H_SMALL)
+	custom_minimum_size = Vector2(UiTheme.BUTTON_W, UiTheme.BUTTON_H)
 	# Menüs sollen sich auch ohne Maus bedienen lassen.
 	focus_mode = Control.FOCUS_ALL
 	# SHRINK_CENTER: eine Schaltfläche behält ihre Breite, statt in einer

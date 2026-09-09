@@ -4,7 +4,6 @@ extends Node
 ## Klangeffekte gibt es bewusst keine mehr — kein Bau-, Schritt-, Klick- oder
 ## Sprunggeräusch. Übrig bleibt die Musik, und die läuft unverändert weiter.
 
-const RATE := 22050
 const MUSIC_RATE := 11025  ## Flächenklänge brauchen keine hohe Rate
 
 var _music_player: AudioStreamPlayer
@@ -77,7 +76,7 @@ func _make_music(track: String) -> AudioStreamWAV:
 		buf[i] = v * 0.30
 
 	if bright:
-		_add_melody(buf, BAR)
+		_add_melody(buf)
 
 	var stream := _wav(buf, MUSIC_RATE)
 	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
@@ -86,7 +85,7 @@ func _make_music(track: String) -> AudioStreamWAV:
 	return stream
 
 ## Sparsame Glockentöne über dem Klangteppich.
-func _add_melody(buf: PackedFloat32Array, bar: float) -> void:
+func _add_melody(buf: PackedFloat32Array) -> void:
 	var notes := [
 		[0.6, 659.25], [1.8, 523.25], [4.7, 587.33], [6.2, 440.00],
 		[8.5, 659.25], [10.1, 783.99], [12.4, 587.33], [14.0, 493.88],
@@ -105,7 +104,7 @@ func _add_melody(buf: PackedFloat32Array, bar: float) -> void:
 
 # --- Klangerzeugung ----------------------------------------------------------
 
-func _wav(samples: PackedFloat32Array, rate: int = RATE) -> AudioStreamWAV:
+func _wav(samples: PackedFloat32Array, rate: int) -> AudioStreamWAV:
 	var data := PackedByteArray()
 	data.resize(samples.size() * 2)
 	for i in samples.size():

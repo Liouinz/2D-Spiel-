@@ -65,8 +65,6 @@ const BOOTS := Color8(86, 60, 44)
 const OUTLINE := Color8(32, 34, 44, 190)
 
 # UI
-const UI_BG := Color8(30, 34, 44, 235)
-const UI_BG_DEEP := Color8(20, 23, 30, 245)
 const UI_BORDER := Color8(122, 96, 62)
 const UI_BORDER_HI := Color8(184, 150, 96)
 const UI_TEXT := Color8(238, 232, 216)

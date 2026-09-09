@@ -152,11 +152,6 @@ static func reset_all() -> void:
 		_set_events(action, _default_events(action))
 	store()
 
-## Setzt eine einzelne Aktion zurück.
-static func reset(action: String) -> void:
-	_set_events(action, _default_events(action))
-	store()
-
 ## Schreibt die geltende Belegung nach `Settings`. Gespeichert wird sie dort.
 static func store() -> void:
 	var out := {}

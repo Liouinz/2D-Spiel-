@@ -17,7 +17,6 @@ signal waded(pos: Vector2, dir: Vector2)
 
 ## Halbe Kantenlänge des Fussabdrucks. Schmaler als eine Kachel, damit die
 ## Figur durch eine ein Feld breite Lücke passt.
-const FOOT := Vector2(12.0, 12.0)
 
 var _frames: Dictionary
 var _sprite: Sprite2D

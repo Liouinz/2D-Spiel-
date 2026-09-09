@@ -15,9 +15,6 @@ const STACK := [
 
 const NAMES := MapData.NAMES
 
-## Gebaute Flächen bekämen eckige Übergänge — davon gibt es zurzeit keine.
-const HARD := []
-
 ## Schichten, deren Fläche sich an der Grenze ZURÜCKZIEHT, statt in den
 ## Nachbarn hineinzuwachsen.
 ##
@@ -115,8 +112,7 @@ static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 		# widersprechen, und genau das ist hier schon passiert.
 		var rim: int = TerrainAtlas.Rim.SHORE if SHRINK.has(tile_type) \
 			else TerrainAtlas.Rim.SOFT
-		var atlas := TerrainAtlas.build(art.base[tile_type], rng,
-			HARD.has(tile_type), rim)
+		var atlas := TerrainAtlas.build(art.base[tile_type], rng, rim)
 		var slots: Array[Vector2i] = atlas["slots"]
 		g._full_count = slots.size() - TerrainAtlas.FULL_START
 
