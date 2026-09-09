@@ -1260,20 +1260,19 @@ geaendert haette. Sie steht jetzt in `position`, wo sie hingehoert.
 
 ## Nachtrag: das echte Licht — zweimal eingebaut, zweimal entfernt
 
-Ein `PointLight2D` wurde vor mehreren Runden entfernt, weil es +3,43 ms
-CPU-Renderzeit kostete. Auf ausdruecklichen Wunsch kam es als Stufe „Sehr hoch"
-zurueck: abschaltbar, nicht voreingestellt, von keinem Qualitaetsprofil
-vergeben.
+Ein `PointLight2D` wurde vor mehreren Runden entfernt, weil es CPU-Renderzeit
+kostete. Auf ausdruecklichen Wunsch kam es als Stufe „Sehr hoch" zurueck:
+abschaltbar, nicht voreingestellt, von keinem Qualitaetsprofil vergeben.
 
-Die Messung war deutlicher als erwartet:
+Sauber gemessen, allein auf der Maschine:
 
-| Fall | Bildzeit | FPS |
-|---|---|---|
-| Nacht voll (additiver Schein) | 30,30 ms | 33 |
-| Nacht voll mit echtem Licht | 60,51 ms | 17 |
+| Fall | CPU ms | GPU ms | Bild ms | FPS |
+|---|---|---|---|---|
+| Nacht voll (additiver Schein) | 13,05 | 9,52 | 19,76 | 51 |
+| Nacht voll mit echtem Licht | 19,72 | 20,43 | 26,42 | 38 |
 
-**+30,22 ms** — mehr als alle anderen Lichtmittel zusammen, und die halbe
-Bildrate.
+**+6,66 ms Bildzeit**, 51 auf 38 Bilder je Sekunde. Auf ein Budget von 16,6 ms
+sind das 40 % mehr Bildzeit.
 
 Was es dafuer brachte, kann ein additives Viereck grundsaetzlich nicht: ein
 echtes Licht multipliziert mit dem Untergrund (unbeleuchtete Stellen bleiben
@@ -1285,10 +1284,36 @@ beleuchtete jetzt denselben ruhigen Sichtkreis, den das billige System auch
 zeichnet. Also ist es wieder weg, samt der `LightOccluder2D` der gesetzten
 Fackeln, die ausschliesslich fuer diese Stufe existierten.
 
-Das ist der eigentliche Lehrsatz aus zwei Runden: **eine Stufe traegt sich nur,
+Das ist der eine Lehrsatz aus zwei Runden: **eine Stufe traegt sich nur,
 solange das, wofuer sie da war, noch da ist.** Das Licht war nie falsch — es war
-zuletzt nur ohne Gegenstand. Wer sie damals eingefuehrt hat, konnte das nicht
-wissen; wer sie stehen laesst, nachdem die Fackel weg ist, schon.
+zuletzt nur ohne Gegenstand.
+
+### Und ein zweiter Lehrsatz, teurer bezahlt: WORAUF gemessen wurde
+
+Die Entfernung war zuerst mit **+30,22 ms** begruendet. Diese Zahl war falsch.
+
+Sie stammte aus einem Profiler-Lauf, der gleichzeitig mit drei
+Analyseprozessen auf derselben Maschine lief. Das Projekt rendert hier ueber
+llvmpipe — also auf der CPU —, und parallele Last geht damit unmittelbar in
+jede Messung ein. Verglichen wurde anschliessend eine Messung UNTER Last gegen
+eine Messung OHNE Last, und die Differenz dem Aufraeumen zugeschrieben.
+
+Aufgefallen ist es erst bei der Abschlussmessung: die Nacht kostete plotzlich
++1,25 ms statt +12,92 ms. So viel kann kein Aufraeumen bewirken — und wenn ein
+Ergebnis zu gut ist, ist meistens die Messung schuld, nicht die Arbeit.
+
+Die Gegenprobe lief auf demselben Commit wie vorher, nur allein auf der
+Maschine: +6,66 ms. Die Entscheidung traegt auch damit; die Begruendung war um
+mehr als das Vierfache uebertrieben.
+
+Zwei Dinge daraus, die fuer jede weitere Messung hier gelten:
+
+- **Ein Profiler-Lauf braucht die Maschine fuer sich.** Nichts sonst darf
+  daneben laufen — kein zweiter Godot, keine Analyse, kein Testlauf.
+- **Verhaeltnisse INNERHALB eines Laufs halten, absolute Millisekunden
+  zwischen Laeufen nicht.** Die Aussage „das echte Licht kostet mehr als alle
+  anderen Lichtmittel zusammen" stimmte auch im verunreinigten Lauf, weil beide
+  Zeilen unter derselben Last gemessen wurden. Die Zahl daneben stimmte nicht.
 
 Damit gilt wieder ohne Ausnahme: in dieser Welt steht kein einziges `Light2D`.
 Der Selbsttest prueft das ueber ALLE Lichtstufen, nicht mehr nur bis „Hoch".

@@ -630,10 +630,10 @@ Zahlen als Bildzeit, gemessen mit `--profile` (llvmpipe, 1280 × 720):
 
 | Stufe | Was dazukommt | Bildzeit | FPS |
 |---|---|---|---|
-| **Aus** | nichts, kein Prozessschritt | 16,57 ms | 60 |
-| **Einfach** | die Tönung, also der ganze Tagesverlauf | 16,54 ms | 60 |
-| **Mittel** | dazu Blaustunde und Fackelschein | 19,43 ms | 51 |
-| **Hoch** | dazu die Sichtgrenze am Bildrand | 24,72 ms | 40 |
+| **Aus** | nichts, kein Prozessschritt | 16,54 ms | 60 |
+| **Einfach** | die Tönung, also der ganze Tagesverlauf | 16,71 ms | 60 |
+| **Mittel** | dazu Blaustunde und Figurenschein | 16,60 ms | 60 |
+| **Hoch** | dazu die Sichtgrenze am Bildrand | 17,79 ms | 56 |
 
 Wer auf einem schwachen Laptop spielt, verliert mit „Einfach" nicht die Nacht,
 sondern nur die Flächen, die Füllrate kosten. Die **Tageszeit** ist eine eigene
@@ -652,10 +652,19 @@ ihr, das den Boden ausleuchtet und den Fackelmast einen wandernden Schatten
 werfen lässt. Seit die Fackel entfallen ist, beleuchtet dasselbe Licht denselben
 ruhigen Sichtkreis, den das billige System auch zeichnet.
 
-Gemessen kostete das **+30,22 ms Bildzeit** und halbierte die Bildrate (17 statt
-33 Bilder je Sekunde). Für einen kaum sichtbaren Unterschied ist das kein Angebot
-mehr, sondern eine Falle. Die Stufe ist weg, die `LightOccluder2D` der gesetzten
-Fackeln sind es mit — sie existierten ausschließlich für sie.
+Gemessen kostet es **+6,66 ms Bildzeit** gegenüber dem additiven Schein, den es
+ersetzt (26,42 gegen 19,76 ms; 38 statt 51 Bilder je Sekunde). Auf ein Budget
+von 16,6 ms sind das **40 % mehr Bildzeit für einen Unterschied, den man seit
+dem Ausbau der Fackel kaum noch sieht**. Die Stufe ist deshalb weg, die
+`LightOccluder2D` der gesetzten Fackeln sind es mit — sie existierten
+ausschließlich für sie.
+
+> **Zur Zahl selbst:** in einer früheren Fassung stand hier +30,22 ms. Dieser
+> Wert war falsch. Er stammte aus einem Profiler-Lauf, der gleichzeitig mit drei
+> Analyseprozessen auf derselben Maschine lief; Godot rendert hier über llvmpipe,
+> also auf der CPU, und jede parallele Last geht direkt in die Messung. Die
+> saubere Nachmessung auf demselben Commit ergibt +6,66 ms — die Entscheidung
+> bleibt, die Begründung war um mehr als das Vierfache übertrieben.
 
 Damit gilt wieder ohne Ausnahme: in dieser Welt steht **kein einziges** `Light2D`.
 Der Selbsttest prüft das über alle Lichtstufen.
