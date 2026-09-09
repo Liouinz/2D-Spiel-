@@ -8,7 +8,7 @@ extends Node2D
 ## Chunk-Laden, das Thema wurde als „not planned" geschlossen. Also von Hand.
 ##
 ## Gehalten wird ein Quadrat aus (2 · RADIUS + 1)² Chunks um die Figur. Der
-## Bildausschnitt ist bei Zoom 1,5 nur rund 27 × 15 Blöcke groß, ein Radius von
+## Bildausschnitt ist bei Zoom 2 nur rund 20 × 11 Blöcke groß, ein Radius von
 ## 2 lässt also ringsum mindestens einen ganzen Chunk Puffer.
 ##
 ## Wichtig: die Karte selbst (`MapData.tiles`) liegt immer vollständig im
@@ -57,13 +57,18 @@ func setup(m: MapData, g: GroundTileSet, p: Node2D) -> void:
 
 	# Die Kantenschicht liegt über dem Boden, aber unter der Brandung:
 	# Uferbänder gehören zum Untergrund, die Wellen darüber.
-	# Der Index muss zu GroundTileSet.LAYER_EDGE passen.
 	layers.append(_layer("Kanten", -20, g))
 
 	# Streu-Dekoration ganz oben, aber weiterhin unter der Figur (z < 0):
 	# ein Grasbüschel gehört auf den Boden, nicht vor die Spielfigur.
-	# Der Index muss zu GroundTileSet.LAYER_DECOR passen.
 	layers.append(_layer("Dekor", -15, g))
+
+	# Die Reihenfolge hier MUSS zu den Indizes in GroundTileSet passen. Vorher
+	# stand das nur als Kommentar da; jetzt leiten sich die Indizes aus
+	# STACK.size() ab und diese Zusicherung prueft, dass beide Seiten
+	# zusammenpassen. Waechst der Stapel um einen Bodentyp, faellt es hier auf
+	# und nicht erst an einer leeren Kachel im Bild.
+	assert(layers.size() == GroundTileSet.LAYER_COUNT)
 
 	body = StaticBody2D.new()
 	body.name = "Collision"
@@ -89,9 +94,6 @@ func _on_graphics_applied() -> void:
 	if is_instance_valid(player):
 		_refresh_wanted()
 
-## Hängt die Bewegung an die Bodenschichten — oder ab.
-##
-## Öffentlich, damit der Selbsttest die drei Stufen messen kann.
 ## Malt alle geladenen Chunks neu. Wird gebraucht, wenn sich die Dichte der
 ## Streu-Dekoration ändert — sie steckt in den gemalten Kacheln, nicht in einem
 ## Knoten, den man einfach ausblenden könnte.
@@ -100,6 +102,9 @@ func repaint_all() -> void:
 		ground.erase_chunk(layers, chunk)
 		ground.paint_chunk(layers, map, chunk)
 
+## Hängt die Bewegung an die Bodenschichten — oder ab.
+##
+## Öffentlich, damit der Selbsttest die drei Stufen messen kann.
 func apply_wind() -> void:
 	if layers.size() < 3:
 		return
@@ -251,7 +256,6 @@ func refresh_cell(cell: Vector2i) -> void:
 			shape.queue_free()
 		_loaded[c] = _collision_for(c)
 
-## Anzahl geladener Chunks — für den Selbsttest.
 ## Wie lange das Malen des zuletzt geladenen Chunks gedauert hat, in
 ## Millisekunden. Für die Entwicklerinfo: ein Nachladeruckler hat hier seine
 ## Zahl, statt nur ein Gefühl zu sein.
@@ -266,6 +270,7 @@ func visible_count(view: Rect2) -> int:
 			n += 1
 	return n
 
+## Anzahl geladener Chunks — für den Selbsttest.
 func loaded_count() -> int:
 	return _loaded.size()
 

@@ -17,7 +17,6 @@ signal waded(pos: Vector2, dir: Vector2)
 
 ## Halbe Kantenlänge des Fussabdrucks. Schmaler als eine Kachel, damit die
 ## Figur durch eine ein Feld breite Lücke passt.
-const FOOT := Vector2(12.0, 12.0)
 
 var _frames: Dictionary
 var _sprite: Sprite2D
@@ -35,6 +34,10 @@ var _wake_timer: float = 0.0
 ## nur eine Verschiebung.
 var _land_time: float = 0.0
 const LAND_TIME := 0.14
+
+## Ab welcher Geschwindigkeit die Figur als „in Bewegung" gilt — fuer das
+## Laufbild und die Wasserspur. Stand vorher zweimal als nackte 6.0 da.
+const MOVING_FROM := 6.0
 
 var map: MapData               ## um zu wissen, worauf die Figur steht
 
@@ -82,7 +85,7 @@ func _ready() -> void:
 	_sprite.scale = Vector2.ONE * ActorArt.DRAW_SCALE
 	add_child(_sprite)
 
-	_update_sprite(0.0)
+	_update_sprite(false)
 
 func _physics_process(delta: float) -> void:
 	var input := Vector2(
@@ -107,13 +110,18 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	_jump(delta)
 
-	var moving := velocity.length() > 6.0
+	var moving := velocity.length() > MOVING_FROM
 	_trail(delta, moving)
 	_anim_time += delta * (WALK_FPS if moving else IDLE_FPS)
 	if not moving and _was_moving:
 		_anim_time = 0.0
 	_was_moving = moving
-	_update_sprite(velocity.length())
+	# Die Landung federt nach. Sie hier herunterzuzaehlen und nicht im
+	# Zeichnen: `_update_sprite` laeuft auch aus `_ready()` und koennte je Bild
+	# mehrfach gerufen werden — dann waere die Federung halb so lang.
+	if _land_time > 0.0:
+		_land_time = maxf(_land_time - delta, 0.0)
+	_update_sprite(moving)
 
 ## Welche Sprungstellung gerade gilt.
 ##
@@ -197,10 +205,7 @@ func _face(input: Vector2) -> void:
 	elif absf(input.y) > 0.0:
 		_dir = ActorArt.Dir.UP if input.y < 0.0 else ActorArt.Dir.DOWN
 
-func _update_sprite(speed: float) -> void:
-	var moving := speed > 6.0
-	if _land_time > 0.0:
-		_land_time = maxf(_land_time - get_physics_process_delta_time(), 0.0)
+func _update_sprite(moving: bool) -> void:
 	var set_name := "swim" if _swimming else ("walk" if moving else "idle")
 	var frames: Array = _frames[set_name][_dir]
 	var idx := int(_anim_time) % frames.size()
@@ -211,12 +216,11 @@ func _update_sprite(speed: float) -> void:
 		idx = _jump_phase()
 	_sprite.texture = frames[idx]
 	_sprite.flip_h = _flip
-	# Beim Spiegeln muss der Versatz mitgespiegelt werden
-	_sprite.offset.x = -ActorArt.W * 0.5
 
-	# Schwimmen: das Bild ist an der Wasserlinie abgeschnitten, also muss es um
-	# denselben Betrag nach unten, damit der Kopf an seiner Stelle bleibt. Der
-	# Bodenschatten fällt weg — im Wasser gibt es keinen.
+	# Schwimmen: das Bild taucht an der Wasserlinie ein (siehe
+	# `ActorArt._submerge`), also muss es um denselben Betrag nach unten, damit
+	# der Kopf an seiner Stelle bleibt. Der Bodenschatten fällt weg — im Wasser
+	# gibt es keinen.
 	if _swimming:
 		_sprite.offset.y = -ActorArt.H + ActorArt.SWIM_SINK
 		_sprite.position.y = 0.0

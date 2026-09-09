@@ -15,9 +15,6 @@ const STACK := [
 
 const NAMES := MapData.NAMES
 
-## Gebaute Flächen bekämen eckige Übergänge — davon gibt es zurzeit keine.
-const HARD := []
-
 ## Schichten, deren Fläche sich an der Grenze ZURÜCKZIEHT, statt in den
 ## Nachbarn hineinzuwachsen.
 ##
@@ -96,6 +93,13 @@ const LAYER_DECOR := 4
 const LAYER_COUNT := 5
 
 static func build(art: TileArt, seed_value: int) -> GroundTileSet:
+	# Die Kantenschicht kommt DIREKT nach dem Bodenstapel, die Dekoration
+	# darueber. GDScript laesst `STACK.size()` nicht als Konstante zu, also
+	# steht die Zahl hier — und diese Zusicherung haelt sie an den Stapel
+	# gebunden. Waechst er um einen Bodentyp, schlaegt sie an, statt dass
+	# Kanten und Dekoration still auf die falsche Schicht zeigen.
+	assert(LAYER_EDGE == STACK.size())
+	assert(LAYER_DECOR == LAYER_EDGE + 1 and LAYER_COUNT == LAYER_DECOR + 1)
 	var g := GroundTileSet.new()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value + 1234
@@ -115,8 +119,7 @@ static func build(art: TileArt, seed_value: int) -> GroundTileSet:
 		# widersprechen, und genau das ist hier schon passiert.
 		var rim: int = TerrainAtlas.Rim.SHORE if SHRINK.has(tile_type) \
 			else TerrainAtlas.Rim.SOFT
-		var atlas := TerrainAtlas.build(art.base[tile_type], rng,
-			HARD.has(tile_type), rim)
+		var atlas := TerrainAtlas.build(art.base[tile_type], rng, rim)
 		var slots: Array[Vector2i] = atlas["slots"]
 		g._full_count = slots.size() - TerrainAtlas.FULL_START
 
@@ -178,9 +181,6 @@ func _build_table() -> void:
 			# alles darüber nicht.
 			_table[pos * TABLE_STRIDE + t] = 1 if (known or pos == 0) else 0
 
-## Helligkeitsstufe und Variante einer Kachel — frueher einmal ueber die ganze
-## Karte vorberechnet, jetzt bei Bedarf. Dieselbe Formel, damit sich am
-## Aussehen nichts aendert.
 ## Wie tief liegt dieses Wasserfeld?
 ##
 ## 0 = am Ufer, 1 = eine Kachel davon entfernt, 2 = draussen. Daraus wird die
@@ -208,6 +208,9 @@ func water_variant(map: MapData, x: int, y: int, ring: Array) -> int:
 	return water_depth(map, x, y, ring) * TileArt.VARIANTS \
 		+ Config.hash2(x, y) % TileArt.VARIANTS
 
+## Helligkeitsstufe und Variante einer Kachel — frueher einmal ueber die ganze
+## Karte vorberechnet, jetzt bei Bedarf. Dieselbe Formel, damit sich am
+## Aussehen nichts aendert.
 func variant_at(x: int, y: int) -> int:
 	var n := _shade.get_noise_2d(x, y) * 0.5 + 0.5
 	var shade := clampi(int(n * TileArt.SHADES), 0, TileArt.SHADES - 1)
@@ -216,7 +219,7 @@ func variant_at(x: int, y: int) -> int:
 	# man der Fläche als Muster an.
 	return shade * TileArt.VARIANTS + Config.hash2(x, y) % TileArt.VARIANTS
 
-## Malt einen Chunk auf alle neun Bodenschichten.
+## Malt einen Chunk auf alle Bodenschichten.
 ##
 ## Ein Feld, das zur Schicht gehört, bekommt IMMER eine Vollkachel. Der
 ## Übergang wird nicht aus ihm herausgeschnitten, sondern wächst in die
@@ -257,7 +260,7 @@ func erase_chunk(layers: Array[TileMapLayer], chunk: Vector2i) -> void:
 
 ## Setzt eine einzelne Kachel neu — der Kern der Bau-Leiste.
 ##
-## Weil der Boden aus neun Schichten mit Eck-Autotiling besteht, ändert eine
+## Weil der Boden aus mehreren Schichten mit Eck-Autotiling besteht, ändert eine
 ## einzige geänderte Kachel die Eckmasken im 3 × 3-Umfeld auf jeder Schicht.
 ## Mehr aber auch nicht: eine Ecke hängt nur von den vier Kacheln ab, die an
 ## ihr zusammenstoßen.
@@ -307,7 +310,14 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 			layers[LAYER_EDGE].erase_cell(cell)
 		return
 
-	var variant := -1
+	# Die Helligkeitsstufe aus dem Rauschen. Einmal gerechnet, danach nur
+	# GELESEN — sie darf NICHT von einer Schicht ueberschrieben werden.
+	#
+	# Vorher stand hier eine Variable, die eine Schrumpf-Schicht durch die
+	# Wassertiefe ersetzte. Heute faellt das nicht auf, weil Wasser im STACK
+	# zuletzt kommt; sobald ein Bodentyp dahinter kaeme, bekaeme er die Tiefe
+	# des Wassers als Helligkeit.
+	var noise_variant := -1
 	for pos in count:
 		var layer := layers[pos]
 		var base := pos * TABLE_STRIDE
@@ -315,12 +325,10 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 		# Ein gesetzter Block füllt sein Feld — ausser er gehört zu einer
 		# Schicht, die sich an der Grenze zurückzieht.
 		if _table[base + t4] != 0:
-			if variant < 0:
-				variant = variant_at(x, y)
 			if _shrink[pos]:
 				# Wasser bekommt seine Stufe aus der TIEFE statt aus dem
 				# Rauschen — siehe `water_variant`.
-				variant = water_variant(map, x, y, [t0, t1, t2, t3, t5, t6, t7, t8])
+				var depth := water_variant(map, x, y, [t0, t1, t2, t3, t5, t6, t7, t8])
 				# Die Eckmaske ist hier ANDERSHERUM gemeint als beim Übergang:
 				# dort gilt eine Ecke, sobald EINES der drei Felder dazugehört
 				# (die Fläche wächst heraus), hier nur, wenn ALLE drei
@@ -330,9 +338,11 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 				if _all3(base, t1, t2, t5): keep |= 2     # oben rechts
 				if _all3(base, t5, t7, t8): keep |= 4     # unten rechts
 				if _all3(base, t3, t6, t7): keep |= 8     # unten links
-				layer.set_cell(cell, _sources[pos], _shrunk(pos, keep, x, y, variant))
+				layer.set_cell(cell, _sources[pos], _shrunk(pos, keep, x, y, depth))
 			else:
-				layer.set_cell(cell, _sources[pos], _full(pos, variant))
+				if noise_variant < 0:
+					noise_variant = variant_at(x, y)
+				layer.set_cell(cell, _sources[pos], _full(pos, noise_variant))
 			continue
 
 		# Wasser zieht sich zurück, statt hinauszuwachsen: auf einem Feld ohne

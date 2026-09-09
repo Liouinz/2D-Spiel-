@@ -6,7 +6,6 @@ const SHOW_TIME := 7.0
 const FADE_TIME := 1.5
 
 var player: Node2D
-var grid: GridOverlay
 
 var _label: Label
 var _blocks: Label

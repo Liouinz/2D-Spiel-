@@ -38,7 +38,6 @@ const SHADOW_RAISED := 8
 
 const FONT_TITLE := 54        ## nur der Spieltitel
 const FONT_H1 := 26           ## Menü-Überschrift
-const FONT_H2 := 18           ## Abschnitt
 const FONT_BODY := 16         ## Fließtext, Zeilenbeschriftung
 const FONT_SMALL := 14        ## Nebeninformation
 const FONT_TINY := 12         ## Marken, Nummern
@@ -51,18 +50,14 @@ const OUTLINE := 4
 
 const BUTTON_W := 300
 const BUTTON_H := 46
-const BUTTON_W_SMALL := 132
-const BUTTON_H_SMALL := 34
 
 # --- Bewegung ----------------------------------------------------------------
-# Kurz und ruhig. Alles, was länger als ANIM_SLOW dauert, fühlt sich träge an.
+# Kurz und ruhig. Alles, was spürbar länger dauert, fühlt sich träge an.
 
-const ANIM_FAST := 0.09
 const ANIM := 0.14
-const ANIM_SLOW := 0.22
 
 ## Wie schnell ein Zustand (überfahren, gewählt) nachzieht — als Faktor für
-## `lerp` je Sekunde. Passt zu ANIM_FAST.
+## `lerp` je Sekunde.
 const STATE_SPEED := 14.0
 
 # --- Farben ------------------------------------------------------------------
@@ -84,7 +79,7 @@ const ACCENT_LINE: Color = Palette.UI_BORDER_HI
 
 # --- Bausteine ---------------------------------------------------------------
 
-## Eine Fläche mit Rahmen. Der einzige Weg, im Spiel eine Fläche zu erzeugen —
+## Eine Fläche mit Rahmen. Der Weg, im Spiel eine Fläche zu erzeugen —
 ## damit sehen Tafeln, Felder und Zeilen überall gleich aus.
 static func box(bg: Color, border: Color, width: int = BORDER,
 		radius: int = RADIUS, shadow: int = 0) -> StyleBoxFlat:
@@ -241,8 +236,8 @@ static func rule(width: int = 96) -> Control:
 	c.add_child(line)
 	return c
 
-static func button(text: String, wide: bool = true) -> UiButton:
-	return UiButton.new().setup(text, wide)
+static func button(text: String) -> UiButton:
+	return UiButton.new().setup(text)
 
 ## Senkrechter Abstandhalter in einer der Abstandsstufen.
 static func gap(height: int) -> Control:

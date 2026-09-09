@@ -33,7 +33,7 @@ static func _one(art: TileArt, tile: int) -> Texture2D:
 	# bildet. Vier verschiedene Varianten daraus, damit die Fläche nicht wie
 	# viermal dasselbe Bild aussieht; weil die Kacheln nahtlos gezeichnet sind,
 	# ist zwischen ihnen trotzdem keine Naht zu sehen.
-	var middle: int = TileArt.VARIANTS
+	var middle: int = TileArt.MID
 	var list: Array = art.base[tile]
 	for i in TILES * TILES:
 		var src: Image = list[middle + i % TileArt.VARIANTS]
@@ -65,7 +65,7 @@ static func _emboss(img: Image) -> void:
 		Pixel.px(img, i, n - 2, Color(0, 0, 0, 0.16))
 		Pixel.px(img, n - 1, i, Color(0, 0, 0, 0.30))
 		Pixel.px(img, n - 2, i, Color(0, 0, 0, 0.14))
-	# Ecken abrunden: zwei Bildpunkte je Ecke wegnehmen. Ein Quadrat mit
+	# Ecken abrunden: einen Bildpunkt je Ecke wegnehmen. Ein Quadrat mit
 	# scharfen Ecken sitzt in einem Feld mit runden Ecken wie eingeklemmt.
 	for c: Vector2i in [Vector2i(0, 0), Vector2i(n - 1, 0),
 			Vector2i(0, n - 1), Vector2i(n - 1, n - 1)]:

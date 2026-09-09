@@ -46,16 +46,12 @@ const STEPS := ["Aus", "Reduziert", "Voll"]
 ## einem Schalter zusammengefasst.
 ## Die Lichtstufen.
 ##
-## „Sehr hoch" ist die einzige, die ein echtes `Light2D` anlegt — und deshalb
-## die einzige, die richtig Geld kostet. Sie steht hier als AUSDRUECKLICHE
-## Wahl: gemessen kostete ein `PointLight2D` +3,43 ms CPU-Renderzeit, weil es
-## den Canvas-Renderer in den beleuchteten Pfad zwingt und jedes Element im
-## Umkreis ein zweites Mal einreihen laesst. Wer die Bildrate braucht, bleibt
-## auf „Hoch" und verliert nichts ausser echtem Schattenwurf.
-const LIGHT := ["Aus", "Einfach", "Mittel", "Hoch", "Sehr hoch"]
-
-## Ab welcher Stufe ein echtes 2D-Licht angelegt wird.
-const LIGHT_REAL := 4
+## Es gab einmal eine fuenfte, „Sehr hoch", die ein echtes `PointLight2D`
+## anlegte. Gemessen kostete sie +30,22 ms Bildzeit und halbierte damit die
+## Bildrate — fuer eine Wirkung, die sich seit dem Ausbau der Handfackel kaum
+## noch von der Stufe darunter unterschied. In dieser Welt steht seither kein
+## einziges `Light2D` mehr, und der Selbsttest haelt das fest.
+const LIGHT := ["Aus", "Einfach", "Mittel", "Hoch"]
 
 ## Läuft die Zeit? Das ist eine Frage des Spielgefühls, keine der Leistung —
 ## ein stehender Tag kostet genauso viel wie ein laufender. Deshalb eine

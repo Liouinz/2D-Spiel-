@@ -49,7 +49,7 @@ const JUMP_CROUCH := 0
 const JUMP_RISE := 1
 const JUMP_FALL := 2
 
-## Wie viele Bilder die Flamme hat — der Handfackel wie der gesetzten.
+## Wie viele Bilder die Flamme einer gesetzten Fackel hat.
 ##
 ## Vier waren zu wenig. Bei vier Bildern liest man den Takt: dieselbe Folge
 ## viermal je Sekunde, und das Auge findet den Rhythmus. Feuer hat keinen.
@@ -338,7 +338,7 @@ static func _draw_legs(img: Image, dir: int, leg: int, tuck: int = 0) -> void:
 		# vorderes Bein
 		Pixel.rect(img, front, 74, 14, maxi(14 - tuck, 4), lit)
 		Pixel.rect(img, front, 74, 4, maxi(14 - tuck, 4), Palette.PANTS.lightened(0.3))
-		_seam(img, front + 12, 76, maxi(10 - tuck, 2), true, seam)
+		_seam(img, front + 12, 76, maxi(10 - tuck, 2), seam)
 		_knee(img, front, 14, 80 - tuck)
 		_boot(img, front, 86 - tuck, 18, false)
 		return
@@ -347,11 +347,11 @@ static func _draw_legs(img: Image, dir: int, leg: int, tuck: int = 0) -> void:
 	# linkes Bein im Licht, rechtes im Schatten
 	Pixel.rect(img, 20, 74 + l_dy, 12, maxi(14 - l_dy - tuck, 4), lit)
 	Pixel.rect(img, 20, 74 + l_dy, 4, maxi(14 - l_dy - tuck, 4), Palette.PANTS.lightened(0.32))
-	_seam(img, 20, 76 + l_dy, maxi(10 - l_dy - tuck, 2), true, seam)
+	_seam(img, 20, 76 + l_dy, maxi(10 - l_dy - tuck, 2), seam)
 	_knee(img, 20, 12, 80 + l_dy - tuck)
 	_boot(img, 20, 88 - tuck, 12, false)
 	Pixel.rect(img, 34, 74 + r_dy, 12, maxi(14 - r_dy - tuck, 4), dark)
-	_seam(img, 45, 76 + r_dy, maxi(10 - r_dy - tuck, 2), true, seam)
+	_seam(img, 45, 76 + r_dy, maxi(10 - r_dy - tuck, 2), seam)
 	_knee(img, 34, 12, 80 + r_dy - tuck)
 	_boot(img, 34, 88 - tuck, 12, true)
 
@@ -374,14 +374,10 @@ static func _folds(img: Image, x0: int, w: int, y: int) -> void:
 
 ## Eine Naht: zwei Bildpunkte Stich, einer Luecke. Bei einfacher Dichte war das
 ## nicht darstellbar — eine Naht war dort einfach eine Linie.
-static func _seam(img: Image, x: int, y: int, length: int, vertical: bool, c: Color) -> void:
+static func _seam(img: Image, x: int, y: int, length: int, c: Color) -> void:
 	for i in length:
-		if i % 3 == 2:
-			continue
-		if vertical:
+		if i % 3 != 2:
 			Pixel.px(img, x, y + i, c)
-		else:
-			Pixel.px(img, x + i, y, c)
 
 static func _draw_body(img: Image, dir: int, top: int, arm: int) -> void:
 	var y := top + 36
@@ -390,11 +386,6 @@ static func _draw_body(img: Image, dir: int, top: int, arm: int) -> void:
 	var belt := Palette.BOOTS.darkened(0.12)
 	var stitch := Palette.TUNIC_DARK.darkened(0.25)
 	if dir == Dir.SIDE:
-		# Der Rucksack ZUERST — er liegt hinter dem Rumpf, und die Figur schaut
-		# nach rechts (die Nase steht bei x 47 vor). Er sass vorher bei x 38
-		# bis 51, also VOR der Brust: von der Seite ein brauner Klotz auf dem
-		# Bauch. Hinten heisst hier kleines x.
-		_pack_side(img, y)
 		Pixel.rect(img, 20, y, 26, 30, Palette.TUNIC)
 		Pixel.rect(img, 18, y + 2, 2, 6, Palette.TUNIC)
 		Pixel.rect(img, 20, y, 8, 30, lit)
@@ -403,15 +394,10 @@ static func _draw_body(img: Image, dir: int, top: int, arm: int) -> void:
 		Pixel.rect(img, 28, y + 8, 2, 18, Palette.TUNIC_DARK)
 		Pixel.rect(img, 34, y + 4, 2, 22, Palette.TUNIC.lightened(0.08))
 		_folds(img, 20, 26, y)
-		_seam(img, 27, y + 2, 22, true, stitch)
+		_seam(img, 27, y + 2, 22, stitch)
 		Pixel.rect(img, 20, y + 24, 26, 6, belt)
 		Pixel.rect(img, 20, y + 24, 26, 1, belt.lightened(0.22))
 		Pixel.rect(img, 20, y + 22, 26, 2, Color(Palette.TUNIC_DARK, 0.45))
-		# Schultergurt ueber der Brust — das Einzige, was von einem
-		# Rucksack seitlich nach VORNE sichtbar ist.
-		Pixel.rect(img, 26, y + 1, 3, 16, Palette.WOOD_DARK)
-		Pixel.rect(img, 26, y + 1, 1, 16, Palette.WOOD)
-		Pixel.rect(img, 26, y + 10, 3, 2, Palette.WOOD.darkened(0.25))
 		# sichtbarer Arm mit Aermelbund
 		Pixel.rect(img, 24, y + 4 + arm, 10, 18, Palette.TUNIC_DARK)
 		Pixel.rect(img, 24, y + 20 + arm, 10, 2, Palette.TUNIC_DARK.darkened(0.25))
@@ -434,18 +420,6 @@ static func _draw_body(img: Image, dir: int, top: int, arm: int) -> void:
 	for gx in range(18, 46, 4):
 		Pixel.px(img, gx, y + 27, belt.darkened(0.25))
 	if dir == Dir.DOWN:
-		# Von vorne ist von einem Rucksack fast nichts zu sehen — nur die
-		# beiden Gurte, die ueber die Schultern nach vorne kommen, und ein
-		# Streifen der Tasche, der seitlich hervorschaut. Ein Rucksack, den man
-		# von vorne als Block sieht, sitzt nicht auf dem Ruecken.
-		Pixel.rect(img, 22, y, 3, 22, Palette.WOOD_DARK)
-		Pixel.rect(img, 22, y, 1, 22, Palette.WOOD)
-		Pixel.rect(img, 39, y, 3, 22, Palette.WOOD_DARK.darkened(0.15))
-		Pixel.rect(img, 22, y + 12, 3, 2, Palette.WOOD.darkened(0.25))
-		Pixel.rect(img, 39, y + 12, 3, 2, Palette.WOOD.darkened(0.30))
-		# Die Kante der Tasche links und rechts neben dem Rumpf.
-		Pixel.rect(img, 14, y + 6, 2, 14, Palette.WOOD_DARK.darkened(0.10))
-		Pixel.rect(img, 48, y + 6, 2, 14, Palette.WOOD_DARK.darkened(0.30))
 		# Kragen mit Umschlag
 		Pixel.rect(img, 26, y, 12, 4, Palette.TUNIC_DARK)
 		Pixel.rect(img, 26, y, 12, 1, Palette.TUNIC.lightened(0.22))
@@ -464,8 +438,7 @@ static func _draw_body(img: Image, dir: int, top: int, arm: int) -> void:
 		Pixel.rect(img, 28, y + 24, 8, 1, Palette.UI_ACCENT.lightened(0.3))
 		Pixel.px(img, 33, y + 27, Palette.UI_ACCENT.lightened(0.4))
 	else:
-		_seam(img, 31, y + 2, 20, true, stitch)
-		_pack_back(img, y)
+		_seam(img, 31, y + 2, 20, stitch)
 	# Arme: Aermel, Bund, Hand
 	Pixel.rect(img, 8, y + 4 - arm, 10, 18, lit.darkened(0.06))
 	Pixel.rect(img, 8, y + 20 - arm, 10, 2, Palette.TUNIC_DARK.darkened(0.20))
@@ -475,65 +448,6 @@ static func _draw_body(img: Image, dir: int, top: int, arm: int) -> void:
 	Pixel.rect(img, 46, y + 20 + arm, 10, 2, Palette.TUNIC_DARK.darkened(0.30))
 	Pixel.rect(img, 46, y + 22 + arm, 10, 8, Palette.SKIN_SHADE)
 	_fingers(img, 46, y + 24 + arm, true)
-
-## Der Rucksack von hinten.
-##
-## Er soll wie ein getragener Rucksack aussehen, nicht wie ein zweiter Koerper:
-## deshalb 22 von 32 Bildpunkten Rumpfbreite, mittig, und mit den Teilen, an
-## denen man einen Rucksack erkennt — Haupttasche, Klappe darueber, zwei
-## Schultergurte, die ueber die Schultern nach vorne laufen, zwei Schnallen und
-## Naehte.
-static func _pack_back(img: Image, y: int) -> void:
-	var leather := Palette.WOOD_DARK
-	var leather_hi := Palette.WOOD
-	var cord := Palette.WOOD_DARK.darkened(0.35)
-
-	# Schultergurte: sie beginnen OBEN am Rumpf und laufen ueber die Schulter.
-	for gx: int in [22, 39]:
-		Pixel.rect(img, gx, y - 2, 3, 14, leather)
-		Pixel.rect(img, gx, y - 2, 1, 14, leather_hi)
-		Pixel.rect(img, gx, y + 6, 3, 2, cord)
-
-	# Haupttasche.
-	Pixel.rect(img, 21, y + 8, 22, 16, leather)
-	Pixel.rect(img, 21, y + 8, 2, 16, leather_hi.darkened(0.10))
-	Pixel.rect(img, 41, y + 8, 2, 16, cord)
-	Pixel.rect(img, 21, y + 22, 22, 2, cord)
-
-	# Klappe darueber, mit Ueberstand — daran erkennt man den Deckel.
-	Pixel.rect(img, 20, y + 6, 24, 7, leather_hi)
-	Pixel.rect(img, 20, y + 6, 24, 1, leather_hi.lightened(0.18))
-	Pixel.rect(img, 20, y + 12, 24, 1, cord)
-
-	# Zwei kleine Verschluesse an der Klappe.
-	for bx: int in [26, 36]:
-		Pixel.rect(img, bx, y + 11, 3, 4, cord)
-		Pixel.px(img, bx + 1, y + 12, Palette.UI_ACCENT.darkened(0.15))
-
-	# Naehte: dezent, nur an der Kante der Tasche.
-	_seam(img, 23, y + 15, 8, false, cord)
-	_seam(img, 33, y + 15, 8, false, cord)
-
-## Der Rucksack von der Seite.
-##
-## Er wird VOR dem Rumpf gezeichnet und danach von ihm ueberdeckt — dadurch
-## sitzt er hinten und liegt am Koerper an, statt daneben zu schweben. Sichtbar
-## bleibt nur, was ueber die Rueckenlinie hinausragt.
-static func _pack_side(img: Image, y: int) -> void:
-	var leather := Palette.WOOD_DARK
-	var leather_hi := Palette.WOOD
-	var cord := Palette.WOOD_DARK.darkened(0.35)
-	# Koerpernah: die rechte Kante liegt IM Rumpf (der beginnt bei x 20).
-	Pixel.rect(img, 10, y + 6, 14, 20, leather)
-	Pixel.rect(img, 10, y + 6, 2, 20, leather_hi.darkened(0.15))
-	Pixel.rect(img, 10, y + 24, 14, 2, cord)
-	# Klappe mit Ueberstand nach hinten.
-	Pixel.rect(img, 9, y + 4, 15, 7, leather_hi)
-	Pixel.rect(img, 9, y + 4, 15, 1, leather_hi.lightened(0.18))
-	Pixel.rect(img, 9, y + 10, 15, 1, cord)
-	# Verschluss.
-	Pixel.rect(img, 12, y + 9, 3, 4, cord)
-	Pixel.px(img, 13, y + 10, Palette.UI_ACCENT.darkened(0.15))
 
 ## Finger an einer Hand: drei Fugen, damit sie nicht als Klotz liest.
 static func _fingers(img: Image, x: int, y: int, shaded: bool) -> void:

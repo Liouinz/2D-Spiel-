@@ -426,7 +426,14 @@ nach dem Nachladen eines Chunks.
 Gras und Sand haben seither **je zwei zusätzliche Farbtöne**: eine trockene
 Stelle, die ins Gelbe zieht, und eine beschattete, die ins Blaue geht. Beim
 Sand entsprechend eine sonnige und eine feuchte. Dazu Halme mit Neigung,
-kleine Büschel, Kiesel, trockene Halme und winzige Blüten im Boden selbst.
+kleine Büschel, Kiesel und trockene Halme im Boden selbst.
+
+Blüten stecken **nicht** mehr in der Kachel. Sie waren dort einmal — und damit
+zweimal im Bild, gebacken in der Graskachel und noch einmal in der
+Dekorationsschicht darüber. Die Schicht lässt sich abschalten und in der Dichte
+regeln, die gebackene Blüte nicht: auf „Dekor aus" blieb sie stehen. Die Regel
+ist jetzt scharf — **was in der Kachel steckt, ist Bodentextur; was ein
+Gegenstand ist, gehört in die Schicht.**
 
 Beim ersten Versuch steckte all das in den **Flecken** — den großen weichen
 Farbwolken, die jede Kachelvariante für sich auswürfelt. Das war ein Fehler,
@@ -627,39 +634,31 @@ Zahlen als Bildzeit, gemessen mit `--profile` (llvmpipe, 1280 × 720):
 | **Einfach** | die Tönung, also der ganze Tagesverlauf | 16,54 ms | 60 |
 | **Mittel** | dazu Blaustunde und Fackelschein | 19,43 ms | 51 |
 | **Hoch** | dazu die Sichtgrenze am Bildrand | 24,72 ms | 40 |
-| **Sehr hoch** | echtes `PointLight2D` statt des Scheins | **41,52 ms** | **24** |
 
 Wer auf einem schwachen Laptop spielt, verliert mit „Einfach" nicht die Nacht,
 sondern nur die Flächen, die Füllrate kosten. Die **Tageszeit** ist eine eigene
 Zeile: ein stehender Tag kostet genauso viel wie ein laufender, das ist eine
 Frage des Spielgefühls.
 
-### „Sehr hoch": echtes 2D-Licht, und was es kostet
+### Die Stufe „Sehr hoch" gibt es nicht mehr
 
-Diese Stufe legt als einzige ein echtes `PointLight2D` an — am selben Punkt wie
-der gezeichnete Schein, auf Brusthöhe der Figur. Sie bringt zwei Dinge, die ein additives
-Viereck grundsätzlich nicht kann:
+Sie legte als einzige ein echtes `PointLight2D` an. Das kann zwei Dinge, die ein
+additives Viereck grundsätzlich nicht kann: es **multipliziert** mit dem
+Untergrund, statt Helligkeit daraufzulegen, und Verdecker (`LightOccluder2D`)
+werfen **Schatten**.
 
-- Ein echtes Licht **multipliziert** mit dem Untergrund, statt Helligkeit
-  daraufzulegen. Unbeleuchtete Stellen bleiben dadurch wirklich dunkel.
-- Verdecker (`LightOccluder2D`) werfen **Schatten**. Jede gesetzte Fackel hat
-  einen; läuft man um sie herum, dreht sich ihr Schatten mit.
+Beides war den Preis wert, solange die Figur eine Fackel trug — ein Feuer neben
+ihr, das den Boden ausleuchtet und den Fackelmast einen wandernden Schatten
+werfen lässt. Seit die Fackel entfallen ist, beleuchtet dasselbe Licht denselben
+ruhigen Sichtkreis, den das billige System auch zeichnet.
 
-Und sie kostet, gemessen: **+16,80 ms Bildzeit** gegenüber „Hoch" — mehr als
-alle anderen Lichtmittel zusammen, und ein Absturz von 40 auf 24 Bilder. Genau
-diese Sorte Einbruch war der Grund, warum das echte Licht in einer früheren
-Runde entfernt wurde.
+Gemessen kostete das **+30,22 ms Bildzeit** und halbierte die Bildrate (17 statt
+33 Bilder je Sekunde). Für einen kaum sichtbaren Unterschied ist das kein Angebot
+mehr, sondern eine Falle. Die Stufe ist weg, die `LightOccluder2D` der gesetzten
+Fackeln sind es mit — sie existierten ausschließlich für sie.
 
-Deshalb ist sie eine **ausdrückliche Wahl**: nicht voreingestellt, von keinem
-Qualitätsprofil vergeben, und die automatische Anpassung nimmt sie als
-allererstes zurück, wenn es klemmt. Auf jeder anderen Stufe gilt weiterhin die
-Zusage, dass in dieser Welt **kein einziges** `Light2D` steht — der Selbsttest
-prüft, dass es beim Zurückschalten wirklich wegfällt und nicht nur auf Energie
-null steht. Ein Licht mit Energie null rechnet trotzdem.
-
-Was es NICHT bringt: mehr Schattenwerfer. Die Welt besteht aus Bodenkacheln;
-gesetzte Fackeln sind bis auf Weiteres das Einzige darin, was einen Schatten
-werfen kann. Bäume und Felsen wären die nächste Runde.
+Damit gilt wieder ohne Ausnahme: in dieser Welt steht **kein einziges** `Light2D`.
+Der Selbsttest prüft das über alle Lichtstufen.
 
 ## Der Sprung ist eine Bewegung
 
@@ -1059,7 +1058,6 @@ src/audio/audio.gd         Autoload: prozedurale Musik (ohne Klangeffekte)
 src/dev/profiler.gd        Misst, was das BILD kostet (--profile)
 src/dev/self_test.gd       Automatischer Selbsttest
 
-prototype_godsim/          Früherer God-Sim-Prototyp, unverändert archiviert
 ```
 
 ## Selbsttest
@@ -1176,5 +1174,6 @@ könnte.
 
 ---
 
-*Der frühere God-Sim-Prototyp „Terraria Mundi“ liegt unverändert in
-`prototype_godsim/` und ist über die Git-Historie jederzeit wieder erreichbar.*
+*Der frühere God-Sim-Prototyp „Terraria Mundi“ lag lange unverändert im
+Verzeichnis `prototype_godsim/` und ist beim Aufräumen entfernt worden — über
+die Git-Historie bleibt er jederzeit erreichbar.*

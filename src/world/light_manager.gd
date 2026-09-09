@@ -70,14 +70,6 @@ const DAY_LENGTH := 480.0
 ## Wo der Tag beginnt, wenn die Welt geladen wird — heller Vormittag.
 const START_TIME := 0.34
 
-## Farbe und Helligkeit über den Tag. Der erste Wert ist die Uhrzeit von 0
-## (Mitternacht) bis 1, der zweite die Tönung, mit der die Welt multipliziert
-## wird. Weiss heisst: unverändert.
-##
-## Die Nacht ist deutlich dunkler als in der ersten Fassung (0,40 / 0,46 / 0,68
-## vorher, jetzt 0,26 / 0,30 / 0,50). Das ging erst, seit der Schein um die
-## Figur nichts mehr kostet: eine dunkle Nacht ohne bezahlbares Licht wäre eine
-## Zwangspause gewesen, mit Licht ist sie Atmosphäre.
 ## Der Ton, in den die Nacht faellt — und warum es ihn ueberhaupt braucht.
 ##
 ## `CanvasModulate` MULTIPLIZIERT. Eine blaue Toenung ueber einer gruenen Wiese
@@ -89,13 +81,22 @@ const START_TIME := 0.34
 ## Blau muss also DAZUKOMMEN, nicht durchmultipliziert werden. Das ist eine
 ## einzelne halbdurchsichtige Flaeche ueber der Welt, unter den Scheinen: ein
 ## Viereck, kein Shader. Sie liegt bewusst UNTER den additiven Scheinen — so
-## faellt das warme Fackellicht in eine kalte Umgebung, und der Kontrast, den
-## eine Nachtszene braucht, entsteht von selbst.
+## faellt der warme Schein einer gesetzten Fackel in eine kalte Umgebung, und
+## der Kontrast, den eine Nachtszene braucht, entsteht von selbst.
 const NIGHT_BLUE := Color(0.15, 0.25, 0.52)
+
 ## Deckkraft bei voller Dunkelheit. Darueber kippt die Welt ins Comichafte,
 ## darunter bleibt sie das dunkle Gruen von vorher.
 const NIGHT_BLUE_A := 0.28
 
+## Farbe und Helligkeit über den Tag. Der erste Wert ist die Uhrzeit von 0
+## (Mitternacht) bis 1, der zweite die Tönung, mit der die Welt multipliziert
+## wird. Weiss heisst: unverändert.
+##
+## Die Nacht ist deutlich dunkler als in der ersten Fassung (0,40 / 0,46 / 0,68
+## vorher, jetzt 0,26 / 0,30 / 0,50). Das ging erst, seit der Schein um die
+## Figur nichts mehr kostet: eine dunkle Nacht ohne bezahlbares Licht wäre eine
+## Zwangspause gewesen, mit Licht ist sie Atmosphäre.
 const RAMP := [
 	[0.00, Color(0.24, 0.28, 0.46)],   ## tiefe Nacht
 	[0.17, Color(0.40, 0.42, 0.60)],   ## erste Dämmerung
@@ -159,14 +160,6 @@ const GLOW_PEAK := 0.42
 ## Schein. Klein genug, dass er die Figur beleuchtet statt die halbe Wiese.
 const CORE_SHARE := 0.40
 
-## Wie kraeftig das echte Licht brennt und wie weit es reicht.
-##
-## Es multipliziert statt zu addieren und braucht deshalb andere Zahlen als der
-## Schein: Energie ueber 1 hellt auf, darunter dunkelt es ab. Die Reichweite ist
-## grosszuegiger, weil ein multiplizierendes Licht am Rand unauffaellig
-## ausläuft, waehrend ein additives dort noch sichtbar aufhellt.
-const REAL_ENERGY := 1.35
-const REAL_REACH := 2.2
 
 ## Die Farbe von Fackellicht: #FFAF64.
 ##
@@ -224,10 +217,6 @@ var _night: CanvasLayer
 var _vignette: TextureRect
 var _blue: ColorRect
 var _embers: Embers
-
-## Das echte 2D-Licht — nur auf Stufe „Sehr hoch" vorhanden.
-var _real_light: PointLight2D
-var _real_tex: ImageTexture
 
 ## Wie viele Funken im letzten Bild gezeichnet wurden — nur Messung fuer den
 ## Selbsttest. Eine Wirkung, die man nicht zaehlen kann, kann man auch nicht
@@ -478,7 +467,6 @@ func _apply_mode() -> void:
 	# Stufe 2 bringt den Schein, Stufe 3 zusätzlich die Sichtgrenze.
 	_glow_root.visible = mode >= 2
 	_vignette.visible = mode >= 3
-	_apply_real_light(mode)
 	set_process(mode > 0)
 	_refresh()
 
@@ -508,16 +496,6 @@ func _refresh(delta: float = 0.0) -> void:
 	# geltenden Tönung, nicht aus der Uhrzeit: ändert sich der Verlauf oben,
 	# passt sich der Rest von selbst an.
 	_dark = clampf((0.86 - tint.get_luminance()) * 2.0, 0.0, 1.0)
-
-	# Das echte Licht wird IMMER nachgefuehrt, auch am hellen Tag.
-	#
-	# Es haengt nicht an der Nachtschicht, sondern in der Welt, und die
-	# Schleife weiter unten laeuft am Tag gar nicht. Bliebe es also stehen, wo
-	# es angelegt wurde, leuchtete es beim ersten Dunkelwerden irgendwo hinter
-	# dem Horizont — genau so ist es aufgefallen, 46 758 Pixel daneben. Ein
-	# gesetzter Ort je Bild kostet nichts; ein falscher Ort kostet die Nacht.
-	if is_instance_valid(_real_light) and _player_light != null:
-		_step_real_light(_player_light)
 
 	# Am Tag ist die ganze Nachtschicht unsichtbar und kostet nichts.
 	var lit := _dark > MIN_VISIBLE and _mode >= 2
@@ -575,66 +553,6 @@ func _update_glows(delta: float) -> void:
 			any_embers = true
 	if any_embers and is_instance_valid(_embers):
 		_embers.queue_redraw()
-
-# --- Das echte Licht ----------------------------------------------------------
-
-## Legt das `PointLight2D` an oder raeumt es weg.
-##
-## Es existiert NUR auf Stufe „Sehr hoch" — und zwar wirklich nicht: ein Licht
-## mit Energie null rechnet trotzdem. Die ganze Stufe ist ein Angebot fuer
-## Rechner, die es tragen; auf allen anderen Stufen bleibt die Zusicherung
-## bestehen, dass in dieser Welt kein einziges `Light2D` steht. Der Selbsttest
-## prueft beides.
-##
-## Warum ueberhaupt, wenn der additive Schein billiger ist und aehnlich
-## aussieht: ein echtes Licht MULTIPLIZIERT mit dem Untergrund, statt Helligkeit
-## daraufzulegen. Unbeleuchtete Stellen bleiben dadurch wirklich dunkel, und
-## Verdecker (`LightOccluder2D`) koennen Schatten werfen — beides kann ein
-## additives Viereck grundsaetzlich nicht.
-func _apply_real_light(mode: int) -> void:
-	var want := mode >= Graphics.LIGHT_REAL
-	if want == is_instance_valid(_real_light):
-		return
-	if not want:
-		_real_light.get_parent().remove_child(_real_light)
-		_real_light.queue_free()
-		_real_light = null
-		return
-	if _real_tex == null:
-		_real_tex = _real_light_texture()
-	_real_light = PointLight2D.new()
-	_real_light.name = "Nachtlicht"
-	_real_light.texture = _real_tex
-	_real_light.color = TORCH_LIGHT
-	_real_light.energy = 0.0
-	_real_light.shadow_enabled = true
-	_real_light.shadow_filter = Light2D.SHADOW_FILTER_PCF5
-	_real_light.shadow_filter_smooth = 3.0
-	# Ueber dem Boden, damit die Kacheln beleuchtet werden.
-	_real_light.range_z_min = -64
-	_real_light.range_z_max = 64
-	add_child(_real_light)
-
-## Der Verlauf des echten Lichts. Groesser gebacken als der Schein: ein
-## `Light2D` skaliert seine Textur, und ein zu kleines Bild zeigt Stufen.
-func _real_light_texture() -> ImageTexture:
-	var n := 256
-	var img := Pixel.make(n, n)
-	var c := n * 0.5
-	for y in n:
-		for x in n:
-			var t := 1.0 - clampf(Vector2(x + 0.5 - c, y + 0.5 - c).length() / c, 0.0, 1.0)
-			img.set_pixel(x, y, Color(1, 1, 1, pow(t, 1.45)))
-	return Pixel.tex(img)
-
-## Setzt Ort, Staerke und Weite des echten Lichts — dieselben Werte wie beim
-## Schein, damit beide Stufen dieselbe Szene zeigen und nur die Technik wechselt.
-func _step_real_light(s: LightSource) -> void:
-	if not is_instance_valid(_real_light):
-		return
-	_real_light.position = s.world_pos()
-	_real_light.energy = clampf(_dark * s.flick, 0.0, 1.4) * REAL_ENERGY
-	_real_light.texture_scale = s.radius * REAL_REACH / 128.0
 
 # --- Glut ---------------------------------------------------------------------
 

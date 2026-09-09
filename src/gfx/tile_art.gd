@@ -15,6 +15,13 @@ const VARIANTS := 10
 ## 32er-Kacheln ist jede Kachel eine große einfarbige Fläche, und schon wenige
 ## Prozent Abstand lassen das Raster als Schachbrett hervortreten.
 const SHADES := 3
+
+## Index der MITTLEREN Helligkeitsstufe im flachen Array `base[typ]`.
+##
+## Vier Stellen im Projekt haben das von Hand als `TileArt.VARIANTS`
+## ausgerechnet — richtig nur, solange es genau drei Stufen gibt. Jetzt steht
+## es hier, und die Rechnung steht daneben.
+const MID := VARIANTS
 ## Vorher 0,035. Das dichte Korn hat die Stufen früher verdeckt; auf einer
 ## ruhigeren Fläche fällt jede Stufe sofort als Schachbrettfeld auf. Die grosse
 ## Helligkeitsbewegung kommt jetzt ohnehin vom Wind-Shader, der über Kachelkanten
@@ -44,6 +51,10 @@ static func shade_step(tile: int) -> float:
 ## Takt ergibt, den man als Streifen liest.
 const WATER_BANDS: Array[Array] = [[1, 5], [12, 4], [21, 7]]
 
+## Wie oft eine Graskachel ein Bodendetail bekommt. Gut ein Drittel: darueber
+## sieht man beim Aneinanderlegen das Muster der Kachelvarianten.
+const SPECK_CHANCE := 0.38
+
 var base: Array = []        ## [tile_type][stufe * VARIANTS + variante] -> Image
 
 static func build(seed_value: int) -> TileArt:
@@ -57,9 +68,7 @@ func _build_bases(rng: RandomNumberGenerator) -> void:
 	# Bodenkacheln werden nahtlos gezeichnet: eine Fläche aus vielen gleichen
 	# Kacheln zeigt sonst an jeder Naht einen Bruch, und genau das liess den
 	# Boden wie aneinandergelegte Rechtecke aussehen.
-	Pixel.wrap = T
-	_build_bases_raw(rng)
-	Pixel.wrap = 0
+	Pixel.wrapped(T, func() -> void: _build_bases_raw(rng))
 
 ## Derselbe Aufbau ohne Kantenumlauf — der Selbsttest vergleicht damit, wie
 ## stark die Naht vorher auffiel.
@@ -101,10 +110,6 @@ func _mottle(img: Image, rng: RandomNumberGenerator, count: int, tint: Color, st
 		Pixel.ellipse(img, rng.randf_range(0, T), rng.randf_range(0, T),
 			rng.randf_range(T * 0.16, T * 0.34), rng.randf_range(T * 0.12, T * 0.26),
 			Color(tint.r, tint.g, tint.b, strength))
-
-func _grain(img: Image, rng: RandomNumberGenerator, count: int, c: Color) -> void:
-	for i in count:
-		Pixel.px(img, rng.randi_range(0, T - 1), rng.randi_range(0, T - 1), c)
 
 ## Verteilt Marken auf einem VERWACKELTEN RASTER statt rein zufällig.
 ##
@@ -200,36 +205,34 @@ func _grass_tile(bg: Color, light: Color, dark: Color, hi: Color,
 		Pixel.px(img, p.x, p.y, Color(hi, 0.55))
 
 	# 6. Kleinkram im Boden. Hoechstens einer je Kachel und nur in gut einem
-	#    Drittel der Faelle — das ist wichtig: die Dekorationsschicht streut
-	#    ohnehin Blumen und Kiesel darueber, und was hier drin steht,
-	#    wiederholt sich mit der Kachelvariante. Zu viel davon, und man sieht
-	#    das Muster.
-	if rng.randf() < 0.38:
+	#    Drittel der Faelle: was hier drin steht, wiederholt sich mit der
+	#    Kachelvariante — zu viel davon, und man sieht das Muster.
+	if rng.randf() < SPECK_CHANCE:
 		_speck(img, rng)
 	return img
 
-## Ein einzelnes Bodendetail: ein Kiesel, ein trockener Halm oder eine winzige
-## Bluete. Alles drei nur wenige Bildpunkte gross — sie sollen den Blick nicht
-## halten, sondern der Flaeche das letzte bisschen Unregelmaessigkeit geben.
+## Ein einzelnes Bodendetail: ein Kiesel oder ein trockener Halm.
+##
+## KEINE Blumen mehr. Die gab es hier auch, und damit zweimal: gebacken in der
+## Kachel und noch einmal in der Dekorationsschicht darueber. Die Schicht laesst
+## sich abschalten und in der Dichte regeln, die gebackene Bluete nicht — auf
+## „Dekor aus" blieb sie stehen. Was in der Kachel bleibt, ist Bodentextur;
+## was ein Gegenstand ist, gehoert in die Schicht.
+##
+## Beides nur wenige Bildpunkte gross — sie sollen den Blick nicht halten,
+## sondern der Flaeche das letzte bisschen Unregelmaessigkeit geben.
 func _speck(img: Image, rng: RandomNumberGenerator) -> void:
 	var x := rng.randi_range(2, T - 3)
 	var y := rng.randi_range(2, T - 3)
-	var r := rng.randf()
-	if r < 0.42:
+	if rng.randf() < 0.55:
 		# Kiesel: dunkler Kern, helle Oberkante. Licht von oben links.
 		Pixel.px(img, x, y, Color(Palette.STONE_DARK, 0.60))
 		Pixel.px(img, x + 1, y, Color(Palette.STONE, 0.50))
 		Pixel.px(img, x, y - 1, Color(Palette.STONE_LIGHT, 0.42))
-	elif r < 0.76:
+	else:
 		# Trockener Halm: ein einzelner heller Strich im Strohton.
 		_blade(img, x, y, rng.randi_range(3, 4), Palette.GRASS_DRY, 0.52,
 			rng.randf_range(-1.0, 1.0))
-	else:
-		# Winzige Bluete: drei Bildpunkte, sonst wird sie zum Gegenstand.
-		var col: Color = [Palette.FLOWER_WHITE, Palette.FLOWER_YELLOW][rng.randi() % 2]
-		Pixel.px(img, x, y, Color(col, 0.62))
-		Pixel.px(img, x - 1, y, Color(col, 0.34))
-		Pixel.px(img, x, y - 1, Color(Palette.GRASS_DARK, 0.30))
 
 ## Sand: eine ruhige Flaeche, die trotzdem Korn zeigt.
 ##

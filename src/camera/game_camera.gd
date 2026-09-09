@@ -4,6 +4,17 @@ extends Camera2D
 
 var target: Node2D
 
+## Wie weit die Kamera ueber der Figur steht.
+##
+## Acht Bildpunkte nach oben: von schraeg oben gesehen steht die Figur damit
+## etwas unterhalb der Bildmitte, und man sieht mehr von dem, worauf man zulaeuft.
+##
+## Diese Zahl steht genau EINMAL. Vorher rechnete `_process` sie ein und
+## `snap_to_target` nicht — nach jedem Setzen der Kamera (Weltaufbau, jeder
+## Sprung im Selbsttest) korrigierte sie sich im naechsten Bild um acht Punkte
+## nach. Ein sichtbarer Ruck aus einer Zahl an einer Stelle zu viel.
+const LOOK_AHEAD := Vector2(0.0, -8.0)
+
 func setup(world_size: Vector2i) -> void:
 	apply_zoom()
 	Settings.changed.connect(apply_zoom)
@@ -19,35 +30,17 @@ func setup(world_size: Vector2i) -> void:
 
 func snap_to_target() -> void:
 	if target:
-		global_position = target.global_position
+		global_position = target.global_position + LOOK_AHEAD
 		reset_smoothing()
 
 func _process(_delta: float) -> void:
 	if not is_instance_valid(target):
 		return
-	# Weich folgen, dann auf ein Raster runden, das sauber auf Bildpunkte
-	# abbildet.
-	#
-	# Bei Zoom 1,5 wird ein Weltpixel zu 1,5 Bildpunkten. Nur wenn die Kamera
-	# auf GERADEN Weltpixeln steht, landet jede Kachelkante auf einem ganzen
-	# Bildpunkt (2 Welt → 3 Bild). Ohne das wandert die Kante beim Laufen
-	# zwischen zwei Bildpunkten hin und her, und die Kacheln flimmern an den
-	# Rändern — das sah aus wie unsaubere Kanten.
-	var want := target.global_position + Vector2(0, -8)
-	var step := pixel_step()
-	global_position = (want / step).round() * step
+	# Nur folgen. Gerundet wird hier nichts mehr: das Projekt stellt
+	# `snap_2d_transforms_to_pixel` ein, und alle Zoomstufen sind ganzzahlig —
+	# die frühere Rasterrechnung war seit der Umstellung auf 2/4/6 ein Nulleffekt.
+	global_position = target.global_position + LOOK_AHEAD
 
-## Rasterweite, auf die die Kamera gerundet wird: der kleinste Weltabstand, der
-## bei diesem Zoom auf ganze Bildpunkte fällt.
-func pixel_step() -> float:
-	var z := zoom.x
-	if is_equal_approx(z, roundf(z)):
-		return 1.0                      # ganzzahliger Zoom: jeder Weltpixel passt
-	if is_equal_approx(z * 2.0, roundf(z * 2.0)):
-		return 2.0                      # halber Zoom (1,5 / 2,5 …): gerade Pixel
-	return 4.0
-
-## Sichtbarer Weltausschnitt — für sparsames Zeichnen der Wasser-Effekte.
 ## Setzt die gewählte Zoomstufe. Ganzzahlig — siehe Config.ZOOM_STEPS.
 func apply_zoom() -> void:
 	var z := Config.zoom_of(Settings.zoom)
@@ -63,6 +56,7 @@ func step_zoom(delta: int) -> void:
 	Settings.zoom = want
 	Settings.changed_and_save()
 
+## Sichtbarer Weltausschnitt — für sparsames Zeichnen der Wasser-Effekte.
 func visible_world_rect() -> Rect2:
 	var vp := get_viewport_rect().size / zoom
 	return Rect2(get_screen_center_position() - vp * 0.5, vp)

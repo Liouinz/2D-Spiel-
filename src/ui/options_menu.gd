@@ -1,7 +1,7 @@
 extends UiScreen
 ## Einstellungen, nach Themen sortiert.
 ##
-## Links die Kategorien, rechts die Seite dazu. Vier Kategorien, nicht fünf:
+## Links die Kategorien, rechts die Seite dazu. Fünf Kategorien:
 ## „Ton" bestand aus einem einzigen Regler und war eine fast leere Seite — ein
 ## Thema, das aus einer Zeile besteht, ist kein Thema, sondern eine Zeile.
 ## Die Musik steht jetzt bei „Allgemein".
@@ -23,7 +23,7 @@ signal back_pressed
 
 ## Die Seitenfläche ist fest: eine Tafel, die beim Wechsel der Kategorie ihre
 ## Größe ändert, springt vor den Augen. Die Bildratenzeile mit ihren sieben
-## Stufen bestimmt die Breite, die Grafikseite mit ihren sieben Zeilen die
+## Stufen bestimmt die Breite, die Grafikseite mit ihren fünf Zeilen die
 ## Höhe — der Selbsttest misst beides nach.
 const PAGE_SIZE := Vector2(636, 400)
 const RAIL_W := 176
@@ -158,8 +158,8 @@ func _page_video() -> Control:
 	return _with_note(rows,
 		"Die Beleuchtung ist abgestuft, weil ihre Teile unterschiedlich kosten: die"
 		+ "\nTönung ist gemessen gratis, erst „Mittel“ und „Hoch“ kosten Füllrate."
-		+ "\n„Sehr hoch“ schaltet echtes 2D-Licht mit Schattenwurf ein — gemessen"
-		+ "\nkostet das mehr als alles andere zusammen. Nur für starke Rechner.")
+		+ "\nWer Bildrate braucht, verliert mit „Einfach“ nicht die Nacht, sondern"
+		+ "\nnur die beiden Flächen darüber.")
 
 ## Effekte: was sich bewegt und was auf dem Boden liegt. Eigene Seite, damit
 ## die Grafikseite nicht zu einer Liste aus neun Zeilen wird, durch die man
@@ -324,6 +324,17 @@ func _start_capture(action: String, index: int, button: UiButton) -> void:
 	_capture_index = index
 	button.text = "…"
 	_say("Jetzt die neue Taste oder Maustaste drücken. Esc bricht ab.")
+
+## Schliesst das Menue und bricht dabei eine laufende Tastenaufnahme ab.
+##
+## Ohne das blieb `_capture_action` stehen, wenn das Menue auf einem Weg
+## zuging, den `_input` nicht sieht (etwa ueber ein Gamepad): der naechste
+## Tastendruck im Spiel waere dann als Belegung geschluckt worden.
+func set_open(open: bool) -> void:
+	if not open and _capture_action != "":
+		_capture_action = ""
+		_rebuild_binds()
+	super.set_open(open)
 
 func _input(event: InputEvent) -> void:
 	if _capture_action == "":

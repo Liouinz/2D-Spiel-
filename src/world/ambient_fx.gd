@@ -84,15 +84,24 @@ func _new_mote(area: Rect2, anywhere: bool) -> Dictionary:
 		"alpha": _rng.randf_range(0.16, PEAK),
 	}
 
+## Wie viele Staubpunkte gerade in der Luft sind — fuer die Entwicklerinfo.
+##
+## Oeffentlich, damit die Anzeige nicht in ein privates Feld einer fremden
+## Klasse greifen muss; daneben stehen `BuildFx.mark_count()` und
+## `Torches.count()` und machen es genauso.
+func mote_count() -> int:
+	return _motes.size()
+
 func _visible_rect() -> Rect2:
 	if is_instance_valid(camera):
 		return camera.visible_world_rect().grow(32.0)
-	return Rect2(Vector2.ZERO, Vector2(Config.TILE * 40, Config.TILE * 24))
+	return Config.fallback_view()
 
 func _process(delta: float) -> void:
 	_time += delta
 	var area := _visible_rect()
-	for m: Dictionary in _motes:
+	for i in _motes.size():
+		var m: Dictionary = _motes[i]
 		var p: Vector2 = m["pos"]
 		p.x += SPEED * float(m["drift"]) * delta
 		p.y += sin(_time * 0.7 + float(m["phase"])) * float(m["rise"]) * delta * 12.0
@@ -100,7 +109,11 @@ func _process(delta: float) -> void:
 			var fresh := _new_mote(area, false)
 			fresh["pos"] = Vector2(area.position.x - 8.0,
 				_rng.randf_range(area.position.y, area.end.y))
-			_motes[_motes.find(m)] = fresh
+			# Ueber den Index, nicht ueber find(). find() vergleicht Woerterbuecher
+			# dem INHALT nach: zwei gleich gestartete Staubpunkte sind fuer es
+			# dasselbe, und dann wird der falsche ersetzt. Findet es gar keinen,
+			# trifft _motes[-1] das letzte Element.
+			_motes[i] = fresh
 			continue
 		m["pos"] = p
 	_accum += delta
@@ -113,7 +126,8 @@ func _draw() -> void:
 	if _motes.is_empty():
 		return
 	var area := _visible_rect()
-	for m: Dictionary in _motes:
+	for i in _motes.size():
+		var m: Dictionary = _motes[i]
 		var p: Vector2 = m["pos"]
 		if not area.has_point(p):
 			continue

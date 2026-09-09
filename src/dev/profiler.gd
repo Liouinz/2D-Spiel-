@@ -106,17 +106,6 @@ func _run() -> void:
 	await _measure(world, "nur Toenung + Vignette")
 	blue.visible = true
 
-	# Die vierte Stufe: ein echtes PointLight2D statt des additiven Scheins.
-	# Sie steht als eigene Zeile, weil sie eine andere Sorte Kosten ist — nicht
-	# ein Viereck mehr, sondern ein zweiter Durchgang ueber alles im Umkreis.
-	Settings.light = Graphics.LIGHT_REAL
-	Settings.changed_and_save()
-	await _frames(30)
-	await _measure(world, "+ echtes Licht")
-	Settings.light = 2
-	Settings.changed_and_save()
-	await _frames(30)
-
 	glows.visible = true
 	light.set_time(0.5)                    # Mittag: die Nachtschicht faellt weg
 	await _measure(world, "Tag voll")

@@ -45,6 +45,7 @@ const BORDER := Color(1.00, 0.55, 0.25, 0.75)
 ## Linie soll beim Hineinzoomen nicht mitwachsen. `_w()` rechnet sie um.
 const LINE_THIN := 1.0
 const LINE_THICK := 3.0
+const BORDER_THICK := 3.0    ## Weltrand, ebenfalls in Bildschirmpunkten
 
 var camera: GameCamera
 var player: Node2D
@@ -133,7 +134,7 @@ func _draw() -> void:
 	if is_instance_valid(camera):
 		rect = camera.visible_world_rect().grow(t)
 	else:
-		rect = Rect2(Vector2.ZERO, Config.world_size_px())
+		rect = Config.fallback_view()
 	var x0 := maxi(int(rect.position.x / t), 0)
 	var y0 := maxi(int(rect.position.y / t), 0)
 	var x1 := mini(int(rect.end.x / t) + 1, Config.MAP_W)
@@ -225,19 +226,24 @@ func _draw_border(t: float, x0: int, y0: int, x1: int, y1: int) -> void:
 	var right := x1 * t
 	var top := y0 * t
 	var bottom := y1 * t
+	# Durch `_w`, wie jede andere Linie hier: Staerken sind in
+	# BILDSCHIRMpunkten gemeint. Roh uebergeben wuchs der Weltrand als einzige
+	# Linie beim Hineinzoomen mit und war bei Zoom 2 doppelt so dick wie die
+	# Chunk-Linien daneben.
+	var w := _w(BORDER_THICK)
 	if lo >= top and lo <= bottom:
-		draw_line(Vector2(left, lo), Vector2(right, lo), BORDER, 3.0)
+		draw_line(Vector2(left, lo), Vector2(right, lo), BORDER, w)
 	if hi_y >= top and hi_y <= bottom:
-		draw_line(Vector2(left, hi_y), Vector2(right, hi_y), BORDER, 3.0)
+		draw_line(Vector2(left, hi_y), Vector2(right, hi_y), BORDER, w)
 	if lo >= left and lo <= right:
-		draw_line(Vector2(lo, top), Vector2(lo, bottom), BORDER, 3.0)
+		draw_line(Vector2(lo, top), Vector2(lo, bottom), BORDER, w)
 	if hi_x >= left and hi_x <= right:
-		draw_line(Vector2(hi_x, top), Vector2(hi_x, bottom), BORDER, 3.0)
+		draw_line(Vector2(hi_x, top), Vector2(hi_x, bottom), BORDER, w)
 
 ## Chunk-Nummer in die obere linke Ecke jedes sichtbaren Chunks.
 ##
 ## In der Mitte wäre sie meistens unsichtbar: ein Chunk ist 512 Pixel hoch, der
-## Bildausschnitt bei Zoom 1,5 aber nur rund 480 — die Mitte liegt also oft
+## Bildausschnitt bei Zoom 2 aber nur rund 360 — die Mitte liegt also oft
 ## ausserhalb. An der Ecke steht die Nummer direkt am gelben Kreuz.
 func _draw_chunk_numbers(t: float, x0: int, y0: int, x1: int, y1: int) -> void:
 	var font := ThemeDB.fallback_font

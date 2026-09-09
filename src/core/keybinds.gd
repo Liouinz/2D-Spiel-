@@ -141,20 +141,18 @@ static func setup() -> void:
 	var saved: Dictionary = Settings.keybinds
 	for action: String in _all_actions():
 		var list: Array = saved.get(action, [])
-		if list.is_empty():
-			_set_events(action, _default_events(action))
-		else:
-			_set_events(action, _parse(list))
+		# Nicht nur „leer", sondern „nichts Brauchbares darin": eine
+		# beschaedigte Datei kann eine Liste enthalten, aus der `_parse` nichts
+		# gewinnt — dann stand die Aktion auf null Ereignissen und war ohne
+		# „alles zuruecksetzen" nicht mehr erreichbar.
+		var events := _parse(list) if not list.is_empty() else []
+		_set_events(action, events if not events.is_empty() \
+			else _default_events(action))
 
 ## Setzt alles auf den Auslieferungszustand zurück.
 static func reset_all() -> void:
 	for action: String in _all_actions():
 		_set_events(action, _default_events(action))
-	store()
-
-## Setzt eine einzelne Aktion zurück.
-static func reset(action: String) -> void:
-	_set_events(action, _default_events(action))
 	store()
 
 ## Schreibt die geltende Belegung nach `Settings`. Gespeichert wird sie dort.
@@ -203,6 +201,12 @@ static func replace(action: String, index: int, ev: InputEvent) -> String:
 	var list := events_of(action)
 	if index < 0 or index >= list.size():
 		return "Diese Stelle gibt es nicht."
+	# Dieselbe Pruefung wie in `add`: sonst kann dieselbe Taste zweimal in
+	# derselben Aktion stehen. `conflict` faengt das nicht, weil es die eigene
+	# Aktion absichtlich ueberspringt.
+	for i in list.size():
+		if i != index and same(list[i], ev):
+			return "Diese Eingabe liegt hier schon."
 	list[index] = ev
 	_set_events(action, list)
 	store()

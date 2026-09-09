@@ -37,7 +37,7 @@ static var MAP_H: int = BUILD_CHUNKS.y * CHUNK
 ## Statisch statt konstant: die Sichtweite ist eine Einstellung. `Graphics`
 ## setzt den Wert aus `Settings.render_range`, der ChunkStreamer liest ihn bei
 ## jeder Neuberechnung. Radius 2 (5 x 5 Chunks) ist die Voreinstellung — der
-## Bildausschnitt ist bei Zoom 1,5 nur rund 27 x 15 Blöcke groß, das lässt
+## Bildausschnitt ist bei Zoom 2 nur rund 20 x 11 Blöcke groß, das lässt
 ## ringsum mindestens einen ganzen Chunk Puffer.
 static var LOAD_RADIUS: int = 2
 
@@ -62,35 +62,6 @@ const JUMP_HEIGHT := 14.0             ## Scheitelhöhe in Bildpunkten
 const SWIM_SPEED := 68.0
 
 
-## Kamerazoom. MUSS ganzzahlig sein.
-##
-## Vorher stand hier 1,5, damit das Sichtfeld bei der Verdopplung der
-## Kachelgröße gleich blieb. Der Preis dafür war hoch und fiel erst beim
-## Hineinzoomen ins Bild auf: bei Faktor 1,5 wird aus einem Weltpixel mal ein,
-## mal zwei Bildschirmpunkte. Jede Kante einer Figur war dadurch abwechselnd
-## ein und zwei Punkte dick, Augen waren unterschiedlich breit, Umrisse
-## ausgefranst — genau das, was Pixel-Art nicht sein darf, und durch keine
-## bessere Zeichnung zu heilen.
-##
-## Mit Faktor 2 ist jeder Weltpixel exakt zwei Bildschirmpunkte. Das Sichtfeld
-## wird dabei kleiner (20 x 11 statt 27 x 15 Blöcke) — das ist die Gegenleistung
-## und in etwa die Bildeinstellung, die Aufbauspiele dieser Art benutzen.
-const CAMERA_ZOOM := 2.0
-
-## Die wählbaren Zoomstufen. GANZZAHLIG, und das ist keine Bequemlichkeit.
-##
-## Bei einem Zoom von 1,5 wird aus einem Weltpixel mal ein, mal zwei
-## Bildschirmpunkte — dieselbe Ursache, die weiter oben beschrieben ist und
-## wegen der der Zoom überhaupt auf 2 gesetzt wurde. Stufen wie „85 %" oder
-## „70 %" würden diesen Fehler zurückholen, und zwar sichtbar an jeder
-## Figurenkante. Deshalb gibt es drei ganze Stufen statt Prozentwerten:
-##
-##   1x   weit    40 x 22 Blöcke im Bild
-##   2x   normal  20 x 11 Blöcke
-##   3x   nah     13 x 7 Blöcke
-##
-## Mehr braucht es nicht, und ein stufenloses Zoomen gäbe es hier nur um den
-## Preis unsauberer Pixel.
 ## Zoomstufen — nur GERADE Werte.
 ##
 ## Die Figur wird mit doppelter Pixeldichte gezeichnet und mit Faktor 0,5
@@ -102,7 +73,6 @@ const CAMERA_ZOOM := 2.0
 ## Bildpunkte auf derselben Flaeche UND mehr Flaeche im Bild schliessen sich
 ## aus; „Normal" ist heute, was frueher „Normal" war.
 const ZOOM_STEPS := [2.0, 4.0, 6.0]
-const ZOOM_NAMES := ["Normal", "Nah", "Sehr nah"]
 const ZOOM_DEFAULT := 0        ## Index in ZOOM_STEPS
 
 static func zoom_of(step: int) -> float:
@@ -118,6 +88,15 @@ static func hash2(x: int, y: int) -> int:
 	var h := (x * 73856093) ^ (y * 19349663)
 	h = (h ^ (h >> 13)) * 1274126177
 	return absi(h ^ (h >> 16))
+
+## Sichtbarer Bereich, wenn die Kamera fuer ein Bild nicht da ist.
+##
+## Absichtlich KLEIN. Wer hier auf die ganze Welt zurueckfaellt, laesst
+## 4,2 Millionen Felder zeichnen — bei 2048 x 2048 Bloecken friert das Bild
+## dabei ein. Ein Bildschirm voll reicht: der Rueckfall gilt hoechstens ein
+## Bild lang, danach steht die Kamera wieder.
+static func fallback_view() -> Rect2:
+	return Rect2(Vector2.ZERO, Vector2(TILE * 40, TILE * 24))
 
 static func world_size_px() -> Vector2i:
 	return Vector2i(MAP_W * TILE, MAP_H * TILE)
