@@ -8,6 +8,11 @@ extends RefCounted
 
 enum Dir { DOWN, UP, SIDE }
 
+## Bein- und Armstellung je Laufbild. Oeffentlich, weil die Handfackel
+## denselben Werten folgen muss: schwingt der Arm und die Fackel nicht, haengt
+## sie beim Laufen sichtbar hinterher.
+const WALK_ARM: Array[int] = [0, 1, 0, -1]
+
 const W := 32
 const H := 48
 ## Wie tief die Figur beim Schwimmen einsinkt. player.gd verschiebt das Bild
@@ -24,8 +29,95 @@ const JUMP_CROUCH := 0
 const JUMP_RISE := 1
 const JUMP_FALL := 2
 
-## Wie viele Bilder die Flamme der Handfackel hat.
-const FLAME_FRAMES := 4
+## Wie viele Bilder die Flamme hat — der Handfackel wie der gesetzten.
+##
+## Vier waren zu wenig. Bei vier Bildern liest man den Takt: dieselbe Folge
+## viermal je Sekunde, und das Auge findet den Rhythmus. Feuer hat keinen.
+## Acht Bilder mit UNREGELMAESSIGEN Werten (siehe die Tabellen unten) sind der
+## kleinste Satz, bei dem die Wiederholung nicht mehr auffaellt.
+const FLAME_FRAMES := 8
+
+# --- Die Flamme ---------------------------------------------------------------
+#
+# Vier Farbbaender von aussen nach innen. Drei sind zu wenig — dann fehlt
+# entweder das Rot am Rand (die Flamme sieht aus wie eine gelbe Zunge) oder der
+# weisse Kern (sie sieht aus wie Orange mit Rand). Fuenf kann man auf sechs
+# Bildpunkten Breite nicht mehr unterscheiden.
+const FLAME_OUT := Color8(198, 56, 22)      ## Rand: rot
+const FLAME_MID := Color8(240, 128, 32)     ## orange
+const FLAME_IN := Color8(250, 198, 76)      ## gelb
+const FLAME_CORE := Color8(255, 244, 202)   ## Kern: weiss-gelb
+
+## Je Bild ein anderer Wert fuer Hoehe, Breite und Neigung der Spitze.
+##
+## Die Zahlen sind bewusst UNGEORDNET. Eine Folge, die auf- und wieder absteigt,
+## liest sich als Pulsieren — als atmete die Flamme. Feuer flackert aber
+## sprunghaft: mal zuckt es zweimal kurz hintereinander hoch, mal bleibt es
+## drei Bilder lang fast gleich.
+const FLAME_TALL: Array[float] = [1.00, 1.15, 0.90, 1.07, 0.86, 1.19, 0.98, 1.09]
+const FLAME_WIDE: Array[float] = [1.00, 0.93, 1.09, 0.96, 1.07, 0.89, 1.04, 0.95]
+const FLAME_LEAN: Array[float] = [0.0, -0.6, 0.4, 1.0, -0.2, -0.9, 0.6, 0.1]
+
+## In welchen Bildern ein Funke abgeht. Zwei von acht — mehr, und es sieht aus,
+## als spruehte die Fackel dauernd Funken.
+const FLAME_SPARK: Array[int] = [3, 6]
+
+## Zeichnet eine Flamme.
+##
+## Die Form ist kein Stapel Ellipsen mehr. Eine Flamme ist ein Tropfen mit
+## einer leckenden Spitze: unten am Docht schmal, auf halber Hoehe am
+## breitesten, nach oben auslaufend — und die Spitze biegt sich, waehrend der
+## Fuss stehen bleibt. Genau das macht `pow(1 - t, 1.8)` bei der Neigung: unten
+## fast null, oben voll.
+##
+## `cx`/`base_y` ist der Fusspunkt (die Stelle, an der die Flamme aus der
+## Wicklung tritt), `w`/`h` die Groesse in Bildpunkten.
+static func draw_flame(img: Image, cx: float, base_y: float, w: float, h: float,
+		frame: int) -> void:
+	var f := frame % FLAME_FRAMES
+	var hh: float = h * FLAME_TALL[f]
+	var ww: float = w * FLAME_WIDE[f]
+	var lean: float = FLAME_LEAN[f]
+	var rows := int(round(hh))
+	for i in rows:
+		# t: 0 an der Spitze, 1 am Fuss.
+		var t := float(i) / maxf(float(rows - 1), 1.0)
+		# Tropfenform. `pow(t, 1.3)` schiebt die breiteste Stelle nach UNTEN —
+		# eine Flamme ist ueber dem Docht am dicksten, nicht auf halber Hoehe.
+		# Der zweite Summand haelt den Fuss schmal, wo sie aus der Wicklung
+		# tritt. Ohne beides bekommt man einen Pilz.
+		var hw: float = ww * (sin(pow(t, 1.3) * PI) * 0.86 + t * 0.24)
+		if hw < 0.35:
+			continue
+		var mid: float = cx + lean * pow(1.0 - t, 1.8)
+		var y := int(round(base_y - float(rows - 1 - i)))
+		var x0 := int(floor(mid - hw))
+		var x1 := int(ceil(mid + hw))
+		for x in range(x0, x1 + 1):
+			var d: float = absf(float(x) + 0.5 - mid) / maxf(hw, 0.5)
+			if d > 1.05:
+				continue
+			Pixel.px(img, x, y, _flame_band(t, d))
+	if FLAME_SPARK.has(f):
+		# Ein einzelner Funke ueber der Spitze — losgeloest, damit man sieht,
+		# dass da etwas aufsteigt.
+		var sy := int(round(base_y - hh - 1.0 - float(f % 2)))
+		Pixel.px(img, int(round(cx + lean * 1.4)), sy, Color(FLAME_IN, 0.85))
+
+## Welches Farbband gilt an dieser Stelle?
+##
+## `t` ist die Hoehe (0 Spitze, 1 Fuss), `d` der Abstand von der Mittelachse
+## (0 Mitte, 1 Rand). Der Kern sitzt UNTEN in der Mitte: dort, wo die Flamme am
+## Docht sitzt, ist sie am heissesten. Die Spitze ist ganz aussen — sie ist der
+## Teil, der abkuehlt und verweht.
+static func _flame_band(t: float, d: float) -> Color:
+	if t > 0.58 and t < 0.90 and d < 0.30:
+		return FLAME_CORE
+	if t > 0.26 and d < 0.56:
+		return FLAME_IN
+	if d < 0.88:
+		return FLAME_MID
+	return FLAME_OUT
 
 ## -> {"idle": [dir][2], "walk": [dir][4], "swim": [dir][2], "jump": [dir][3],
 ##     "torch": [4], "shadow": Texture}
@@ -40,9 +132,8 @@ static func build() -> Dictionary:
 		i_frames.append(Pixel.tex(_frame(dir, 0, 1, 0)))
 		idle.append(i_frames)
 		var w_frames: Array[Texture2D] = []
-		var phases := [0, 1, 0, -1]
 		for f in 4:
-			w_frames.append(Pixel.tex(_frame(dir, phases[f], 1 if f % 2 == 1 else 0, phases[f])))
+			w_frames.append(Pixel.tex(_frame(dir, WALK_ARM[f], 1 if f % 2 == 1 else 0, WALK_ARM[f])))
 		walk.append(w_frames)
 		var s_frames: Array[Texture2D] = []
 		s_frames.append(Pixel.tex(_swim_frame(dir, 0)))
@@ -161,38 +252,135 @@ static func _jump_frame(dir: int, phase: int) -> Image:
 ## in jedem Bild komplett anders aussieht, flackert wie eine kaputte Leuchte.
 ## Die Fackel in der Hand.
 ##
-## Sie war vorher ein Stiel mit einer Flamme, gesetzt neben die Figur — und
-## genau so sah sie aus: als schwebte sie dort. Was gefehlt hat, ist die HAND.
-## Eine Faust um den Stiel kostet sechs Bildpunkte und macht aus zwei Dingen
-## nebeneinander ein Ding, das gehalten wird.
+## 11 x 20 Bildpunkte. Aufgebaut in der Reihenfolge, in der man sie sieht —
+## das ist hier keine Formsache, sondern der ganze Unterschied zwischen
+## „gehalten" und „danebengelegt":
 ##
-## Die Faust gehoert in dieses Bild und nicht in die Figur: sie muss mit der
-## Fackel mitwandern, wenn der Arm schwingt, und sie darf nur da sein, wenn
-## wirklich eine Fackel getragen wird.
+##   1. Handruecken   HINTER dem Stiel — die Flaeche, gegen die er gedrueckt wird
+##   2. Stiel         darueber, laeuft oben und unten aus der Faust heraus
+##   3. Finger        VOR dem Stiel, drei Glieder mit Fugen dazwischen
+##   4. Daumen        an der Lichtseite
+##   5. Wicklung      Leder um den Kopf
+##   6. Flamme        vor allem
+##
+## Nach Schritt 3 bleibt eine Spalte des Stiels zwischen Fingern und
+## Handruecken sichtbar (x = 6). Genau daran liest man, dass die Hand DARUM
+## greift und nicht DANEBEN liegt: es ist Haut davor, Holz in der Mitte, Haut
+## dahinter.
+##
+## Die Fackel liegt auf einer eigenen Ebene ueber der Figur (`z_index = 1` in
+## `player.gd`), damit sie sich mit der Hand bewegen kann, ohne dass jedes
+## Laufbild der Figur eine zweite Fassung mit Fackel braeuchte.
+const TORCH_W := 11
+const TORCH_H := 20
+
+## Wo in diesem Bild die greifende Hand sitzt. `player.gd` legt diesen Punkt
+## auf die Hand der Figur — deshalb steht er hier und nicht dort: wer die
+## Zeichnung aendert, verschiebt den Griff mit.
+const TORCH_GRIP := Vector2(5.0, 14.5)
+
+## Und wo die Flamme sitzt. Von hier geht das Licht aus, nicht von der Brust.
+const TORCH_FLAME := Vector2(5.0, 4.0)
+
+## Wo die greifende Hand IM FIGURENBILD sitzt (Mitte, Grundstellung).
+##
+## Diese Zahlen stehen genau einmal — hier. Vorher war die Fackelposition eine
+## eigene Tabelle in `player.gd`, von Hand eingestellt, und sie lag zwei Punkte
+## daneben: auf einem Bildschirmfoto sah man die Faust der Fackel NEBEN der
+## Hand der Figur stehen, mit einem Streifen Haut dazwischen. Genau deshalb
+## wirkte die Fackel angeklebt.
+##
+## Sie sind aus `_draw_body` abgelesen: die Hand ist ein 5 x 5 grosses Rechteck
+## bei `y + 10`, mit `y = top + 18` und `top = 4`.
+const HAND_AT := {
+	Dir.DOWN: Vector2(25.5, 34.5),   ## rechte Hand, im Schatten
+	Dir.UP: Vector2(6.5, 34.5),      ## linke Hand, im Licht
+	Dir.SIDE: Vector2(14.5, 34.5),   ## der sichtbare Arm vor dem Koerper
+}
+
+## Wohin das Fackelbild gehoert, damit sein Griff auf der Hand liegt.
+##
+## Ergebnis in Ortskoordinaten der Figur: Nullpunkt zwischen den Fuessen,
+## negatives y nach oben. `arm` und `bob` sind dieselben Werte, mit denen das
+## Figurenbild gezeichnet wurde — dadurch wandert die Fackel mit dem Arm.
+static func torch_offset(dir: int, arm: int, bob: int, flip: bool) -> Vector2:
+	return hand_offset(dir, arm, bob, flip) - _grip_offset(TORCH_GRIP, flip)
+
+## Wo die Flamme steht — dieselbe Rechnung, nur mit dem anderen Ankerpunkt.
+static func torch_flame_offset(dir: int, arm: int, bob: int, flip: bool) -> Vector2:
+	return hand_offset(dir, arm, bob, flip) \
+		+ _grip_offset(TORCH_FLAME, flip) - _grip_offset(TORCH_GRIP, flip)
+
+## Wo die greifende Hand in DIESEM Bild steht, in Ortskoordinaten der Figur.
+##
+## Eigene Funktion, weil zwei Dinge sie brauchen und keines von beiden die
+## Formel noch einmal aufschreiben soll: die Fackel setzt ihren Griff darauf,
+## und der Selbsttest prueft, dass er wirklich dort gelandet ist.
+static func hand_offset(dir: int, arm: int, bob: int, flip: bool) -> Vector2:
+	var hand: Vector2 = HAND_AT[dir]
+	# Beim Blick nach oben greift die LINKE Hand, und die schwingt gegenlaeufig.
+	hand.y += float(bob) * 2.0 + float(arm) * 2.0 * (-1.0 if dir == Dir.UP else 1.0)
+	var local := Vector2(hand.x - W * 0.5, hand.y - H)
+	if flip:
+		local.x = -local.x
+	return local
+
+## Versatz eines Bildpunktes im Fackelbild gegenueber dessen Mitte.
+##
+## Das Bild ist mittig gesetzt, deshalb zaehlt der Abstand zur Mitte und nicht
+## zur Ecke. Beim Spiegeln kippt er mit: der Griff sitzt eine halbe Spalte
+## links der Mitte, gespiegelt eine halbe rechts.
+static func _grip_offset(point: Vector2, flip: bool) -> Vector2:
+	var dx := point.x - float(TORCH_W) * 0.5
+	return Vector2(-dx if flip else dx, point.y - float(TORCH_H) * 0.5)
+
 static func _torch_frame(f: int) -> Image:
-	var img := Pixel.make(9, 15)
-	# Stiel
-	Pixel.rect(img, 4, 7, 2, 8, Palette.WOOD_DARK)
-	Pixel.vline(img, 4, 7, 8, Palette.WOOD)
-	Pixel.rect(img, 3, 5, 4, 3, Palette.WOOD_LIGHT.darkened(0.25))
-	Pixel.rect(img, 3, 5, 4, 1, Palette.WOOD_LIGHT)
-	# Faust um den Stiel, unter der Wicklung. Licht von oben links.
-	Pixel.rect(img, 3, 9, 4, 4, Palette.SKIN)
-	Pixel.rect(img, 3, 9, 1, 4, Palette.SKIN.lightened(0.12))
-	Pixel.rect(img, 6, 9, 1, 4, Palette.SKIN_SHADE)
-	# Zwei Fingerfugen: ohne sie ist die Faust ein Klotz.
-	Pixel.rect(img, 4, 10, 2, 1, Color(Palette.SKIN_SHADE, 0.7))
-	Pixel.rect(img, 4, 12, 2, 1, Color(Palette.SKIN_SHADE, 0.7))
-	# Flamme: je Bild eine andere Höhe und Breite.
-	var tall: Array = [0.0, 1.0, 0.4, 1.4]
-	var wide: Array = [0.0, -0.3, 0.4, -0.2]
-	var h: float = 3.6 + float(tall[f % FLAME_FRAMES])
-	var w: float = 2.6 + float(wide[f % FLAME_FRAMES])
-	var cy: float = 4.2 - h * 0.25
-	Pixel.ellipse(img, 4.5, cy, w, h, Color8(214, 84, 28))
-	Pixel.ellipse(img, 4.5, cy + 0.5, w * 0.62, h * 0.66, Color8(244, 156, 44))
-	Pixel.ellipse(img, 4.5, cy + 0.9, w * 0.34, h * 0.38, Color8(252, 224, 140))
+	var img := Pixel.make(TORCH_W, TORCH_H)
+
+	# 1. Handruecken HINTER dem Stiel. Nur drei Spalten breit und deutlich
+	#    dunkler als die Finger: er liegt im Schatten der eigenen Hand, und
+	#    ohne diesen Abstand im Tonwert verschmilzt die ganze Faust zu einem
+	#    hellen Klumpen.
+	Pixel.rect(img, 5, 12, 3, 6, Palette.SKIN_SHADE.darkened(0.30))
+
+	# 2. Stiel. Drei Spalten: Licht, Mitte, Schatten — Licht von oben links.
+	Pixel.vline(img, 4, 8, 12, Palette.WOOD_LIGHT)
+	Pixel.vline(img, 5, 8, 12, Palette.WOOD)
+	Pixel.vline(img, 6, 8, 12, Palette.WOOD_DARK)
+	# Maserung: zwei kurze Kerben. Ohne sie ist der Stiel ein Balken.
+	Pixel.px(img, 5, 18, Palette.WOOD_DARK)
+	Pixel.px(img, 4, 11, Palette.WOOD)
+
+	# 3. Finger VOR dem Stiel — drei Glieder mit dunkler Fuge dazwischen.
+	#    Sie decken die Spalten 4 und 5 des Stiels; Spalte 6 bleibt sichtbar.
+	for k in 3:
+		var fy := 12 + k * 2
+		Pixel.rect(img, 3, fy, 3, 2, Palette.SKIN)
+		Pixel.rect(img, 3, fy, 3, 1, Palette.SKIN.lightened(0.10))
+		Pixel.rect(img, 3, fy + 1, 3, 1, Palette.SKIN_SHADE.darkened(0.22))
+
+	# 4. Daumen an der Lichtseite, eine Spalte breit.
+	Pixel.rect(img, 2, 13, 1, 3, Palette.SKIN.lightened(0.14))
+	Pixel.px(img, 2, 13, Palette.SKIN.lightened(0.26))
+
+	# 5. Wicklung: Leder um den Kopf. Breiter als der Stiel, damit sie als
+	#    Umwicklung liest und nicht als dickere Stelle im Holz — und in einem
+	#    eigenen Ton, nicht nur dunkleres Holz.
+	Pixel.rect(img, 3, 7, 5, 4, Color8(74, 52, 38))
+	Pixel.rect(img, 3, 7, 5, 1, Color8(112, 82, 56))
+	Pixel.px(img, 3, 8, Color8(96, 70, 48))
+	# Schnur quer darueber.
+	Pixel.px(img, 4, 9, Color8(52, 36, 26))
+	Pixel.px(img, 5, 9, Color8(52, 36, 26))
+	Pixel.px(img, 6, 9, Color8(52, 36, 26))
+	Pixel.px(img, 7, 8, Color8(48, 34, 24))
+
+	# Umriss NUR um Holz und Haut. Die Flamme bekommt keinen — ein schwarzer
+	# Rand um Feuer laesst es wie einen Aufkleber aussehen.
 	Pixel.outline(img, Palette.OUTLINE)
+
+	# 6. Flamme, zuletzt und ohne Umriss.
+	draw_flame(img, TORCH_FLAME.x, 7.0, 2.1, 9.0, f)
 	return img
 
 ## Bodenschatten: drei Ellipsen ineinander, von aussen nach innen dunkler.

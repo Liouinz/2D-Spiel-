@@ -118,7 +118,7 @@ const LIGHT_LIFT := 18.0
 ## KLEINER als eine gesetzte Welt-Fackel (96): die Figur trägt eine Handfackel,
 ## keine Laterne auf einem Mast. Vorher war es umgekehrt, und eine gesetzte
 ## Fackel leuchtete weniger weit als die Figur, die daneben stand.
-const PLAYER_RADIUS := 76.0
+const PLAYER_RADIUS := 92.0
 
 ## Kantenlänge der gebackenen Scheintextur. 128 reicht: sie wird ohnehin weich
 ## skaliert, und ein Verlauf hat keine Details, die eine höhere Auflösung
@@ -146,11 +146,41 @@ const MIN_VISIBLE := 0.02
 ## 0,50 plus 0,50 ergab wieder den weissen Fleck. Was zaehlt, ist die SUMME in
 ## der Mitte — sie muss unter etwa 0,55 bleiben, sonst laufen alle drei Kanaele
 ## in die Saettigung und aus dem warmen Licht wird Weiss.
-const GLOW_PEAK := 0.38
+const GLOW_PEAK := 0.42
 
 ## Wie weit der helle Kern des Fackelscheins reicht, als Anteil am aeusseren
 ## Schein. Klein genug, dass er die Figur beleuchtet statt die halbe Wiese.
 const CORE_SHARE := 0.40
+
+## Die Farbe von Fackellicht: #FFAF64.
+##
+## Warmes Orange, nicht Gelb. Gelb ueber einer blauen Nacht ergibt Gruen — der
+## Blauanteil der Umgebung mischt sich hinein, und uebrig bleibt ein fahler
+## Ton. Je weniger Blau im Licht steckt, desto waermer bleibt der Kegel.
+const TORCH_LIGHT := Color8(255, 175, 100)
+
+# --- Flackern ------------------------------------------------------------------
+#
+# Wie stark, wie oft, wie schnell. Getrennte Zahlen, weil sie Verschiedenes
+# tun: SPAN ist die Auslenkung, MIN/MAX bestimmen, wie unregelmaessig es wirkt
+# (gleiche Werte hier ergaeben wieder einen Takt), SPEED, wie hart der Sprung
+# ist. Zu hart, und es blinkt; zu weich, und es atmet.
+const FLICKER_SPAN := 0.16       ## +/- 16 % bei voller Staerke
+const FLICKER_MIN := 0.05        ## kuerzester Halt auf einem Wert, in Sekunden
+const FLICKER_MAX := 0.19        ## laengster
+const FLICKER_SPEED := 15.0      ## wie schnell auf das Ziel zugelaufen wird
+
+## Wie stark der Radius mitatmet — halb so stark wie die Helligkeit. Voll
+## mitzupulsieren sieht aus, als wuerde die Fackel gezoomt.
+const FLICKER_RADIUS := 0.5
+
+# --- Glut ----------------------------------------------------------------------
+
+## Wie viele Funken gleichzeitig ueber einer Flamme stehen.
+const EMBER_COUNT := 4
+const EMBER_RISE := 15.0         ## Weltpixel je Sekunde nach oben
+const EMBER_LIFE := 1.15         ## Sekunden, bis ein Funke verloescht
+const EMBER_DRIFT := 5.0         ## seitliches Taumeln
 
 var player: Node2D
 var camera: Camera2D
@@ -159,6 +189,13 @@ var _modulate: CanvasModulate
 var _night: CanvasLayer
 var _vignette: TextureRect
 var _blue: ColorRect
+var _embers: Embers
+
+## Wie viele Funken im letzten Bild gezeichnet wurden — nur Messung fuer den
+## Selbsttest. Eine Wirkung, die man nicht zaehlen kann, kann man auch nicht
+## pruefen; und „ich sehe sie doch" ist bei einem Bildpunkt kein Beleg.
+var embers_drawn: int = 0
+var _rng := RandomNumberGenerator.new()
 var _glow_root: Node2D
 var _glow_tex: ImageTexture
 var _sources: Array[LightSource] = []
@@ -191,10 +228,47 @@ class LightSource:
 	var sprite: Sprite2D
 	var phase: float = 0.0
 
+	## Versatz gegenueber `node`. Ersetzt `lift` fuer Quellen, die einem Knoten
+	## folgen: die Handfackel sitzt nicht ueber der Figur, sondern seitlich
+	## davon an der Flamme, und dieser Punkt wandert mit dem Arm.
+	var offset := Vector2.ZERO
+
+	## Flackern als ZUFALLSGANG statt als Schwingung.
+	##
+	## Vorher waren es zwei Sinus mit ungleicher Frequenz. Das ist besser als
+	## einer, aber es bleibt periodisch — und lange genug angesehen findet das
+	## Auge den Takt. Ein Feuer hat keinen: es springt auf einen neuen Wert und
+	## bleibt unterschiedlich lange dort. Genau das steht hier.
+	var flick: float = 1.0      ## aktueller Faktor
+	var flick_to: float = 1.0   ## Ziel, auf das zugelaufen wird
+	var flick_left: float = 0.0 ## Sekunden, bis ein neues Ziel gewuerfelt wird
+
+	## Glut, die aufsteigt. Leer, wenn diese Quelle keine spruehen soll.
+	var embers: Array[Dictionary] = []
+
 	func world_pos() -> Vector2:
 		if is_instance_valid(node):
-			return node.global_position - Vector2(0.0, lift)
+			return node.global_position + offset
 		return pos - Vector2(0.0, lift)
+
+## Aufsteigende Glut.
+##
+## Ein einziger Knoten zeichnet die Funken ALLER Feuer. Das ist kein Geiz,
+## sondern die Stelle, an der die Information schon liegt: der Lichtverwalter
+## kennt jede Quelle, ihre Weltposition und — wichtiger — ob sie gerade im Bild
+## ist. Ein eigener Partikelknoten je Fackel muesste all das noch einmal
+## wissen, und hundert gesetzte Fackeln waeren hundert Knoten.
+##
+## Fortbewegt werden die Funken in `_update_glows`, wo ohnehin ueber die
+## Quellen gelaufen wird. Hier wird nur gezeichnet.
+class Embers:
+	extends Node2D
+	var owner_light: LightManager
+
+	func _draw() -> void:
+		if not is_instance_valid(owner_light):
+			return
+		owner_light.draw_embers(self)
 
 func _ready() -> void:
 	_modulate = CanvasModulate.new()
@@ -238,11 +312,20 @@ func _ready() -> void:
 	_night.add_child(_glow_root)
 	_glow_tex = _glow_texture()
 
+	# Die Glut liegt in der WELT, nicht auf der Bildschirmebene: sie steigt von
+	# einem Ort auf und muss mit der Kamera wandern. z_index 2 haelt sie ueber
+	# Figur (0) und Handfackel (1).
+	_embers = Embers.new()
+	_embers.name = "Glut"
+	_embers.owner_light = self
+	_embers.z_index = 2
+	add_child(_embers)
+
 	# Leichtes Flackern: eine Fackel in der Hand steht nicht still. 0,45 ist
 	# spürbar, ohne dass die halbe Szene mitzuckt.
-	_player_light = add_source(PLAYER_RADIUS, Color(1.0, 0.72, 0.38), 1.0, 0.45)
+	_player_light = add_source(PLAYER_RADIUS, TORCH_LIGHT, 1.0, 0.45)
 	_player_light.node = player
-	_player_light.lift = LIGHT_LIFT
+	_player_light.offset = Vector2(0.0, -LIGHT_LIFT)
 
 	# Ein zweiter, kleiner Schein direkt an der Figur.
 	#
@@ -255,9 +338,12 @@ func _ready() -> void:
 	# Er flackert mit eigener Phase. Zwei gleich schwingende Scheine waeren ein
 	# Blinker; zwei ungleiche sind ein Feuer.
 	_player_core = add_source(PLAYER_RADIUS * CORE_SHARE, Color(1.0, 0.84, 0.56),
-		0.40, 0.55)
+		0.32, 0.55)
 	_player_core.node = player
-	_player_core.lift = LIGHT_LIFT
+	_player_core.offset = Vector2(0.0, -LIGHT_LIFT)
+	# Die Glut haengt am Kern, nicht am weiten Schein: beide sitzen am selben
+	# Punkt, aber zweimal Funken waeren doppelt so viele.
+	add_embers(_player_core)
 
 	Graphics.applied.connect(_apply_mode)
 	_apply_mode()
@@ -299,6 +385,18 @@ func remove_source(s: LightSource) -> void:
 func source_count() -> int:
 	return _sources.size()
 
+## Setzt beide Scheine der Figur auf einen Punkt relativ zu ihr.
+##
+## Die Figur weiss, wo ihre Hand gerade ist und wo darin die Flamme sitzt; der
+## Lichtverwalter weiss es nicht und soll es auch nicht ausrechnen muessen.
+## Deshalb schiebt die Figur den Punkt herein, statt dass hier eine zweite
+## Fassung derselben Rechnung stuende.
+func set_player_anchor(at: Vector2) -> void:
+	if _player_light != null:
+		_player_light.offset = at
+	if _player_core != null:
+		_player_core.offset = at
+
 ## Der Schein der Figur — für Anzeige und Selbsttest.
 func player_glow() -> Sprite2D:
 	return _player_light.sprite if _player_light != null else null
@@ -323,7 +421,12 @@ func _glow_texture() -> ImageTexture:
 			# Etwas flacher als quadratisch: die Mitte bleibt weich, statt in
 			# einem hellen Kern zusammenzulaufen. Linear sähe dagegen aus wie
 			# ein Scheinwerferkegel mit harter Kante.
-			img.set_pixel(x, y, Color(1, 1, 1, pow(t, 1.7)))
+			#
+			# Von 1,7 auf 1,45 heruntergenommen, als das Licht von der Brust an
+			# die Flamme wanderte: die Quelle sitzt seither seitlich neben der
+			# Figur, und mit dem steileren Abfall lag ihr halber Koerper schon
+			# im Auslauf. Flacher heisst hier weiter, nicht heller.
+			img.set_pixel(x, y, Color(1, 1, 1, pow(t, 1.45)))
 	return Pixel.tex(img)
 
 ## Die Sichtgrenze: aussen dunkel, in der Mitte offen. Einmal gebacken.
@@ -404,17 +507,22 @@ func _refresh(delta: float = 0.0) -> void:
 ## Kameraposition UND Zoom, es gibt hier also keine zweite Stelle, an der eine
 ## Zoomstufe gepflegt werden müsste.
 func _update_glows(delta: float) -> void:
+	var any_embers := false
 	var to_screen := get_viewport().get_canvas_transform()
 	var zoom: float = camera.zoom.x if is_instance_valid(camera) else 1.0
 	var view := Rect2(Vector2.ZERO, Vector2(get_viewport().get_visible_rect().size))
 	for s: LightSource in _sources:
 		var energy := _dark * s.strength
 		if s.flicker > 0.0:
-			s.phase += delta * 7.3
-			# Zwei Frequenzen: eine einzelne Schwingung sieht aus wie ein
-			# Blinker, zwei ungleiche wie eine Flamme.
-			var f := sin(s.phase) * 0.6 + sin(s.phase * 2.7 + 1.1) * 0.4
-			energy *= 1.0 + f * 0.11 * s.flicker
+			# Zufallsgang: alle 0,05 bis 0,19 Sekunden ein neues Ziel, dann
+			# schnell darauf zu. Weder die Hoehe der Spruenge noch ihr Abstand
+			# wiederholt sich — das ist der Unterschied zu einer Schwingung.
+			s.flick_left -= delta
+			if s.flick_left <= 0.0:
+				s.flick_to = 1.0 + _rng.randf_range(-FLICKER_SPAN, FLICKER_SPAN) * s.flicker
+				s.flick_left = _rng.randf_range(FLICKER_MIN, FLICKER_MAX)
+			s.flick = lerpf(s.flick, s.flick_to, clampf(delta * FLICKER_SPEED, 0.0, 1.0))
+			energy *= s.flick
 		var screen: Vector2 = to_screen * s.world_pos()
 		var r := s.radius * zoom
 		# Ausserhalb des Bildes wird gar nicht gezeichnet. Eine Fackel drei
@@ -426,8 +534,70 @@ func _update_glows(delta: float) -> void:
 		if not show:
 			continue
 		s.sprite.position = screen
-		s.sprite.scale = Vector2.ONE * (r * 2.0 / float(GLOW_TEX))
+		# Der Radius atmet mit, halb so stark wie die Helligkeit.
+		var breathe := 1.0 + (s.flick - 1.0) * FLICKER_RADIUS
+		s.sprite.scale = Vector2.ONE * (r * breathe * 2.0 / float(GLOW_TEX))
 		s.sprite.modulate = Color(s.color, clampf(energy, 0.0, 1.0) * GLOW_PEAK)
+		if not s.embers.is_empty():
+			_step_embers(s, delta)
+			any_embers = true
+	if any_embers and is_instance_valid(_embers):
+		_embers.queue_redraw()
+
+# --- Glut ---------------------------------------------------------------------
+
+## Meldet, dass diese Quelle Funken spruehen soll.
+func add_embers(s: LightSource) -> void:
+	s.embers.clear()
+	for i in EMBER_COUNT:
+		# Beim Anlegen ueber die Lebensdauer verteilt, sonst starten alle vier
+		# gemeinsam und steigen als Kette auf.
+		s.embers.append(_new_ember(float(i) / float(EMBER_COUNT) * EMBER_LIFE))
+
+func _new_ember(age: float = 0.0) -> Dictionary:
+	return {
+		"age": age,
+		"x": _rng.randf_range(-1.6, 1.6),      ## Startversatz an der Flamme
+		"sway": _rng.randf_range(-1.0, 1.0),   ## Richtung des Taumelns
+		"rate": _rng.randf_range(0.78, 1.24),  ## wie schnell dieser Funke steigt
+	}
+
+## Ein Schritt fuer die Funken EINER Quelle. Aufgerufen nur, wenn sie im Bild
+## ist — Glut ueber einer Fackel drei Chunks weiter kostet nichts.
+func _step_embers(s: LightSource, delta: float) -> void:
+	for i in s.embers.size():
+		var e: Dictionary = s.embers[i]
+		e["age"] = float(e["age"]) + delta
+		if float(e["age"]) >= EMBER_LIFE:
+			s.embers[i] = _new_ember()
+
+## Zeichnet die Funken aller Quellen. Weltkoordinaten.
+##
+## Ein Funke ist EIN Bildpunkt. Zwei waeren ein Klotz, und an einem Feuer sieht
+## man ohnehin nur den Lichtpunkt, nicht die Form. Er wird nach oben hin
+## schwaecher und kuehlt von Gelb nach Rot ab — das ist die ganze Erzaehlung:
+## etwas Heisses steigt auf und erlischt.
+func draw_embers(on: CanvasItem) -> void:
+	embers_drawn = 0
+	for s: LightSource in _sources:
+		if s.embers.is_empty() or not is_instance_valid(s.sprite) or not s.sprite.visible:
+			continue
+		var base := s.world_pos()
+		for e: Dictionary in s.embers:
+			var t: float = float(e["age"]) / EMBER_LIFE
+			if t >= 1.0:
+				continue
+			var rise: float = EMBER_RISE * float(e["rate"]) * float(e["age"])
+			var sway: float = sin(float(e["age"]) * 3.4 + float(e["sway"]) * 6.0) \
+				* EMBER_DRIFT * t
+			var p := (base + Vector2(float(e["x"]) + sway, -rise)).round()
+			# Verloescht nicht linear: die letzten Zehntel gehen schnell.
+			var a := pow(1.0 - t, 1.5) * _dark
+			if a <= 0.03:
+				continue
+			var col := ActorArt.FLAME_IN.lerp(ActorArt.FLAME_OUT, t)
+			on.draw_rect(Rect2(p, Vector2.ONE), Color(col, a), true)
+			embers_drawn += 1
 
 # --- Auskunft -----------------------------------------------------------------
 

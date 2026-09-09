@@ -14,14 +14,21 @@ extends Node2D
 ## nicht bezahlbar gewesen. Ein additives Sprite kostet ein Viereck — und
 ## ausserhalb des Bildes gar nichts, siehe `LightManager._update_glows`.
 
-## Radius des Scheins in Weltpixeln. GRÖSSER als die Handfackel der Figur (76):
+## Radius des Scheins in Weltpixeln. GRÖSSER als die Handfackel der Figur (92):
 ## eine gesetzte Fackel steht fest und leuchtet einen Platz aus, die Figur trägt
 ## nur ein Licht mit sich.
-const RADIUS := 96.0
+const RADIUS := 120.0
 
 ## Bilder der Flamme. Eine Fackel, die stillsteht, ist kein Feuer.
-const FLAMES := 4
-const FLAME_FPS := 7.0
+##
+## Dieselbe Zahl wie bei der Handfackel und dieselbe Zeichnung
+## (`ActorArt.draw_flame`) — zwei Feuer im selben Bild, die verschieden
+## flackern, sehen aus wie zwei verschiedene Materialien.
+const FLAMES := ActorArt.FLAME_FRAMES
+
+## Etwas langsamer als die Handfackel (11): eine Fackel im Halter steht still,
+## eine in der Hand wird bewegt und flackert dadurch staerker.
+const FLAME_FPS := 9.0
 
 ## Warmes Feuer, deutlich röter als der Schein der Figur.
 const COLOR := Color(1.0, 0.76, 0.42)
@@ -77,6 +84,7 @@ func _add(cell: Vector2i) -> void:
 		var src := light.add_source(RADIUS, COLOR, 0.9, 1.0)
 		# Der Schein sitzt an der Flamme, nicht am Fuss des Stiels.
 		src.pos = Vector2(cell) * Config.TILE + Vector2(Config.TILE * 0.5, 4.0)
+		light.add_embers(src)
 		_lights[cell] = src
 	if map != null and not map.torches.has(cell):
 		map.torches.append(cell)
@@ -120,33 +128,36 @@ func _view() -> Rect2:
 		- get_viewport_rect().size / cam.zoom * 0.5,
 		get_viewport_rect().size / cam.zoom).grow(Config.TILE * 2)
 
-## Eine kleine Fackel: Stiel, Wicklung, Flamme.
+## Eine gesetzte Fackel: Stiel, Wicklung, Flamme.
 ##
-## 10 x 20 Bildpunkte — schmaler als ein Feld, damit sie danebensteht statt es
-## zu füllen. Licht von oben links wie überall sonst: die linke Seite des
-## Stiels ist heller.
+## 10 x 22 Bildpunkte — hoeher und kraeftiger als die Handfackel (11 x 20, aber
+## davon nur ein Drittel Stiel). Eine gesetzte Fackel steckt in der Erde und
+## ragt heraus; eine in der Hand ist ein Stueck Holz, das jemand haelt.
+##
+## Sie ist schmaler als ein Feld, damit sie danebensteht statt es zu fuellen.
+## Licht von oben links wie ueberall sonst.
 static func _torch_image(f: int = 0) -> Image:
-	var img := Pixel.make(10, 20)
-	var wood := Palette.WOOD_DARK
-	# Stiel
-	Pixel.rect(img, 4, 9, 3, 11, wood)
-	Pixel.vline(img, 4, 9, 11, Palette.WOOD)
-	# Wicklung
-	Pixel.rect(img, 3, 7, 5, 3, Palette.WOOD_LIGHT.darkened(0.25))
-	Pixel.rect(img, 3, 7, 5, 1, Palette.WOOD_LIGHT)
-	# Flamme: aussen dunkelrot, innen gelb, ganz innen fast weiss. Je Bild eine
-	# andere Höhe, Breite und Neigung — das ist das Flackern.
-	var tall: Array = [0.0, 1.1, 0.4, 1.5]
-	var wide: Array = [0.0, -0.4, 0.5, -0.2]
-	var lean: Array = [0.0, -0.4, 0.3, 0.5]
-	var i := f % FLAMES
-	var h: float = 5.0 + float(tall[i])
-	var w: float = 4.0 + float(wide[i])
-	var cx: float = 5.0 + float(lean[i])
-	var cy: float = 4.4 - h * 0.16
-	Pixel.ellipse(img, cx, cy, w, h, Color8(196, 74, 26))
-	Pixel.ellipse(img, cx, cy + 0.6, w * 0.68, h * 0.70, Color8(240, 148, 40))
-	Pixel.ellipse(img, cx, cy + 1.1, w * 0.38, h * 0.42, Color8(252, 220, 130))
-	Pixel.px(img, int(cx), int(cy + 1.0), Color8(255, 248, 214))
+	var img := Pixel.make(10, 22)
+
+	# Stiel, drei Spalten. Unten dunkler: dort steckt er im Boden.
+	Pixel.vline(img, 4, 9, 13, Palette.WOOD_LIGHT)
+	Pixel.vline(img, 5, 9, 13, Palette.WOOD)
+	Pixel.vline(img, 6, 9, 13, Palette.WOOD_DARK)
+	Pixel.rect(img, 4, 20, 3, 2, Palette.WOOD_DARK.darkened(0.30))
+	# Maserung
+	Pixel.px(img, 5, 14, Palette.WOOD_DARK)
+	Pixel.px(img, 4, 17, Palette.WOOD)
+
+	# Wicklung: derselbe Lederton wie an der Handfackel.
+	Pixel.rect(img, 3, 6, 5, 5, Color8(74, 52, 38))
+	Pixel.rect(img, 3, 6, 5, 1, Color8(112, 82, 56))
+	Pixel.px(img, 3, 7, Color8(96, 70, 48))
+	for x in range(4, 7):
+		Pixel.px(img, x, 9, Color8(52, 36, 26))
+	Pixel.px(img, 7, 7, Color8(48, 34, 24))
+
 	Pixel.outline(img, Palette.OUTLINE)
+
+	# Flamme zuletzt und ohne Umriss — etwas groesser als die der Handfackel.
+	ActorArt.draw_flame(img, 5.0, 6.0, 2.2, 9.5, f)
 	return img

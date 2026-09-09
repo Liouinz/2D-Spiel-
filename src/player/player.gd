@@ -40,18 +40,14 @@ const LAND_TIME := 0.14
 var light: LightManager        ## von World gesetzt; wird nur gelesen
 var _torch: Sprite2D
 var _torch_time: float = 0.0
-const TORCH_FPS := 9.0
+## Wo die Hand im gerade gezeichneten Figurenbild steht — Armschwung und
+## Auf-und-ab. Die Fackel folgt beidem.
+var _hand_arm: int = 0
+var _hand_bob: int = 0
 
-## Wo die Fackel je Blickrichtung in der Hand sitzt. In Bildpunkten, vom
-## Standpunkt der Figur aus gerechnet.
-## Die Hand der Figur liegt auf Gürtelhöhe, nicht auf Schulterhöhe: der Griff
-## der Fackel gehört dorthin, die Flamme steht darüber. Das Bild ist mittig
-## gesetzt und 15 Punkte hoch, der Griff sitzt also 7 Punkte unter dem Anker.
-const TORCH_AT := {
-	ActorArt.Dir.DOWN: Vector2(11, -18),
-	ActorArt.Dir.UP: Vector2(-11, -20),
-	ActorArt.Dir.SIDE: Vector2(9, -18),
-}
+## 11 statt 9. Der Auftrag nennt 10 bis 12 fuer organisches Flackern; darunter
+## sieht man die einzelnen Bilder, darueber verschwimmt die Form.
+const TORCH_FPS := 11.0
 
 ## Ab welcher Dunkelheit sie hervorgeholt wird. Nicht bei jedem Wölkchen —
 ## erst, wenn es wirklich dämmert.
@@ -162,16 +158,39 @@ func _update_torch(delta: float) -> void:
 	if _torch.visible != show:
 		_torch.visible = show
 	if not show:
+		# Ohne Fackel gibt es keine Flamme, an der das Licht haengen koennte —
+		# es faellt auf die Brust zurueck. Sichtbar ist das nie (ohne Fackel
+		# ist es entweder hell oder die Figur schwimmt), aber ein Anker, der
+		# auf einer geloeschten Flamme stehen bleibt, ist eine Falle.
+		if is_instance_valid(light):
+			light.set_player_anchor(Vector2(0.0, -LightManager.LIGHT_LIFT))
 		return
 	_torch_time += delta * TORCH_FPS
 	var flames: Array = _frames["torch"]
 	_torch.texture = flames[int(_torch_time) % flames.size()]
-	var at: Vector2 = TORCH_AT[_dir]
-	if _flip:
-		at.x = -at.x
 	_torch.flip_h = _flip
 	# Im Sprung wandert sie mit der Figur nach oben.
-	_torch.position = at - Vector2(0.0, lift())
+	var up := Vector2(0.0, lift())
+	_torch.position = ActorArt.torch_offset(_dir, _hand_arm, _hand_bob, _flip) - up
+
+	# Das Licht sitzt an der FLAMME, nicht an der Brust.
+	#
+	# Vorher hing es an einem festen Punkt 18 Punkte ueber den Fuessen — also
+	# in der Mitte der Figur. Der Lichtkegel ging damit vom Bauch aus, waehrend
+	# das Feuer daneben in der Hand brannte. Jetzt folgt die Quelle derselben
+	# Rechnung wie das Bild: wandert die Hand, wandert das Licht.
+	if is_instance_valid(light):
+		light.set_player_anchor(
+			ActorArt.torch_flame_offset(_dir, _hand_arm, _hand_bob, _flip) - up)
+
+## Arm- und Auf-und-ab-Stellung des gerade gezeichneten Bildes.
+##
+## Oeffentlich fuer den Selbsttest: er prueft, dass der Griff der Fackel auf der
+## Hand liegt, und dafuer muss er wissen, in welcher Stellung die Figur gerade
+## steht. Ohne das rechnet er gegen die Ruhestellung und schlaegt an, sobald das
+## Atem-Bild dran ist — was einmal genau so passiert ist.
+func hand_pose() -> Vector2i:
+	return Vector2i(_hand_arm, _hand_bob)
 
 ## Kielwellen hinter der Figur, solange sie sich im Wasser bewegt.
 ##
@@ -250,6 +269,11 @@ func _update_sprite(speed: float) -> void:
 	var set_name := "swim" if _swimming else ("walk" if moving else "idle")
 	var frames: Array = _frames[set_name][_dir]
 	var idx := int(_anim_time) % frames.size()
+	# Dieselben Werte, mit denen dieses Bild gezeichnet wurde — die Fackel
+	# braucht sie, um an der Hand zu bleiben.
+	_hand_arm = ActorArt.WALK_ARM[idx] if set_name == "walk" else 0
+	_hand_bob = (1 if idx % 2 == 1 else 0) if set_name == "walk" else \
+		(idx if set_name == "idle" else 0)
 	# Sprung und Landung haben eigene Stellungen. Ohne sie wäre der Sprung
 	# dasselbe Standbild, nur weiter oben — und genau so sah er auch aus.
 	if _jump_time >= 0.0 or _land_time > 0.0:
