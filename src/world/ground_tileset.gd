@@ -181,6 +181,33 @@ func _build_table() -> void:
 ## Helligkeitsstufe und Variante einer Kachel — frueher einmal ueber die ganze
 ## Karte vorberechnet, jetzt bei Bedarf. Dieselbe Formel, damit sich am
 ## Aussehen nichts aendert.
+## Wie tief liegt dieses Wasserfeld?
+##
+## 0 = am Ufer, 1 = eine Kachel davon entfernt, 2 = draussen. Daraus wird die
+## Helligkeitsstufe der Wasserkachel: aussen hell, in der Mitte dunkel — die
+## Tiefenwirkung, die eine Pfuetze von einem See unterscheidet.
+##
+## Stufe 2 wird NICHT ueber den vollen 5 x 5 Umkreis geprueft (24 Nachbarn je
+## Wasserfeld waeren beim Nachladen eines Chunks spuerbar), sondern nur ueber
+## die vier Felder in zwei Schritten Abstand. Das ist eine Naeherung: eine
+## schmale diagonale Bucht bekommt vielleicht eine Stufe zu viel. Auf dem
+## Bildschirm sieht man den Unterschied nicht, im Ladebalken schon.
+func water_depth(map: MapData, x: int, y: int, ring: Array) -> int:
+	for t: int in ring:
+		if t != MapData.Tile.WATER:
+			return 0
+	if not (map.is_water(x, y - 2) and map.is_water(x, y + 2)
+			and map.is_water(x - 2, y) and map.is_water(x + 2, y)):
+		return 1
+	return 2
+
+## Die Kachelnummer eines Wasserfeldes: Stufe aus der Tiefe, Variante aus dem
+## Streuwert. Beim Wasser ersetzt die Tiefe das Rauschen — sonst laegen helle
+## und dunkle Flecken quer ueber den See, statt der Kuestenlinie zu folgen.
+func water_variant(map: MapData, x: int, y: int, ring: Array) -> int:
+	return water_depth(map, x, y, ring) * TileArt.VARIANTS \
+		+ Config.hash2(x, y) % TileArt.VARIANTS
+
 func variant_at(x: int, y: int) -> int:
 	var n := _shade.get_noise_2d(x, y) * 0.5 + 0.5
 	var shade := clampi(int(n * TileArt.SHADES), 0, TileArt.SHADES - 1)
@@ -269,7 +296,7 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 	# Bodentyp. Dann ist jede Ecke bedeckt und die Eckrechnung entfällt.
 	if t0 == t4 and t1 == t4 and t2 == t4 and t3 == t4 \
 			and t5 == t4 and t6 == t4 and t7 == t4 and t8 == t4:
-		var full := _full_for(t4, x, y)
+		var full := _full_for(t4, x, y, map)
 		for pos in count:
 			if _table[pos * TABLE_STRIDE + t4] == 0:
 				if erase:
@@ -291,6 +318,9 @@ func _paint_cell(layers: Array[TileMapLayer], map: MapData, x: int, y: int, eras
 			if variant < 0:
 				variant = variant_at(x, y)
 			if _shrink[pos]:
+				# Wasser bekommt seine Stufe aus der TIEFE statt aus dem
+				# Rauschen — siehe `water_variant`.
+				variant = water_variant(map, x, y, [t0, t1, t2, t3, t5, t6, t7, t8])
 				# Die Eckmaske ist hier ANDERSHERUM gemeint als beim Übergang:
 				# dort gilt eine Ecke, sobald EINES der drei Felder dazugehört
 				# (die Fläche wächst heraus), hier nur, wenn ALLE drei
@@ -401,12 +431,22 @@ func _paint_decor(layers: Array[TileMapLayer], cell: Vector2i, tile: int, erase:
 	layer.set_cell(cell, decor_source, decor_slots[pick])
 
 ## Die Vollkacheln aller Schichten für eine Kachel ohne abweichende Nachbarn.
-func _full_for(tile: int, x: int, y: int) -> Array:
+func _full_for(tile: int, x: int, y: int, map: MapData) -> Array:
 	var variant := variant_at(x, y)
+	# Dieser schnelle Weg gilt nur, wenn ringsum derselbe Boden liegt — beim
+	# Wasser heisst das mindestens Tiefenstufe 1. Ohne diese Zeile bekaeme die
+	# ganze Seemitte die Stufe aus dem Rauschen und nur der Rand die aus der
+	# Tiefe; man saehe den Bruch als Ring um jeden See.
+	var deep := -1
+	if tile == MapData.Tile.WATER:
+		deep = water_variant(map, x, y, [tile, tile, tile, tile, tile, tile, tile, tile])
 	var out := []
 	out.resize(STACK.size())
 	for pos in STACK.size():
-		out[pos] = _full(pos, variant) if _table[pos * TABLE_STRIDE + tile] != 0 else Vector2i.ZERO
+		if _table[pos * TABLE_STRIDE + tile] == 0:
+			out[pos] = Vector2i.ZERO
+			continue
+		out[pos] = _full(pos, deep if (deep >= 0 and _shrink[pos]) else variant)
 	return out
 
 ## Bodentyp mit Fortsetzung über den Kartenrand hinaus — sonst würde jede

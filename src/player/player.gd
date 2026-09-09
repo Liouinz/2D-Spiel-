@@ -85,11 +85,17 @@ func _ready() -> void:
 	_shadow.centered = true
 	_shadow.position = Vector2(0, -2)
 	_shadow.z_index = -1
+	# Die Zeichnungen sind doppelt so fein wie die Welt (siehe ActorArt.ART).
+	# Halbe Darstellung heisst: gleiche Groesse in der Welt, viermal so viele
+	# Bildpunkte. Bei Zoom 2 faellt ein Kunstpixel genau auf einen
+	# Bildschirmpunkt.
+	_shadow.scale = Vector2.ONE * ActorArt.DRAW_SCALE
 	add_child(_shadow)
 
 	_sprite = Sprite2D.new()
 	_sprite.centered = false
 	_sprite.offset = Vector2(-ActorArt.W * 0.5, -ActorArt.H)
+	_sprite.scale = Vector2.ONE * ActorArt.DRAW_SCALE
 	add_child(_sprite)
 
 	# Die Fackel liegt ÜBER der Figur, aber unter nichts anderem: sie wird in
@@ -99,6 +105,7 @@ func _ready() -> void:
 	_torch.centered = true
 	_torch.visible = false
 	_torch.z_index = 1
+	_torch.scale = Vector2.ONE * ActorArt.DRAW_SCALE
 	add_child(_torch)
 
 	_update_sprite(0.0)
@@ -182,6 +189,33 @@ func _update_torch(delta: float) -> void:
 	if is_instance_valid(light):
 		light.set_player_anchor(
 			ActorArt.torch_flame_offset(_dir, _hand_arm, _hand_bob, _flip) - up)
+
+## Wie weit der Schatten hoechstens von der Fackel weggeschoben wird.
+const SHADOW_THROW := 5.0
+
+## Der Bodenschatten weicht dem Fackellicht aus.
+##
+## Am Tag kommt das Licht von oben links, und der Schatten liegt fest unten
+## rechts — so ist er gezeichnet. Nachts ist die staerkste Lichtquelle im Bild
+## aber die Fackel in der Hand, und die steht seitlich neben der Figur. Ein
+## Schatten, der dann immer noch nach unten rechts faellt, waehrend das Feuer
+## rechts brennt, widerspricht dem, was man sieht.
+##
+## Ein echter Schattenwurf braeuchte ein `Light2D` mit Verdeckern — das gibt es
+## hier aus gemessenen Gruenden nicht. Was aber geht und fast dasselbe erzaehlt:
+## den vorhandenen Schatten von der Flamme WEGSCHIEBEN, umso mehr, je dunkler
+## es ist. Bei Tag steht er, wo er immer stand.
+func _aim_shadow() -> void:
+	var base := Vector2(0, -2)
+	var dark: float = light.darkness() if is_instance_valid(light) and light.active() else 0.0
+	if dark <= TORCH_FROM or not _torch.visible:
+		_shadow.position = base
+		return
+	var flame := ActorArt.torch_flame_offset(_dir, _hand_arm, _hand_bob, _flip)
+	# Nur waagerecht: der Boden wird von oben gesehen, ein senkrechter Versatz
+	# laese den Schatten von der Figur abheben.
+	var away: float = -signf(flame.x) * SHADOW_THROW * dark
+	_shadow.position = base + Vector2(away, 0.0)
 
 ## Arm- und Auf-und-ab-Stellung des gerade gezeichneten Bildes.
 ##
@@ -289,20 +323,27 @@ func _update_sprite(speed: float) -> void:
 	# Bodenschatten fällt weg — im Wasser gibt es keinen.
 	if _swimming:
 		_sprite.offset.y = -ActorArt.H + ActorArt.SWIM_SINK
+		_sprite.position.y = 0.0
 		_shadow.visible = false
 		return
 	# Schatten sind abschaltbar (Grafikeinstellungen). Im Wasser gibt es
 	# ohnehin keinen.
 	_shadow.visible = Graphics.shadows_on()
+	_aim_shadow()
 
 	# Sprung und Fallen: Figur hoch, Schatten bleibt liegen und wird kleiner
 	# und blasser.
 	var lift := lift()
-	_sprite.offset.y = -ActorArt.H - lift
+	# Der Versatz steht in KUNSTpixeln (er wird mitskaliert), die Sprunghoehe
+	# in WELTpixeln. Beides in `offset` zu addieren hiesse, die Sprunghoehe zu
+	# halbieren — die Figur haette nur noch halb so hoch gesprungen, ohne dass
+	# jemand eine Zahl geaendert haette.
+	_sprite.offset.y = -ActorArt.H
+	_sprite.position.y = -lift
 	if lift > 0.0:
 		var f := minf(lift / Config.JUMP_HEIGHT, 1.0)
-		_shadow.scale = Vector2.ONE * (1.0 - 0.32 * f)
+		_shadow.scale = Vector2.ONE * ActorArt.DRAW_SCALE * (1.0 - 0.32 * f)
 		_shadow.modulate.a = 1.0 - 0.45 * f
 	else:
-		_shadow.scale = Vector2.ONE
+		_shadow.scale = Vector2.ONE * ActorArt.DRAW_SCALE
 		_shadow.modulate.a = 1.0

@@ -1503,7 +1503,33 @@ func _check_light(world: Node2D) -> void:
 	#    beleuchteten Pfad, und weil das Licht der Figur nachgeführt wird,
 	#    fällt diese Arbeit jedes Bild neu an.
 	var lights := _find_all_of_class(world, "Light2D")
-	_check(lights.is_empty(), "Kein echtes 2D-Licht in der Welt (%d gefunden)" % lights.size())
+	_check(lights.is_empty(), "Bis Stufe „Hoch“ kein einziges 2D-Licht in der Welt (%d gefunden)"
+		% lights.size())
+
+	# 2b. Auf Stufe „Sehr hoch" gibt es genau eines — und danach wieder keines.
+	#
+	#     Diese Stufe ist ein ausdrueckliches Angebot: sie kostet, was ein
+	#     `Light2D` eben kostet, und sie bringt dafuer echten Schattenwurf. Was
+	#     hier geprueft wird, ist die Zusage an alle ANDEREN Stufen: das Licht
+	#     wird wirklich weggeraeumt und nicht nur auf Energie null gestellt —
+	#     ein Licht mit Energie null rechnet trotzdem.
+	var light_before := Settings.light
+	Settings.light = Graphics.LIGHT_REAL
+	Settings.changed_and_save()
+	await _frames(3)
+	var many := _find_all_of_class(world, "Light2D")
+	_check(many.size() == 1, "Auf „Sehr hoch“ steht genau ein echtes Licht (%d)" % many.size())
+	var occ := _find_all_of_class(world, "LightOccluder2D")
+	_check(many.size() == 1 and (many[0] as Light2D).shadow_enabled,
+		"Und es wirft Schatten (%d Verdecker in der Welt)" % occ.size())
+	Settings.light = 3
+	Settings.changed_and_save()
+	await _frames(3)
+	_check(_find_all_of_class(world, "Light2D").is_empty(),
+		"Zurueck auf „Hoch“ ist es wieder weg")
+	Settings.light = light_before
+	Settings.changed_and_save()
+	await _frames(3)
 
 	# 3. Und kein Vollbild-Shader: die Sichtgrenze ist eine gebackene Textur.
 	var night_layer: CanvasLayer = light.get_node("Nachtschicht")
@@ -1567,7 +1593,10 @@ func _check_light(world: Node2D) -> void:
 	var glow := light.player_glow()
 	var torch := world.player.get_node("Handfackel") as Sprite2D
 	_check(torch != null and torch.visible, "Die Figur hält nachts eine Fackel")
-	var flame_off := ActorArt.TORCH_FLAME - Vector2(ActorArt.TORCH_W, ActorArt.TORCH_H) * 0.5
+	# Kunstpixel mal DRAW_SCALE ergibt Weltpixel — die Zeichnung ist doppelt so
+	# fein wie die Welt, und das Sprite wird entsprechend halb dargestellt.
+	var flame_off := (ActorArt.TORCH_FLAME
+		- Vector2(ActorArt.TORCH_W, ActorArt.TORCH_H) * 0.5) * ActorArt.DRAW_SCALE
 	if torch != null and torch.flip_h:
 		flame_off.x = -flame_off.x
 	var want: Vector2 = get_viewport().get_canvas_transform() \
@@ -1580,7 +1609,8 @@ func _check_light(world: Node2D) -> void:
 	# Handfeld des Figurenbildes sitzen. Zwei Punkte daneben — und genau so
 	# stand es vorher — reichen, damit es auf dem Bildschirm nebeneinander
 	# aussieht statt gehalten.
-	var grip_off := ActorArt.TORCH_GRIP - Vector2(ActorArt.TORCH_W, ActorArt.TORCH_H) * 0.5
+	var grip_off := (ActorArt.TORCH_GRIP
+		- Vector2(ActorArt.TORCH_W, ActorArt.TORCH_H) * 0.5) * ActorArt.DRAW_SCALE
 	if torch != null and torch.flip_h:
 		grip_off.x = -grip_off.x
 	var grip: Vector2 = torch.global_position + grip_off
@@ -1869,6 +1899,14 @@ func _check_torch_and_zoom(world: Node2D) -> void:
 		% [lights_before, light.source_count()])
 	_check(map.torches.has(cell), "Sie steht in der Karte, nicht nur im Bild")
 
+	# Und sie bringt einen Verdecker mit. Der kostet nichts, solange kein
+	# echtes Licht in der Szene steht — aber auf Stufe „Sehr hoch“ ist eine
+	# gesetzte Fackel das einzige in dieser Welt, was ueberhaupt einen Schatten
+	# werfen KANN. Alles andere ist Boden.
+	var occluders := _find_all_of_class(world, "LightOccluder2D")
+	_check(occluders.size() >= 1,
+		"Sie kann Schatten werfen (%d Verdecker)" % occluders.size())
+
 	# 2. Und sie ist KEIN echtes Licht — sonst wäre die zehnte Fackel nicht
 	#    mehr bezahlbar. Das ist die eigentliche Prüfung an dieser Stelle.
 	_check(_find_all_of_class(world, "Light2D").is_empty(),
@@ -1914,8 +1952,25 @@ func _check_torch_and_zoom(world: Node2D) -> void:
 	Settings.changed_and_save()
 	await _frames(3)
 	var close := cam.visible_world_rect().size
-	_check(is_equal_approx(cam.zoom.x, 3.0) and close.x < wide.x,
+	var last: float = Config.ZOOM_STEPS[Config.ZOOM_STEPS.size() - 1]
+	_check(is_equal_approx(cam.zoom.x, last) and close.x < wide.x,
 		"Näher heran zeigt weniger Welt (%.0f gegen %.0f Pixel breit)" % [close.x, wide.x])
+
+	# Und die Figur bleibt auf JEDER Stufe scharf.
+	#
+	# Sie wird mit doppelter Dichte gezeichnet und halb dargestellt; ein
+	# Kunstpixel muss deshalb auf eine ganze Zahl Bildschirmpunkte fallen.
+	# Bei Zoom 3 waeren es anderthalb — die Kanten der Figur wuerden beim
+	# Laufen flimmern, und man saehe es nur in Bewegung. Genau deshalb steht
+	# diese Pruefung hier und nicht im Kopf eines Entwicklers.
+	var blurry: Array[String] = []
+	for z: float in Config.ZOOM_STEPS:
+		var px := ActorArt.DRAW_SCALE * z
+		if not is_equal_approx(px, roundf(px)):
+			blurry.append("Zoom %.0f -> %.2f" % [z, px])
+	_check(blurry.is_empty(),
+		"Ein Kunstpixel der Figur fällt auf jeder Zoomstufe auf ganze Bildschirmpunkte%s"
+		% ("" if blurry.is_empty() else " (%s)" % ", ".join(blurry)))
 
 	# 6. Und die Grenzen sind hart: kein Schritt über die Enden hinaus.
 	cam.step_zoom(1)

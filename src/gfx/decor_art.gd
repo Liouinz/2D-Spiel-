@@ -30,6 +30,33 @@ const ON_GRASS := [Kind.TUFT, Kind.TUFT_BIG, Kind.FLOWER_RED, Kind.FLOWER_YELLOW
 	Kind.FLOWER_WHITE, Kind.CLOVER, Kind.STONE]
 const ON_SAND := [Kind.PEBBLES, Kind.SHELL, Kind.DRIFTWOOD, Kind.STONE]
 
+## Wie oft eine Art vorkommt.
+##
+## Vorher war jede Art gleich wahrscheinlich: auf einer Wiese lagen genauso
+## viele grosse Blumen wie Grasbueschel, und der Strand war zu einem Viertel
+## mit Treibholz bedeckt. Das liest sich nicht als Natur, sondern als
+## gleichverteilte Streuung — was es auch war.
+##
+## Umgesetzt ueber die Haeufigkeit im Auswahlfeld: eine haeufige Art steht
+## zwoelfmal darin, eine seltene einmal. Das haelt die Auswahl selbst bei einem
+## einzigen Streuwert je Feld — und damit bleibt sie deterministisch, was
+## Bedingung ist: derselbe Seed muss dieselbe Wiese ergeben.
+enum Rarity { COMMON, UNCOMMON, RARE }
+const WEIGHT := [12, 4, 1]
+
+const RARITY := {
+	Kind.TUFT: Rarity.COMMON,          ## Grashalme sind der Grundbewuchs
+	Kind.TUFT_BIG: Rarity.UNCOMMON,
+	Kind.CLOVER: Rarity.UNCOMMON,
+	Kind.FLOWER_RED: Rarity.UNCOMMON,
+	Kind.FLOWER_YELLOW: Rarity.UNCOMMON,
+	Kind.FLOWER_WHITE: Rarity.RARE,    ## die hellste — deshalb die seltenste
+	Kind.STONE: Rarity.UNCOMMON,
+	Kind.PEBBLES: Rarity.COMMON,       ## am Strand ist Kies der Grundbewuchs
+	Kind.SHELL: Rarity.UNCOMMON,
+	Kind.DRIFTWOOD: Rarity.RARE,
+}
+
 ## -> {"texture", "slots": Array[Vector2i], "grass": Array[int], "sand": Array[int]}
 ##
 ## `grass` und `sand` sind Listen von Plätzen in `slots` — beim Malen wird
@@ -56,10 +83,13 @@ static func build(seed_value: int) -> Dictionary:
 			var pos := Vector2i(index % COLS, index / COLS)
 			img.blit_rect(tile, Rect2i(Vector2i.ZERO, tile.get_size()), pos * T)
 			slots.append(pos)
+			var times: int = WEIGHT[int(RARITY.get(kind, Rarity.UNCOMMON))]
 			if ON_GRASS.has(kind):
-				grass.append(index)
+				for w in times:
+					grass.append(index)
 			if ON_SAND.has(kind):
-				sand.append(index)
+				for w in times:
+					sand.append(index)
 
 	return {"texture": Pixel.tex(img), "slots": slots, "grass": grass, "sand": sand}
 

@@ -91,9 +91,19 @@ const CAMERA_ZOOM := 2.0
 ##
 ## Mehr braucht es nicht, und ein stufenloses Zoomen gäbe es hier nur um den
 ## Preis unsauberer Pixel.
-const ZOOM_STEPS := [1.0, 2.0, 3.0]
-const ZOOM_NAMES := ["Weit", "Normal", "Nah"]
-const ZOOM_DEFAULT := 1        ## Index in ZOOM_STEPS
+## Zoomstufen — nur GERADE Werte.
+##
+## Die Figur wird mit doppelter Pixeldichte gezeichnet und mit Faktor 0,5
+## dargestellt (siehe `ActorArt.ART`). Damit ein Kunstpixel auf eine ganze Zahl
+## von Bildschirmpunkten faellt, muss `0,5 * Zoom` ganzzahlig sein — bei Zoom 3
+## waeren es anderthalb, und die Kanten der Figur wuerden beim Laufen flimmern.
+##
+## Der Preis: die alte weiteste Ansicht (Zoom 1) gibt es nicht mehr. Mehr
+## Bildpunkte auf derselben Flaeche UND mehr Flaeche im Bild schliessen sich
+## aus; „Normal" ist heute, was frueher „Normal" war.
+const ZOOM_STEPS := [2.0, 4.0, 6.0]
+const ZOOM_NAMES := ["Normal", "Nah", "Sehr nah"]
+const ZOOM_DEFAULT := 0        ## Index in ZOOM_STEPS
 
 static func zoom_of(step: int) -> float:
 	return float(ZOOM_STEPS[clampi(step, 0, ZOOM_STEPS.size() - 1)])

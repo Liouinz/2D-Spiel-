@@ -44,7 +44,18 @@ const STEPS := ["Aus", "Reduziert", "Voll"]
 ## Die beiden oberen Stufen kosten Füllrate — zwei grosse durchsichtige
 ## Flächen über dem Bild. Deshalb stehen sie einzeln zur Wahl und nicht in
 ## einem Schalter zusammengefasst.
-const LIGHT := ["Aus", "Einfach", "Mittel", "Hoch"]
+## Die Lichtstufen.
+##
+## „Sehr hoch" ist die einzige, die ein echtes `Light2D` anlegt — und deshalb
+## die einzige, die richtig Geld kostet. Sie steht hier als AUSDRUECKLICHE
+## Wahl: gemessen kostete ein `PointLight2D` +3,43 ms CPU-Renderzeit, weil es
+## den Canvas-Renderer in den beleuchteten Pfad zwingt und jedes Element im
+## Umkreis ein zweites Mal einreihen laesst. Wer die Bildrate braucht, bleibt
+## auf „Hoch" und verliert nichts ausser echtem Schattenwurf.
+const LIGHT := ["Aus", "Einfach", "Mittel", "Hoch", "Sehr hoch"]
+
+## Ab welcher Stufe ein echtes 2D-Licht angelegt wird.
+const LIGHT_REAL := 4
 
 ## Läuft die Zeit? Das ist eine Frage des Spielgefühls, keine der Leistung —
 ## ein stehender Tag kostet genauso viel wie ein laufender. Deshalb eine
