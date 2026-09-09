@@ -3,6 +3,10 @@ extends CharacterBody2D
 ## Spielerfigur: Bewegung mit Beschleunigung, 4 Richtungen, Idle- und Laufanimation.
 
 const IDLE_FPS := 1.6
+
+## Bilder je Sekunde beim GEHEN. Beim Rennen und beim Schwimmen laeuft der
+## Zyklus schneller bzw. langsamer — im Verhaeltnis zur tatsaechlichen
+## Geschwindigkeit, siehe `_walk_fps`.
 const WALK_FPS := 9.0
 
 ## Wird beim Eintauchen gemeldet, damit die Wasserwirkung einen Ring zeichnen
@@ -112,7 +116,7 @@ func _physics_process(delta: float) -> void:
 
 	var moving := velocity.length() > MOVING_FROM
 	_trail(delta, moving)
-	_anim_time += delta * (WALK_FPS if moving else IDLE_FPS)
+	_anim_time += delta * (_walk_fps(velocity.length()) if moving else IDLE_FPS)
 	if not moving and _was_moving:
 		_anim_time = 0.0
 	_was_moving = moving
@@ -122,6 +126,19 @@ func _physics_process(delta: float) -> void:
 	if _land_time > 0.0:
 		_land_time = maxf(_land_time - delta, 0.0)
 	_update_sprite(moving)
+
+## Wie schnell der Laufzyklus laeuft — im Verhaeltnis zur Geschwindigkeit.
+##
+## Vorher lief er immer mit denselben 9 Bildern je Sekunde. Beim Rennen (216
+## statt 124 px/s) legte die Figur damit fast die doppelte Strecke je Schritt
+## zurueck und RUTSCHTE sichtbar ueber den Boden; beim Schwimmen (68 px/s)
+## ruderte sie umgekehrt schneller, als sie vorankam.
+##
+## Der Zyklus haengt jetzt an der Strecke statt an der Uhr: bei Gehtempo sind
+## es weiterhin genau 9 Bilder je Sekunde, darueber und darunter entsprechend.
+## Begrenzt, damit es bei einem Stoss von aussen nicht flimmert.
+func _walk_fps(speed: float) -> float:
+	return clampf(WALK_FPS * speed / Config.PLAYER_SPEED, 4.0, 16.0)
 
 ## Welche Sprungstellung gerade gilt.
 ##
