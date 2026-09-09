@@ -60,8 +60,19 @@ void vertex() {
 }
 """
 
-## Wasser: kein Abdunkeln, sondern ein wandernder heller Streifen — so wirkt es
-## wie Licht auf einer Oberfläche und nicht wie flackernde Farbe.
+## Wasser: kein Abdunkeln, sondern wandernde helle Stellen — so wirkt es wie
+## Licht auf einer Oberflaeche und nicht wie flackernde Farbe.
+##
+## ZWEI Wellen statt einer, und das ist der Punkt. Eine einzelne Welle laeuft
+## als durchgehendes helles Band ueber die ganze Wasserflaeche: jeder Punkt auf
+## derselben Linie wird im selben Augenblick hell, und ueber einen See hinweg
+## sieht man einen Balken wandern. Wasser tut das nicht.
+##
+## Zwei Wellen mit ungleicher Richtung, Groesse und Geschwindigkeit ergeben ein
+## Muster, das sich erst nach sehr langer Zeit wiederholt (die Frequenzen stehen
+## bewusst in keinem einfachen Verhaeltnis). Multipliziert statt addiert: hell
+## wird es nur, wo BEIDE Wellen gerade oben sind — daraus werden einzelne
+## Glanzstellen, die aufleuchten und vergehen, statt eines Streifens.
 const WATER := """
 shader_type canvas_item;
 
@@ -71,8 +82,10 @@ uniform float scale = 0.016;
 
 void vertex() {
 	vec2 w = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
-	float wave = max(sin(w.x * scale + w.y * scale * 0.6 + TIME * speed), 0.0);
-	COLOR.rgb += vec3(0.05, 0.075, 0.10) * wave * wave * strength;
+	float a = sin(w.x * scale + w.y * scale * 0.6 + TIME * speed);
+	float b = sin(w.x * scale * 0.43 - w.y * scale * 1.31 - TIME * speed * 0.67);
+	float wave = max(a, 0.0) * max(b * 0.5 + 0.5, 0.0);
+	COLOR.rgb += vec3(0.06, 0.085, 0.11) * wave * wave * strength;
 }
 """
 

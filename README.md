@@ -374,6 +374,66 @@ vorher verdeckt hatte: sie sind von 3,5 % auf 1,8 % zurückgenommen. Die große
 Helligkeitsbewegung kommt jetzt ohnehin vom Wind, und die läuft über
 Kachelkanten hinweg weich durch.
 
+### Das Wasser hat eine Tiefe
+
+Eine Wasserfläche war bis zuletzt überall gleich hell — technisch richtig, aber
+sie las sich als blaue Platte. Jetzt bestimmt die **Entfernung vom Ufer** die
+Helligkeitsstufe der Kachel: Stufe 0 direkt am Ufer, Stufe 2 draußen. Außen
+hell, in der Mitte dunkel — das ist der Unterschied zwischen einer Pfütze und
+einem See.
+
+Das nutzt die Stufen, die es schon gab, nur anders: bei Gras und Sand ist die
+Stufe eine zufällige Schwankung aus Rauschen, und jeder sichtbare Unterschied
+wäre ein Schachbrett (deshalb liegen sie dort nur 1,8 % auseinander). Beim
+Wasser ist sie eine **Form**, sie folgt der Küstenlinie, und sie darf gesehen
+werden — 8,5 %.
+
+Die Tiefenstufe 2 wird bewusst nicht über den vollen 5 × 5-Umkreis geprüft
+(24 Nachbarn je Wasserfeld wären beim Nachladen eines Chunks spürbar), sondern
+nur über die vier Felder in zwei Schritten Abstand. Eine schmale diagonale
+Bucht bekommt dadurch vielleicht eine Stufe zu viel. Auf dem Bildschirm sieht
+man das nicht, im Ladebalken schon.
+
+### Das Wasser glitzert nicht mehr im Takt
+
+Der Wasser-Shader hatte **eine** Welle. Eine einzelne Welle läuft als
+durchgehendes helles Band über die ganze Fläche: jeder Punkt auf derselben
+Linie wird im selben Augenblick hell, und über einen See hinweg sieht man einen
+Balken wandern. Wasser tut das nicht.
+
+Jetzt sind es **zwei** mit ungleicher Richtung, Größe und Geschwindigkeit, und
+sie werden **multipliziert** statt addiert: hell wird es nur, wo beide gerade
+oben sind. Daraus werden einzelne Glanzstellen, die aufleuchten und vergehen.
+Die Frequenzen stehen bewusst in keinem einfachen Verhältnis — das Muster
+wiederholt sich erst nach sehr langer Zeit.
+
+### Dekoration hat Seltenheiten
+
+Vorher war jede Art gleich wahrscheinlich: auf einer Wiese lagen genauso viele
+große Blumen wie Grasbüschel, und der Strand war zu einem Viertel mit Treibholz
+bedeckt. Das liest sich nicht als Natur, sondern als gleichverteilte Streuung —
+was es auch war.
+
+Jetzt gibt es drei Stufen: **häufig** (Grasbüschel, Kiesel), **gelegentlich**
+(Blumen, Klee, Steine, Muscheln), **selten** (weiße Blüte, Treibholz). Umgesetzt
+über die Häufigkeit im Auswahlfeld — eine häufige Art steht zwölfmal darin, eine
+seltene einmal. Das hält die Auswahl bei einem einzigen Streuwert je Feld, und
+damit bleibt sie **deterministisch**: derselbe Seed ergibt dieselbe Wiese, auch
+nach dem Nachladen eines Chunks.
+
+### Der Schatten weicht dem Fackellicht aus
+
+Am Tag kommt das Licht von oben links, und der Bodenschatten liegt fest unten
+rechts — so ist er gezeichnet. Nachts ist die stärkste Lichtquelle im Bild aber
+die Fackel in der Hand, und die steht seitlich neben der Figur. Ein Schatten,
+der dann immer noch nach unten rechts fällt, während das Feuer rechts brennt,
+widerspricht dem, was man sieht.
+
+Er wird deshalb von der Flamme **weggeschoben**, umso weiter, je dunkler es
+ist. Bei Tag steht er, wo er immer stand. Das ist kein echter Schattenwurf —
+den gibt es nur auf der Stufe „Sehr hoch" — aber es erzählt dasselbe und kostet
+nichts.
+
 ### Was groß ist, muss überall gleich sein
 
 Gras und Sand haben seither **je zwei zusätzliche Farbtöne**: eine trockene
@@ -569,21 +629,50 @@ wieder der weiße Fleck, den es hier schon einmal gab. Die **Summe** ist jetzt
 
 ![Nacht](docs/bilder/nacht.png)
 
-### Vier Stufen, nicht ein Schalter
+### Fünf Stufen, nicht ein Schalter
 
-Weil die drei Mittel sehr unterschiedlich kosten, sind sie einzeln abstufbar:
+Weil die Mittel sehr unterschiedlich kosten, sind sie einzeln abstufbar. Alle
+Zahlen als Bildzeit, gemessen mit `--profile` (llvmpipe, 1280 × 720):
 
-| Stufe | Was dazukommt | Aufschlag gegenüber „Aus" |
-|---|---|---|
-| **Aus** | nichts, kein Prozessschritt | — |
-| **Einfach** | die Tönung, also der ganze Tagesverlauf | CPU −0,10 ms, GPU −0,09 ms |
-| **Mittel** | dazu der Schein um die Figur | GPU +2,03 ms |
-| **Hoch** | dazu die Sichtgrenze am Bildrand | CPU +2,32 ms, GPU +4,14 ms |
+| Stufe | Was dazukommt | Bildzeit | FPS |
+|---|---|---|---|
+| **Aus** | nichts, kein Prozessschritt | 16,57 ms | 60 |
+| **Einfach** | die Tönung, also der ganze Tagesverlauf | 16,54 ms | 60 |
+| **Mittel** | dazu Blaustunde und Fackelschein | 19,43 ms | 51 |
+| **Hoch** | dazu die Sichtgrenze am Bildrand | 24,72 ms | 40 |
+| **Sehr hoch** | echtes `PointLight2D` statt des Scheins | **41,52 ms** | **24** |
 
-Wer auf einem schwachen Laptop spielt, verliert mit „Einfach" also nicht die
-Nacht, sondern nur die beiden Flächen, die Füllrate kosten. Die **Tageszeit**
-ist eine eigene Zeile: ein stehender Tag kostet genauso viel wie ein laufender,
-das ist eine Frage des Spielgefühls.
+Wer auf einem schwachen Laptop spielt, verliert mit „Einfach" nicht die Nacht,
+sondern nur die Flächen, die Füllrate kosten. Die **Tageszeit** ist eine eigene
+Zeile: ein stehender Tag kostet genauso viel wie ein laufender, das ist eine
+Frage des Spielgefühls.
+
+### „Sehr hoch": echtes 2D-Licht, und was es kostet
+
+Diese Stufe legt als einzige ein echtes `PointLight2D` an — an der Flamme, als
+Kind der Fackel, also der Hand folgend. Sie bringt zwei Dinge, die ein additives
+Viereck grundsätzlich nicht kann:
+
+- Ein echtes Licht **multipliziert** mit dem Untergrund, statt Helligkeit
+  daraufzulegen. Unbeleuchtete Stellen bleiben dadurch wirklich dunkel.
+- Verdecker (`LightOccluder2D`) werfen **Schatten**. Jede gesetzte Fackel hat
+  einen; läuft man um sie herum, dreht sich ihr Schatten mit.
+
+Und sie kostet, gemessen: **+16,80 ms Bildzeit** gegenüber „Hoch" — mehr als
+alle anderen Lichtmittel zusammen, und ein Absturz von 40 auf 24 Bilder. Genau
+diese Sorte Einbruch war der Grund, warum das echte Licht in einer früheren
+Runde entfernt wurde.
+
+Deshalb ist sie eine **ausdrückliche Wahl**: nicht voreingestellt, von keinem
+Qualitätsprofil vergeben, und die automatische Anpassung nimmt sie als
+allererstes zurück, wenn es klemmt. Auf jeder anderen Stufe gilt weiterhin die
+Zusage, dass in dieser Welt **kein einziges** `Light2D` steht — der Selbsttest
+prüft, dass es beim Zurückschalten wirklich wegfällt und nicht nur auf Energie
+null steht. Ein Licht mit Energie null rechnet trotzdem.
+
+Was es NICHT bringt: mehr Schattenwerfer. Die Welt besteht aus Bodenkacheln;
+gesetzte Fackeln sind bis auf Weiteres das Einzige darin, was einen Schatten
+werfen kann. Bäume und Felsen wären die nächste Runde.
 
 ## Der Sprung ist eine Bewegung
 
@@ -730,16 +819,60 @@ echtes 2D-Licht kostete +3,43 ms CPU-Renderzeit. Zehn Fackeln wären damit nicht
 bezahlbar gewesen. Ein additives Sprite kostet ein Viereck — und ausserhalb des
 Bildes gar nichts, weil es dort erst gar nicht gezeichnet wird.
 
+## Die Figur ist viermal so fein wie die Welt
+
+Auf einem Bildschirmfoto sah die Figur zu grob aus — „die Pixel sind zu groß".
+Der Befund stimmte, die vermutete Ursache nicht: die Kacheln sind seit jeher
+32 × 32, nicht 16 × 16. Groß wirken die Pixel wegen des **Zooms**. Bei Zoom 2
+ist ein Weltpixel zwei Bildschirmpunkte, und daran ändert eine feinere
+Zeichnung nichts.
+
+Mehr Dichte bei gleicher Bildschirmgröße heißt deshalb zwingend: **Zoom
+halbieren.** Für die Welt wäre das ein Umbau jedes Maßes im Spiel — Tempo,
+Sprunghöhe, Kollision, Kachelatlas. Für die **Figur** geht es ohne all das:
+
+- gezeichnet wird sie mit **64 × 96** statt 32 × 48 Bildpunkten
+- dargestellt wird sie mit **Faktor 0,5**
+- ihre Größe in der Welt bleibt damit exakt dieselbe
+- bei Zoom 2 fällt ein Kunstpixel auf genau **einen** Bildschirmpunkt
+
+Vier mal so viele Bildpunkte auf derselben Fläche — und dadurch Platz für das,
+was vorher nicht hineinpasste: eine Pupille mit Lichtpunkt, eine Braue mit
+Richtung, Haarsträhnen statt eines Blocks, Nähte im Stoff, einzelne Finger,
+Stiefel mit Sohle und Schnürung, eine Lederwicklung mit sichtbaren Schnurgängen.
+
+Dasselbe gilt für **beide Fackeln**. Zwei Gegenstände im selben Bild mit
+unterschiedlich großen Pixeln fallen sofort auf, und die Fackel steht direkt
+neben der Figur.
+
+### Der Preis: die weiteste Ansicht
+
+Das geht nur auf, solange `0,5 × Zoom` ganzzahlig ist. Bei Zoom 3 wären es
+anderthalb Bildschirmpunkte je Kunstpixel — die Kanten der Figur würden beim
+Laufen flimmern, und man sähe es nur in Bewegung. Die Zoomstufen sind deshalb
+**2 / 4 / 6** statt 1 / 2 / 3:
+
+| | vorher | jetzt |
+|---|---|---|
+| Weit | 1× | — |
+| Normal | 2× | **2×** |
+| Nah | 3× | 4× |
+| Sehr nah | — | 6× |
+
+„Normal" ist heute, was früher „Normal" war. Die alte weiteste Ansicht gibt es
+nicht mehr: mehr Bildpunkte auf derselben Fläche **und** mehr Fläche im Bild
+schließen sich aus. Der Selbsttest rechnet für jede Stufe nach, dass ein
+Kunstpixel auf ganze Bildschirmpunkte fällt.
+
 ## Zoom
 
-Drei feste Stufen: **weit (1×)**, **normal (2×)**, **nah (3×)**. Umgeschaltet
-wird mit **+** und **−**.
+Drei feste Stufen, umgeschaltet mit **+** und **−**.
 
 Ganzzahlig, und das ist keine Bequemlichkeit: bei einem Zoom von 1,5 wird aus
 einem Weltpixel mal ein, mal zwei Bildschirmpunkte, und jede Figurenkante ist
-abwechselnd ein und zwei Punkte dick. Genau deshalb steht der Zoom überhaupt
-auf 2. Stufen wie „85 %" würden diesen Fehler zurückholen — sichtbar, an jeder
-Kante. Ein stufenloses Zoomen gäbe es hier nur um den Preis unsauberer Pixel.
+abwechselnd ein und zwei Punkte dick. Stufen wie „85 %" würden diesen Fehler
+zurückholen — sichtbar, an jeder Kante. Ein stufenloses Zoomen gäbe es hier nur
+um den Preis unsauberer Pixel.
 
 ## Qualitätsprofile
 
@@ -978,7 +1111,7 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **330 Prüfungen**.
+Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **335 Prüfungen**.
 
 Der Lauf startet dabei auf den **Auslieferungswerten**, nicht auf dem, was der
 letzte Lauf hinterlassen hat. Vorher erbte er die `settings.cfg` — und ein

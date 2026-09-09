@@ -156,7 +156,10 @@ func _page_video() -> Control:
 		func() -> int: return 1 if Settings.shadows else 0,
 		func(v: int) -> void: Settings.shadows = v == 1)
 	return _with_note(rows,
-		"Die Beleuchtung ist abgestuft, weil ihre Teile unterschiedlich kosten: die\nTönung ist gemessen gratis, erst „Mittel“ und „Hoch“ kosten Füllrate.")
+		"Die Beleuchtung ist abgestuft, weil ihre Teile unterschiedlich kosten: die"
+		+ "\nTönung ist gemessen gratis, erst „Mittel“ und „Hoch“ kosten Füllrate."
+		+ "\n„Sehr hoch“ schaltet echtes 2D-Licht mit Schattenwurf ein — gemessen"
+		+ "\nkostet das mehr als alles andere zusammen. Nur für starke Rechner.")
 
 ## Effekte: was sich bewegt und was auf dem Boden liegt. Eigene Seite, damit
 ## die Grafikseite nicht zu einer Liste aus neun Zeilen wird, durch die man

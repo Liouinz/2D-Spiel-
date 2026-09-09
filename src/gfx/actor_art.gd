@@ -13,11 +13,31 @@ enum Dir { DOWN, UP, SIDE }
 ## sie beim Laufen sichtbar hinterher.
 const WALK_ARM: Array[int] = [0, 1, 0, -1]
 
-const W := 32
-const H := 48
+## Kunstpixel je Weltpixel.
+##
+## Die Figur wird mit DOPPELTER Dichte gezeichnet und mit Faktor 0,5
+## dargestellt. Ihre Groesse in der Welt bleibt damit genau dieselbe wie vorher
+## (32 x 48 Weltpixel), aber sie besteht aus viermal so vielen Bildpunkten.
+##
+## Das geht nur auf, solange `0,5 * Kamerazoom` ganzzahlig ist — sonst faellt
+## ein Kunstpixel auf anderthalb Bildschirmpunkte und die Figur flimmert an den
+## Kanten. Deshalb sind die Zoomstufen 2/4/6 statt 1/2/3 (siehe
+## `Config.ZOOM_STEPS`): bei Zoom 2 ist ein Kunstpixel genau ein
+## Bildschirmpunkt, bei 4 zwei, bei 6 drei.
+##
+## Der Preis steht in derselben Zeile: die weiteste Ansicht von frueher (Zoom 1)
+## gibt es nicht mehr. Mehr Bildpunkte auf derselben Flaeche und gleichzeitig
+## mehr Flaeche im Bild ist kein Kompromiss, den man schliessen kann.
+const ART := 2
+
+const W := 32 * ART
+const H := 48 * ART
+
+## Weltgroesse der Figur — was `scale` daraus macht.
+const DRAW_SCALE := 1.0 / float(ART)
 ## Wie tief die Figur beim Schwimmen einsinkt. player.gd verschiebt das Bild
 ## um denselben Wert nach unten, damit der Kopf an seiner Stelle bleibt.
-const SWIM_SINK := 16
+const SWIM_SINK := 16 * ART
 
 const EYE := Color8(46, 40, 52)
 const EYE_WHITE := Color8(236, 232, 226)
@@ -189,12 +209,12 @@ static func _submerge(img: Image, line: int) -> void:
 static func _collar(img: Image, line: int, phase: int) -> void:
 	var cx := W * 0.5
 	var cy := float(line) + 0.5
-	for y in range(line - 4, mini(line + 6, H)):
+	for y in range(line - 8, mini(line + 12, H)):
 		if y < 0:
 			continue
 		for x in W:
-			var dx := (x + 0.5 - cx) / 13.0
-			var dy := (y + 0.5 - cy) / 3.6
+			var dx := (x + 0.5 - cx) / 26.0
+			var dy := (y + 0.5 - cy) / 7.2
 			var d := sqrt(dx * dx + dy * dy)
 			if d > 1.0 or d < 0.60:
 				continue
@@ -202,7 +222,7 @@ static func _collar(img: Image, line: int, phase: int) -> void:
 			if y < line and img.get_pixel(x, y).a > 0.5:
 				continue
 			# Lücken je Phase — ein geschlossener Ring wäre ein Reifen.
-			if (x * 5 + y * 3 + phase * 7) % 9 == 0:
+			if (x * 5 + y * 3 + phase * 7) % 11 == 0:
 				continue
 			var near := float(y) + 0.5 > cy
 			var col := Palette.WATER_FOAM if near else Palette.WATER_LIGHT
@@ -228,20 +248,21 @@ static func _jump_frame(dir: int, phase: int) -> Image:
 	var img := Pixel.make(W, H)
 	match phase:
 		JUMP_RISE:
-			# Angezogen und gestreckt: Beine hoch, Körper und Kopf zwei Pixel
-			# höher als im Stand.
-			_draw_legs(img, dir, 0, 5)
-			_draw_body(img, dir, 2, -3)
-			_draw_head(img, dir, 2)
+			# Angezogen und gestreckt: Beine hoch, Körper und Kopf höher als
+			# im Stand. Alle Werte in Kunstpixeln, also doppelt so gross wie
+			# frueher — die Stellung selbst ist dieselbe.
+			_draw_legs(img, dir, 0, 10)
+			_draw_body(img, dir, 4, -6)
+			_draw_head(img, dir, 4)
 		JUMP_FALL:
-			_draw_legs(img, dir, 1, 2)
-			_draw_body(img, dir, 3, 3)
-			_draw_head(img, dir, 3)
+			_draw_legs(img, dir, 1, 4)
+			_draw_body(img, dir, 6, 6)
+			_draw_head(img, dir, 6)
 		_:
 			# Gehockt: Körper tief, Beine kurz, Arme unten.
-			_draw_legs(img, dir, 0, 3)
-			_draw_body(img, dir, 7, 1)
-			_draw_head(img, dir, 7)
+			_draw_legs(img, dir, 0, 6)
+			_draw_body(img, dir, 14, 2)
+			_draw_head(img, dir, 14)
 	Pixel.outline(img, Palette.OUTLINE)
 	return img
 
@@ -271,16 +292,16 @@ static func _jump_frame(dir: int, phase: int) -> Image:
 ## Die Fackel liegt auf einer eigenen Ebene ueber der Figur (`z_index = 1` in
 ## `player.gd`), damit sie sich mit der Hand bewegen kann, ohne dass jedes
 ## Laufbild der Figur eine zweite Fassung mit Fackel braeuchte.
-const TORCH_W := 11
-const TORCH_H := 20
+const TORCH_W := 11 * ART
+const TORCH_H := 20 * ART
 
 ## Wo in diesem Bild die greifende Hand sitzt. `player.gd` legt diesen Punkt
 ## auf die Hand der Figur — deshalb steht er hier und nicht dort: wer die
 ## Zeichnung aendert, verschiebt den Griff mit.
-const TORCH_GRIP := Vector2(5.0, 14.5)
+const TORCH_GRIP := Vector2(10.0, 29.0)
 
 ## Und wo die Flamme sitzt. Von hier geht das Licht aus, nicht von der Brust.
-const TORCH_FLAME := Vector2(5.0, 4.0)
+const TORCH_FLAME := Vector2(10.0, 8.0)
 
 ## Wo die greifende Hand IM FIGURENBILD sitzt (Mitte, Grundstellung).
 ##
@@ -293,9 +314,9 @@ const TORCH_FLAME := Vector2(5.0, 4.0)
 ## Sie sind aus `_draw_body` abgelesen: die Hand ist ein 5 x 5 grosses Rechteck
 ## bei `y + 10`, mit `y = top + 18` und `top = 4`.
 const HAND_AT := {
-	Dir.DOWN: Vector2(25.5, 34.5),   ## rechte Hand, im Schatten
-	Dir.UP: Vector2(6.5, 34.5),      ## linke Hand, im Licht
-	Dir.SIDE: Vector2(14.5, 34.5),   ## der sichtbare Arm vor dem Koerper
+	Dir.DOWN: Vector2(51.0, 70.0),   ## rechte Hand, im Schatten
+	Dir.UP: Vector2(13.0, 70.0),     ## linke Hand, im Licht
+	Dir.SIDE: Vector2(29.0, 70.0),   ## der sichtbare Arm vor dem Koerper
 }
 
 ## Wohin das Fackelbild gehoert, damit sein Griff auf der Hand liegt.
@@ -319,11 +340,13 @@ static func torch_flame_offset(dir: int, arm: int, bob: int, flip: bool) -> Vect
 static func hand_offset(dir: int, arm: int, bob: int, flip: bool) -> Vector2:
 	var hand: Vector2 = HAND_AT[dir]
 	# Beim Blick nach oben greift die LINKE Hand, und die schwingt gegenlaeufig.
-	hand.y += float(bob) * 2.0 + float(arm) * 2.0 * (-1.0 if dir == Dir.UP else 1.0)
+	hand.y += float(bob) * 4.0 + float(arm) * 4.0 * (-1.0 if dir == Dir.UP else 1.0)
 	var local := Vector2(hand.x - W * 0.5, hand.y - H)
 	if flip:
 		local.x = -local.x
-	return local
+	# In WELTpixel umrechnen: die Zeichnung ist doppelt so fein wie die Welt,
+	# und alles, was diese Funktion verlaesst, sind Ortsangaben in der Welt.
+	return local * DRAW_SCALE
 
 ## Versatz eines Bildpunktes im Fackelbild gegenueber dessen Mitte.
 ##
@@ -332,55 +355,59 @@ static func hand_offset(dir: int, arm: int, bob: int, flip: bool) -> Vector2:
 ## links der Mitte, gespiegelt eine halbe rechts.
 static func _grip_offset(point: Vector2, flip: bool) -> Vector2:
 	var dx := point.x - float(TORCH_W) * 0.5
-	return Vector2(-dx if flip else dx, point.y - float(TORCH_H) * 0.5)
+	return Vector2(-dx if flip else dx, point.y - float(TORCH_H) * 0.5) * DRAW_SCALE
 
 static func _torch_frame(f: int) -> Image:
 	var img := Pixel.make(TORCH_W, TORCH_H)
+	var leather := Color8(74, 52, 38)
+	var leather_hi := Color8(112, 82, 56)
+	var cord := Color8(52, 36, 26)
 
-	# 1. Handruecken HINTER dem Stiel. Nur drei Spalten breit und deutlich
-	#    dunkler als die Finger: er liegt im Schatten der eigenen Hand, und
-	#    ohne diesen Abstand im Tonwert verschmilzt die ganze Faust zu einem
-	#    hellen Klumpen.
-	Pixel.rect(img, 5, 12, 3, 6, Palette.SKIN_SHADE.darkened(0.30))
+	# 1. Handruecken HINTER dem Stiel. Deutlich dunkler als die Finger — er
+	#    liegt im Schatten der eigenen Hand.
+	Pixel.rect(img, 10, 24, 6, 12, Palette.SKIN_SHADE.darkened(0.30))
+	Pixel.rect(img, 10, 24, 6, 2, Palette.SKIN_SHADE.darkened(0.16))
 
-	# 2. Stiel. Drei Spalten: Licht, Mitte, Schatten — Licht von oben links.
-	Pixel.vline(img, 4, 8, 12, Palette.WOOD_LIGHT)
-	Pixel.vline(img, 5, 8, 12, Palette.WOOD)
-	Pixel.vline(img, 6, 8, 12, Palette.WOOD_DARK)
-	# Maserung: zwei kurze Kerben. Ohne sie ist der Stiel ein Balken.
-	Pixel.px(img, 5, 18, Palette.WOOD_DARK)
-	Pixel.px(img, 4, 11, Palette.WOOD)
+	# 2. Stiel. Sechs Spalten: Licht, Mitte, Schatten — Licht von oben links.
+	Pixel.rect(img, 8, 16, 2, 24, Palette.WOOD_LIGHT)
+	Pixel.rect(img, 10, 16, 2, 24, Palette.WOOD)
+	Pixel.rect(img, 12, 16, 2, 24, Palette.WOOD_DARK)
+	# Maserung: bei doppelter Dichte echte Linien statt einzelner Kerben.
+	Pixel.rect(img, 10, 20, 1, 5, Palette.WOOD_DARK)
+	Pixel.rect(img, 9, 30, 1, 4, Palette.WOOD)
+	Pixel.rect(img, 12, 36, 1, 3, Palette.WOOD_DARK.darkened(0.2))
+	# Abgeschraegtes Ende.
+	Pixel.rect(img, 8, 39, 6, 1, Palette.WOOD_DARK.darkened(0.35))
 
 	# 3. Finger VOR dem Stiel — drei Glieder mit dunkler Fuge dazwischen.
-	#    Sie decken die Spalten 4 und 5 des Stiels; Spalte 6 bleibt sichtbar.
+	#    Sie decken die Spalten 8 bis 11; Spalte 12/13 bleibt sichtbar.
 	for k in 3:
-		var fy := 12 + k * 2
-		Pixel.rect(img, 3, fy, 3, 2, Palette.SKIN)
-		Pixel.rect(img, 3, fy, 3, 1, Palette.SKIN.lightened(0.10))
-		Pixel.rect(img, 3, fy + 1, 3, 1, Palette.SKIN_SHADE.darkened(0.22))
+		var fy := 24 + k * 4
+		Pixel.rect(img, 6, fy, 6, 4, Palette.SKIN)
+		Pixel.rect(img, 6, fy, 6, 1, Palette.SKIN.lightened(0.12))
+		Pixel.rect(img, 6, fy + 3, 6, 1, Palette.SKIN_SHADE.darkened(0.22))
+		# Knoechel: ein heller Punkt je Glied.
+		Pixel.px(img, 7, fy + 1, Palette.SKIN.lightened(0.22))
 
-	# 4. Daumen an der Lichtseite, eine Spalte breit.
-	Pixel.rect(img, 2, 13, 1, 3, Palette.SKIN.lightened(0.14))
-	Pixel.px(img, 2, 13, Palette.SKIN.lightened(0.26))
+	# 4. Daumen an der Lichtseite, mit Nagelandeutung.
+	Pixel.rect(img, 4, 26, 2, 7, Palette.SKIN.lightened(0.14))
+	Pixel.rect(img, 4, 26, 2, 2, Palette.SKIN.lightened(0.28))
+	Pixel.px(img, 5, 32, Palette.SKIN_SHADE)
 
-	# 5. Wicklung: Leder um den Kopf. Breiter als der Stiel, damit sie als
-	#    Umwicklung liest und nicht als dickere Stelle im Holz — und in einem
-	#    eigenen Ton, nicht nur dunkleres Holz.
-	Pixel.rect(img, 3, 7, 5, 4, Color8(74, 52, 38))
-	Pixel.rect(img, 3, 7, 5, 1, Color8(112, 82, 56))
-	Pixel.px(img, 3, 8, Color8(96, 70, 48))
-	# Schnur quer darueber.
-	Pixel.px(img, 4, 9, Color8(52, 36, 26))
-	Pixel.px(img, 5, 9, Color8(52, 36, 26))
-	Pixel.px(img, 6, 9, Color8(52, 36, 26))
-	Pixel.px(img, 7, 8, Color8(48, 34, 24))
+	# 5. Wicklung: Leder um den Kopf, mit drei sichtbaren Schnurgaengen.
+	Pixel.rect(img, 6, 14, 10, 8, leather)
+	Pixel.rect(img, 6, 14, 10, 2, leather_hi)
+	Pixel.rect(img, 6, 15, 2, 6, leather.lightened(0.18))
+	for i in 3:
+		Pixel.rect(img, 6, 16 + i * 2, 10, 1, cord)
+	Pixel.rect(img, 15, 15, 1, 6, cord.darkened(0.2))
 
 	# Umriss NUR um Holz und Haut. Die Flamme bekommt keinen — ein schwarzer
 	# Rand um Feuer laesst es wie einen Aufkleber aussehen.
 	Pixel.outline(img, Palette.OUTLINE)
 
 	# 6. Flamme, zuletzt und ohne Umriss.
-	draw_flame(img, TORCH_FLAME.x, 7.0, 2.1, 9.0, f)
+	draw_flame(img, TORCH_FLAME.x, 14.0, 4.2, 18.0, f)
 	return img
 
 ## Bodenschatten: drei Ellipsen ineinander, von aussen nach innen dunkler.
@@ -391,18 +418,22 @@ static func _torch_frame(f: int) -> Image:
 ## im Zenit; ein Pixel Versatz genügt, damit die Figur auf dem Boden steht,
 ## statt darüber zu schweben.
 static func _shadow() -> Image:
-	var img := Pixel.make(30, 14)
-	Pixel.ellipse(img, 15.6, 7.6, 13.2, 6.2, Color(0, 0, 0, 0.11))
-	Pixel.ellipse(img, 15.6, 7.6, 9.8, 4.5, Color(0, 0, 0, 0.18))
-	Pixel.ellipse(img, 15.2, 7.2, 6.2, 2.8, Color(0, 0, 0, 0.22))
+	var img := Pixel.make(60, 28)
+	Pixel.ellipse(img, 31.2, 15.2, 26.4, 12.4, Color(0, 0, 0, 0.09))
+	Pixel.ellipse(img, 31.2, 15.2, 19.6, 9.0, Color(0, 0, 0, 0.14))
+	Pixel.ellipse(img, 30.4, 14.4, 12.4, 5.6, Color(0, 0, 0, 0.18))
+	# Vierte Stufe, erst bei doppelter Dichte moeglich: der Kontaktschatten
+	# direkt unter den Fuessen. Er ist der Grund, warum eine Figur auf dem
+	# Boden STEHT statt darauf zu liegen.
+	Pixel.ellipse(img, 30.0, 14.0, 6.4, 2.6, Color(0, 0, 0, 0.16))
 	return img
 
 ## leg: -1/0/1 = Beinstellung, bob: 0/1 = Auf-und-ab, arm: Armschwung
 static func _frame(dir: int, leg: int, bob: int, arm: int) -> Image:
 	var img := Pixel.make(W, H)
-	var top := 4 + bob * 2
+	var top := 8 + bob * 4
 	_draw_legs(img, dir, leg)
-	_draw_body(img, dir, top, arm * 2)
+	_draw_body(img, dir, top, arm * 4)
 	_draw_head(img, dir, top)
 	Pixel.outline(img, Palette.OUTLINE)
 	return img
@@ -416,172 +447,269 @@ static func _frame(dir: int, leg: int, bob: int, arm: int) -> Image:
 ## Kniehoehe geben ihm ein Gelenk — und damit liest man ein Bein, das sich
 ## beugen kann, statt eines Stuecks Holz.
 static func _knee(img: Image, x: int, w: int, y: int) -> void:
-	if y < 0 or y >= H - 1:
+	if y < 0 or y >= H - 2:
 		return
-	Pixel.rect(img, x, y, w, 1, Color(Palette.PANTS.darkened(0.34), 0.55))
-	Pixel.rect(img, x, y - 1, w, 1, Color(Palette.PANTS.lightened(0.24), 0.32))
+	Pixel.rect(img, x, y, w, 2, Color(Palette.PANTS.darkened(0.34), 0.55))
+	Pixel.rect(img, x, y - 2, w, 1, Color(Palette.PANTS.lightened(0.24), 0.32))
 
+## Ein Stiefel: Schaft, Lichtkante, Sohle, Schnuerung.
+##
+## Bei einfacher Dichte war ein Stiefel ein Rechteck mit einer hellen und einer
+## dunklen Reihe. Vier Bildpunkte mehr Hoehe reichen fuer das, was einen
+## Stiefel ausmacht: eine Sohle, die vorsteht, und ein Schaft, der geschnuert
+## ist.
+static func _boot(img: Image, x: int, y: int, w: int, shaded: bool) -> void:
+	var body := Palette.BOOTS.darkened(0.2) if shaded else Palette.BOOTS
+	Pixel.rect(img, x, y, w, 8, body)
+	Pixel.rect(img, x, y, w, 2, body.lightened(0.22))
+	# Schnuerung: zwei Kreuze im Schaft.
+	for i in 2:
+		Pixel.px(img, x + 2, y + 2 + i * 2, body.darkened(0.30))
+		Pixel.px(img, x + w - 3, y + 2 + i * 2, body.darkened(0.30))
+	# Sohle: eine Reihe dunkel, eine Reihe fast schwarz — sie steht vor.
+	Pixel.rect(img, x - 1, y + 6, w + 1, 1, body.darkened(0.35))
+	Pixel.rect(img, x - 1, y + 7, w + 1, 1, body.darkened(0.55))
+
+## `tuck` zieht die Beine an: der Ansatz bleibt, die Fuesse kommen hoch. Damit
+## wird aus derselben Zeichnung eine gehockte und eine gestreckte Stellung.
 static func _draw_legs(img: Image, dir: int, leg: int, tuck: int = 0) -> void:
 	var lit := Palette.PANTS.lightened(0.18)
 	var dark := Palette.PANTS.darkened(0.24)
-	var boot := Palette.BOOTS
-	var boot_dark := Palette.BOOTS.darkened(0.2)
+	var seam := Palette.PANTS.darkened(0.40)
 	if dir == Dir.SIDE:
-		var front := 11 + leg * 3
-		var back := 14 - leg * 3
+		var front := 22 + leg * 6
+		var back := 28 - leg * 6
 		# hinteres Bein
-		Pixel.rect(img, back, 37, 7, maxi(7 - tuck, 2), dark)
-		Pixel.rect(img, back, 43 - tuck, 8, 5, boot_dark)
-		Pixel.rect(img, back, 43 - tuck, 8, 1, Palette.BOOTS.lightened(0.1))
+		Pixel.rect(img, back, 74, 14, maxi(14 - tuck, 4), dark)
+		_boot(img, back, 86 - tuck, 16, true)
 		# vorderes Bein
-		Pixel.rect(img, front, 37, 7, maxi(7 - tuck, 2), lit)
-		Pixel.rect(img, front, 37, 2, maxi(7 - tuck, 2), Palette.PANTS.lightened(0.3))
-		Pixel.rect(img, front, 43 - tuck, 9, 5, boot)
-		Pixel.rect(img, front, 43 - tuck, 9, 1, Palette.BOOTS.lightened(0.22))
+		Pixel.rect(img, front, 74, 14, maxi(14 - tuck, 4), lit)
+		Pixel.rect(img, front, 74, 4, maxi(14 - tuck, 4), Palette.PANTS.lightened(0.3))
+		_seam(img, front + 12, 76, maxi(10 - tuck, 2), true, seam)
+		_knee(img, front, 14, 80 - tuck)
+		_boot(img, front, 86 - tuck, 18, false)
 		return
-	var l_dy := 2 if leg > 0 else 0
-	var r_dy := 2 if leg < 0 else 0
+	var l_dy := 4 if leg > 0 else 0
+	var r_dy := 4 if leg < 0 else 0
 	# linkes Bein im Licht, rechtes im Schatten
-	Pixel.rect(img, 10, 37 + l_dy, 6, maxi(7 - l_dy - tuck, 2), lit)
-	Pixel.rect(img, 10, 37 + l_dy, 2, maxi(7 - l_dy - tuck, 2), Palette.PANTS.lightened(0.32))
-	_knee(img, 10, 6, 40 + l_dy - tuck)
-	Pixel.rect(img, 10, 44 - tuck, 6, 4, boot)
-	Pixel.rect(img, 10, 44 - tuck, 6, 1, Palette.BOOTS.lightened(0.22))
-	Pixel.rect(img, 10, 47 - tuck, 6, 1, Palette.BOOTS.darkened(0.35))
-	Pixel.rect(img, 17, 37 + r_dy, 6, maxi(7 - r_dy - tuck, 2), dark)
-	_knee(img, 17, 6, 40 + r_dy - tuck)
-	Pixel.rect(img, 17, 44 - tuck, 6, 4, boot_dark)
-	Pixel.rect(img, 17, 44 - tuck, 6, 1, Palette.BOOTS)
-	Pixel.rect(img, 17, 47 - tuck, 6, 1, Palette.BOOTS.darkened(0.35))
+	Pixel.rect(img, 20, 74 + l_dy, 12, maxi(14 - l_dy - tuck, 4), lit)
+	Pixel.rect(img, 20, 74 + l_dy, 4, maxi(14 - l_dy - tuck, 4), Palette.PANTS.lightened(0.32))
+	_seam(img, 20, 76 + l_dy, maxi(10 - l_dy - tuck, 2), true, seam)
+	_knee(img, 20, 12, 80 + l_dy - tuck)
+	_boot(img, 20, 88 - tuck, 12, false)
+	Pixel.rect(img, 34, 74 + r_dy, 12, maxi(14 - r_dy - tuck, 4), dark)
+	_seam(img, 45, 76 + r_dy, maxi(10 - r_dy - tuck, 2), true, seam)
+	_knee(img, 34, 12, 80 + r_dy - tuck)
+	_boot(img, 34, 88 - tuck, 12, true)
 
 ## Stofffalten auf der Tunika.
 ##
-## Der Auftrag verlangte „leichte Schattierungen und Texturhinweise auf der
-## Kleidung". Der Rumpf bestand vorher aus drei senkrechten Streifen — hell,
-## mittel, dunkel. Das ist BELEUCHTUNG, keine Textur: es sagt, woher das Licht
-## kommt, aber nichts darueber, dass da Stoff haengt.
-##
-## Falten sagen das. Sie muessen schwach bleiben (30 bzw. 22 Prozent): eine
-## deutliche Falte auf einer 16 Bildpunkte breiten Brust liest sich als Naht
-## oder als Schmutz. Und sie laufen nicht bis zum Guertel durch — Stoff wird
-## nach unten hin von der Raffung glattgezogen.
+## Der Rumpf bestand einmal aus drei senkrechten Streifen — hell, mittel,
+## dunkel. Das ist BELEUCHTUNG, keine Textur: es sagt, woher das Licht kommt,
+## aber nichts darueber, dass da Stoff haengt. Bei doppelter Dichte ist Platz
+## fuer eine Falte mit Kante UND Lichtseite statt einer einzelnen Linie.
 static func _folds(img: Image, x0: int, w: int, y: int) -> void:
 	var shade := Color(Palette.TUNIC_DARK, 0.30)
 	var glint := Color(Palette.TUNIC.lightened(0.34), 0.22)
-	# Zwei Falten, asymmetrisch gesetzt: symmetrische Falten wirken gedruckt.
-	Pixel.vline(img, x0 + 2, y + 4, 7, shade)
-	Pixel.vline(img, x0 + 3, y + 5, 5, glint)
-	Pixel.vline(img, x0 + w - 5, y + 3, 8, shade)
-	# Saum ueber dem Guertel: eine Reihe, in der der Stoff aufliegt.
-	Pixel.rect(img, x0 + 1, y + 10, w - 2, 1, Color(Palette.TUNIC.lightened(0.20), 0.28))
+	Pixel.rect(img, x0 + 5, y + 8, 2, 14, shade)
+	Pixel.rect(img, x0 + 7, y + 10, 1, 10, glint)
+	Pixel.rect(img, x0 + w - 10, y + 6, 2, 16, shade)
+	Pixel.rect(img, x0 + w - 8, y + 8, 1, 12, glint)
+	# Saum ueber dem Guertel, in dem der Stoff aufliegt.
+	Pixel.rect(img, x0 + 2, y + 20, w - 4, 1, Color(Palette.TUNIC.lightened(0.20), 0.28))
+	Pixel.rect(img, x0 + 2, y + 21, w - 4, 1, Color(Palette.TUNIC_DARK, 0.20))
+
+## Eine Naht: zwei Bildpunkte Stich, einer Luecke. Bei einfacher Dichte war das
+## nicht darstellbar — eine Naht war dort einfach eine Linie.
+static func _seam(img: Image, x: int, y: int, length: int, vertical: bool, c: Color) -> void:
+	for i in length:
+		if i % 3 == 2:
+			continue
+		if vertical:
+			Pixel.px(img, x, y + i, c)
+		else:
+			Pixel.px(img, x + i, y, c)
 
 static func _draw_body(img: Image, dir: int, top: int, arm: int) -> void:
-	var y := top + 18
+	var y := top + 36
 	var lit := Palette.TUNIC.lightened(0.16)
 	var hi := Palette.TUNIC.lightened(0.30)
 	var belt := Palette.BOOTS.darkened(0.12)
+	var stitch := Palette.TUNIC_DARK.darkened(0.25)
 	if dir == Dir.SIDE:
-		Pixel.rect(img, 10, y, 13, 15, Palette.TUNIC)
-		Pixel.rect(img, 9, y + 1, 1, 3, Palette.TUNIC)
-		Pixel.rect(img, 10, y, 4, 15, lit)
-		Pixel.rect(img, 19, y, 4, 15, Palette.TUNIC_DARK)
+		Pixel.rect(img, 20, y, 26, 30, Palette.TUNIC)
+		Pixel.rect(img, 18, y + 2, 2, 6, Palette.TUNIC)
+		Pixel.rect(img, 20, y, 8, 30, lit)
+		Pixel.rect(img, 38, y, 8, 30, Palette.TUNIC_DARK)
 		# Stoffwurf
-		Pixel.rect(img, 14, y + 4, 1, 9, Palette.TUNIC_DARK)
-		Pixel.rect(img, 17, y + 2, 1, 11, Palette.TUNIC.lightened(0.08))
-		_folds(img, 10, 13, y)
-		Pixel.rect(img, 10, y + 12, 13, 3, belt)
-		Pixel.rect(img, 10, y + 12, 13, 1, belt.lightened(0.22))
-		Pixel.rect(img, 10, y + 11, 13, 1, Color(Palette.TUNIC_DARK, 0.45))
-		Pixel.rect(img, 14, y + 12, 4, 3, Palette.UI_ACCENT)
-		# Umhängetasche
-		Pixel.rect(img, 19, y + 6, 7, 7, Palette.WOOD_DARK)
-		Pixel.rect(img, 19, y + 6, 7, 2, Palette.WOOD)
-		Pixel.rect(img, 20, y + 9, 3, 1, Palette.WOOD_LIGHT)
-		# sichtbarer Arm
-		Pixel.rect(img, 12, y + 2 + arm, 5, 9, Palette.TUNIC_DARK)
-		Pixel.rect(img, 12, y + 10 + arm, 5, 5, Palette.SKIN)
-		Pixel.rect(img, 12, y + 10 + arm, 2, 5, Palette.SKIN.lightened(0.1))
+		Pixel.rect(img, 28, y + 8, 2, 18, Palette.TUNIC_DARK)
+		Pixel.rect(img, 34, y + 4, 2, 22, Palette.TUNIC.lightened(0.08))
+		_folds(img, 20, 26, y)
+		_seam(img, 27, y + 2, 22, true, stitch)
+		Pixel.rect(img, 20, y + 24, 26, 6, belt)
+		Pixel.rect(img, 20, y + 24, 26, 1, belt.lightened(0.22))
+		Pixel.rect(img, 20, y + 22, 26, 2, Color(Palette.TUNIC_DARK, 0.45))
+		# Umhaengetasche mit Riemen und Verschluss
+		Pixel.rect(img, 38, y + 12, 14, 14, Palette.WOOD_DARK)
+		Pixel.rect(img, 38, y + 12, 14, 4, Palette.WOOD)
+		Pixel.rect(img, 40, y + 18, 6, 2, Palette.WOOD_LIGHT)
+		Pixel.rect(img, 43, y + 10, 3, 4, Palette.WOOD.darkened(0.2))
+		# sichtbarer Arm mit Aermelbund
+		Pixel.rect(img, 24, y + 4 + arm, 10, 18, Palette.TUNIC_DARK)
+		Pixel.rect(img, 24, y + 20 + arm, 10, 2, Palette.TUNIC_DARK.darkened(0.25))
+		Pixel.rect(img, 24, y + 22 + arm, 10, 8, Palette.SKIN)
+		Pixel.rect(img, 24, y + 22 + arm, 4, 8, Palette.SKIN.lightened(0.1))
+		_fingers(img, 24, y + 24 + arm, false)
 		return
-	Pixel.rect(img, 8, y, 16, 15, Palette.TUNIC)
-	# Schultern eine Spur breiter als die Taille. Ein Rechteck von Hals bis
-	# Guertel hat keine Haltung; schon ein einziger Bildpunkt Ausladung oben
-	# macht aus dem Rumpf eine Gestalt mit Schultern.
-	Pixel.rect(img, 7, y + 1, 1, 3, Palette.TUNIC)
-	Pixel.rect(img, 24, y + 1, 1, 3, Palette.TUNIC_DARK)
-	Pixel.rect(img, 8, y, 5, 15, lit)
-	Pixel.rect(img, 9, y, 2, 15, hi)
-	Pixel.rect(img, 20, y, 4, 15, Palette.TUNIC_DARK)
-	_folds(img, 8, 16, y)
-	Pixel.rect(img, 8, y + 12, 16, 3, belt)
-	# Lichtkante oben auf dem Guertel, Schatten des Guertels auf dem Stoff
-	# darueber: erst dadurch liegt er AUF der Tunika statt in ihr zu stecken.
-	Pixel.rect(img, 8, y + 12, 16, 1, belt.lightened(0.22))
-	Pixel.rect(img, 8, y + 11, 16, 1, Color(Palette.TUNIC_DARK, 0.45))
+	Pixel.rect(img, 16, y, 32, 30, Palette.TUNIC)
+	# Schultern eine Spur breiter als die Taille.
+	Pixel.rect(img, 14, y + 2, 2, 6, Palette.TUNIC)
+	Pixel.rect(img, 48, y + 2, 2, 6, Palette.TUNIC_DARK)
+	Pixel.rect(img, 16, y, 10, 30, lit)
+	Pixel.rect(img, 18, y, 4, 30, hi)
+	Pixel.rect(img, 40, y, 8, 30, Palette.TUNIC_DARK)
+	_folds(img, 16, 32, y)
+	Pixel.rect(img, 16, y + 24, 32, 6, belt)
+	Pixel.rect(img, 16, y + 24, 32, 1, belt.lightened(0.22))
+	Pixel.rect(img, 16, y + 22, 32, 2, Color(Palette.TUNIC_DARK, 0.45))
+	# Guertelgrat: eine Reihe Riefen im Leder.
+	for gx in range(18, 46, 4):
+		Pixel.px(img, gx, y + 27, belt.darkened(0.25))
 	if dir == Dir.DOWN:
-		# Kragen, Schnürung und Gürtelschnalle
-		Pixel.rect(img, 13, y, 6, 2, Palette.TUNIC_DARK)
-		Pixel.vline(img, 15, y + 2, 10, Palette.TUNIC_DARK)
+		# Kragen mit Umschlag
+		Pixel.rect(img, 26, y, 12, 4, Palette.TUNIC_DARK)
+		Pixel.rect(img, 26, y, 12, 1, Palette.TUNIC.lightened(0.22))
+		Pixel.rect(img, 24, y + 2, 4, 3, Palette.TUNIC_DARK)
+		Pixel.rect(img, 36, y + 2, 4, 3, Palette.TUNIC_DARK.darkened(0.15))
+		# Schnuerung: Oesen mit Band dazwischen
+		Pixel.rect(img, 31, y + 4, 2, 18, Palette.TUNIC_DARK)
 		for i in 3:
-			Pixel.rect(img, 14, y + 3 + i * 3, 3, 1, Palette.WOOD_LIGHT)
-		Pixel.rect(img, 14, y + 12, 4, 3, Palette.UI_ACCENT)
-		Pixel.px(img, 15, y + 13, Palette.UI_ACCENT.lightened(0.3))
+			var ly := y + 6 + i * 6
+			Pixel.rect(img, 28, ly, 8, 2, Palette.WOOD_LIGHT)
+			Pixel.px(img, 28, ly, Palette.WOOD_LIGHT.lightened(0.25))
+			Pixel.px(img, 35, ly + 1, Palette.WOOD_DARK)
+		# Guertelschnalle mit Dorn
+		Pixel.rect(img, 28, y + 24, 8, 6, Palette.UI_ACCENT)
+		Pixel.rect(img, 30, y + 26, 4, 2, belt.darkened(0.3))
+		Pixel.rect(img, 28, y + 24, 8, 1, Palette.UI_ACCENT.lightened(0.3))
+		Pixel.px(img, 33, y + 27, Palette.UI_ACCENT.lightened(0.4))
 	else:
-		# Rückenansicht: Riemen und Tasche
-		Pixel.rect(img, 12, y, 2, 6, Palette.WOOD_DARK)
-		Pixel.rect(img, 18, y, 2, 6, Palette.WOOD_DARK)
-		Pixel.rect(img, 11, y + 5, 10, 8, Palette.WOOD_DARK)
-		Pixel.rect(img, 11, y + 5, 10, 2, Palette.WOOD)
-		Pixel.rect(img, 14, y + 9, 4, 1, Palette.WOOD_LIGHT)
-	# Arme
-	Pixel.rect(img, 4, y + 2 - arm, 5, 9, lit.darkened(0.06))
-	Pixel.rect(img, 4, y + 10 - arm, 5, 5, Palette.SKIN)
-	Pixel.rect(img, 23, y + 2 + arm, 5, 9, Palette.TUNIC_DARK)
-	Pixel.rect(img, 23, y + 10 + arm, 5, 5, Palette.SKIN_SHADE)
+		# Rueckenansicht: Riemen, Tasche, Rueckennaht
+		Pixel.rect(img, 24, y, 4, 12, Palette.WOOD_DARK)
+		Pixel.rect(img, 36, y, 4, 12, Palette.WOOD_DARK)
+		Pixel.rect(img, 22, y + 10, 20, 16, Palette.WOOD_DARK)
+		Pixel.rect(img, 22, y + 10, 20, 4, Palette.WOOD)
+		Pixel.rect(img, 28, y + 18, 8, 2, Palette.WOOD_LIGHT)
+		_seam(img, 31, y + 2, 20, true, stitch)
+	# Arme: Aermel, Bund, Hand
+	Pixel.rect(img, 8, y + 4 - arm, 10, 18, lit.darkened(0.06))
+	Pixel.rect(img, 8, y + 20 - arm, 10, 2, Palette.TUNIC_DARK.darkened(0.20))
+	Pixel.rect(img, 8, y + 22 - arm, 10, 8, Palette.SKIN)
+	_fingers(img, 8, y + 24 - arm, false)
+	Pixel.rect(img, 46, y + 4 + arm, 10, 18, Palette.TUNIC_DARK)
+	Pixel.rect(img, 46, y + 20 + arm, 10, 2, Palette.TUNIC_DARK.darkened(0.30))
+	Pixel.rect(img, 46, y + 22 + arm, 10, 8, Palette.SKIN_SHADE)
+	_fingers(img, 46, y + 24 + arm, true)
 
+## Finger an einer Hand: drei Fugen, damit sie nicht als Klotz liest.
+static func _fingers(img: Image, x: int, y: int, shaded: bool) -> void:
+	var line := (Palette.SKIN_SHADE.darkened(0.32) if shaded
+		else Palette.SKIN_SHADE.darkened(0.12))
+	for i in 3:
+		Pixel.rect(img, x + 1 + i * 3, y, 1, 5, Color(line, 0.55))
+
+## Der Kopf.
+##
+## Bei doppelter Dichte ist Platz fuer das, was ein Gesicht ausmacht und vorher
+## nicht hineinpasste: eine Pupille mit Lichtpunkt, eine Braue mit Richtung,
+## eine Nase mit Schattenseite, ein Mund mit Mundwinkeln, und ein Haaransatz
+## aus einzelnen Straehnen statt eines Blocks.
 static func _draw_head(img: Image, dir: int, top: int) -> void:
 	var hair_dark := Palette.HAIR.darkened(0.24)
+	var hair_deep := Palette.HAIR.darkened(0.42)
 	match dir:
 		Dir.DOWN:
-			Pixel.rect(img, 8, top + 4, 16, 14, Palette.SKIN)
-			Pixel.rect(img, 20, top + 6, 4, 12, Palette.SKIN_SHADE)
-			Pixel.rect(img, 8, top + 16, 16, 2, Palette.SKIN_SHADE)
-			# Haar
-			Pixel.rect(img, 6, top, 20, 6, Palette.HAIR)
-			Pixel.rect(img, 6, top + 6, 2, 6, Palette.HAIR)
-			Pixel.rect(img, 24, top + 6, 2, 6, hair_dark)
-			Pixel.rect(img, 8, top + 4, 16, 2, Palette.HAIR)
-			Pixel.rect(img, 7, top, 9, 2, Palette.HAIR_LIGHT)
-			Pixel.rect(img, 8, top + 2, 5, 1, Palette.HAIR_LIGHT)
-			# Augen mit Weiß und Pupille
-			for ex: int in [11, 18]:
-				Pixel.rect(img, ex, top + 9, 3, 3, EYE_WHITE)
-				Pixel.rect(img, ex + 1, top + 10, 2, 2, EYE)
-				Pixel.rect(img, ex, top + 8, 3, 1, hair_dark)
-			# Nase, Mund, Wangen
-			Pixel.px(img, 15, top + 12, Palette.SKIN_SHADE)
-			Pixel.rect(img, 14, top + 14, 4, 1, Palette.SKIN_SHADE.darkened(0.15))
-			Pixel.px(img, 10, top + 12, Color8(226, 158, 140))
-			Pixel.px(img, 21, top + 12, Color8(226, 158, 140))
+			Pixel.rect(img, 16, top + 8, 32, 28, Palette.SKIN)
+			Pixel.rect(img, 40, top + 12, 8, 24, Palette.SKIN_SHADE)
+			Pixel.rect(img, 16, top + 32, 32, 4, Palette.SKIN_SHADE)
+			# Ohren: zwei Bildpunkte breit, mit Schattenkerbe.
+			Pixel.rect(img, 14, top + 18, 2, 6, Palette.SKIN)
+			Pixel.rect(img, 48, top + 18, 2, 6, Palette.SKIN_SHADE)
+			Pixel.px(img, 15, top + 20, Palette.SKIN_SHADE)
+			_hair_cap(img, top, hair_dark, hair_deep)
+			# Pony: einzelne Straehnen an der Haarlinie.
+			#
+			# Sie duerfen nur wenig unterschiedlich lang sein. Beim ersten
+			# Versuch schwankten sie zwischen drei und acht Bildpunkten und
+			# schnitten tief in die Stirn — das las sich nicht als Haar,
+			# sondern als ausgefranste Kante. Zwei Punkte Unterschied reichen,
+			# damit die Linie lebt, ohne dass sie zerfaellt.
+			for lock: Array in [[17, 3], [21, 4], [26, 3], [31, 5], [36, 3], [41, 4], [46, 3]]:
+				Pixel.rect(img, int(lock[0]), top + 10, 4, int(lock[1]), Palette.HAIR)
+			Pixel.rect(img, 16, top + 8, 32, 2, Palette.HAIR)
+			# Augen: Weiss, Pupille, Lichtpunkt, Braue.
+			for ex: int in [22, 36]:
+				Pixel.rect(img, ex, top + 18, 6, 6, EYE_WHITE)
+				Pixel.rect(img, ex + 2, top + 20, 3, 4, EYE)
+				Pixel.px(img, ex + 2, top + 20, EYE_WHITE)
+				Pixel.rect(img, ex, top + 23, 6, 1, Palette.SKIN_SHADE)
+				Pixel.rect(img, ex - 1, top + 15, 8, 2, hair_dark)
+				Pixel.px(img, ex - 1, top + 16, hair_deep)
+			# Nase mit Schattenseite.
+			Pixel.rect(img, 31, top + 24, 2, 3, Palette.SKIN_SHADE)
+			Pixel.px(img, 33, top + 26, Palette.SKIN_SHADE.darkened(0.18))
+			# Mund mit Winkeln.
+			Pixel.rect(img, 29, top + 29, 6, 1, Palette.SKIN_SHADE.darkened(0.22))
+			Pixel.px(img, 28, top + 28, Palette.SKIN_SHADE.darkened(0.10))
+			Pixel.px(img, 35, top + 28, Palette.SKIN_SHADE.darkened(0.10))
+			# Wangen.
+			Pixel.rect(img, 19, top + 25, 3, 2, Color8(226, 158, 140))
+			Pixel.rect(img, 43, top + 25, 3, 2, Color8(216, 148, 132))
 		Dir.UP:
-			Pixel.rect(img, 8, top + 4, 16, 14, Palette.SKIN_SHADE)
-			Pixel.rect(img, 6, top, 20, 14, Palette.HAIR)
-			Pixel.rect(img, 7, top, 10, 3, Palette.HAIR_LIGHT)
-			Pixel.rect(img, 8, top + 3, 6, 2, Palette.HAIR_LIGHT)
-			Pixel.rect(img, 22, top + 2, 4, 12, hair_dark)
-			Pixel.rect(img, 8, top + 14, 16, 4, Palette.HAIR)
-			Pixel.rect(img, 10, top + 17, 12, 1, hair_dark)
+			Pixel.rect(img, 16, top + 8, 32, 28, Palette.SKIN_SHADE)
+			Pixel.rect(img, 12, top, 40, 28, Palette.HAIR)
+			Pixel.rect(img, 14, top, 20, 6, Palette.HAIR_LIGHT)
+			Pixel.rect(img, 16, top + 6, 12, 4, Palette.HAIR_LIGHT)
+			Pixel.rect(img, 44, top + 4, 8, 24, hair_dark)
+			Pixel.rect(img, 16, top + 28, 32, 8, Palette.HAIR)
+			# Nackenhaar: einzelne Spitzen statt einer Kante.
+			for lock: Array in [[18, 3], [24, 5], [31, 3], [38, 5], [44, 2]]:
+				Pixel.rect(img, int(lock[0]), top + 36, 3, int(lock[1]), hair_dark)
+			Pixel.rect(img, 20, top + 34, 24, 2, hair_deep)
 		Dir.SIDE:
-			Pixel.rect(img, 8, top + 4, 16, 14, Palette.SKIN)
-			Pixel.rect(img, 20, top + 6, 4, 10, Palette.SKIN_SHADE)
-			Pixel.rect(img, 8, top + 16, 16, 2, Palette.SKIN_SHADE)
-			# Haar seitlich, deckt Hinterkopf
-			Pixel.rect(img, 6, top, 18, 8, Palette.HAIR)
-			Pixel.rect(img, 6, top + 6, 6, 9, Palette.HAIR)
-			Pixel.rect(img, 7, top + 1, 10, 2, Palette.HAIR_LIGHT)
-			Pixel.px(img, 23, top + 6, hair_dark)
-			# Profil: ein Auge, Nase, Mund
-			Pixel.rect(img, 17, top + 9, 3, 3, EYE_WHITE)
-			Pixel.rect(img, 18, top + 10, 2, 2, EYE)
-			Pixel.rect(img, 17, top + 8, 3, 1, hair_dark)
-			Pixel.rect(img, 23, top + 10, 2, 2, Palette.SKIN)
-			Pixel.rect(img, 20, top + 14, 3, 1, Palette.SKIN_SHADE.darkened(0.15))
+			Pixel.rect(img, 16, top + 8, 32, 28, Palette.SKIN)
+			Pixel.rect(img, 40, top + 12, 8, 20, Palette.SKIN_SHADE)
+			Pixel.rect(img, 16, top + 32, 32, 4, Palette.SKIN_SHADE)
+			Pixel.rect(img, 14, top, 34, 16, Palette.HAIR)
+			# Der Hinterkopf laeuft bis zur Schulter durch. Ohne das klaffte
+			# zwischen Haar und Rumpf eine Luecke, und der Umriss las sich als
+			# abgetrennter Kiefer.
+			Pixel.rect(img, 14, top + 12, 12, 24, Palette.HAIR)
+			Pixel.rect(img, 16, top + 2, 18, 4, Palette.HAIR_LIGHT)
+			Pixel.rect(img, 15, top + 14, 8, 3, hair_dark)
+			Pixel.rect(img, 26, top + 30, 8, 6, Palette.SKIN_SHADE)
+			Pixel.px(img, 47, top + 12, hair_dark)
+			# Ohr im Profil: klein und weit hinten, sonst liegt es auf der Wange.
+			Pixel.rect(img, 28, top + 19, 3, 5, Palette.SKIN_SHADE)
+			Pixel.px(img, 29, top + 21, Palette.SKIN_SHADE.darkened(0.22))
+			# Ein Auge, Braue, Nase, Mund.
+			Pixel.rect(img, 34, top + 18, 6, 6, EYE_WHITE)
+			Pixel.rect(img, 36, top + 20, 3, 4, EYE)
+			Pixel.px(img, 36, top + 20, EYE_WHITE)
+			Pixel.rect(img, 33, top + 15, 8, 2, hair_dark)
+			Pixel.rect(img, 47, top + 20, 3, 3, Palette.SKIN)
+			Pixel.px(img, 49, top + 22, Palette.SKIN_SHADE)
+			Pixel.rect(img, 42, top + 28, 5, 1, Palette.SKIN_SHADE.darkened(0.22))
+
+## Haarkappe mit Lichtseite — bei allen Blickrichtungen dieselbe Form.
+static func _hair_cap(img: Image, top: int, hair_dark: Color, hair_deep: Color) -> void:
+	Pixel.rect(img, 14, top, 36, 12, Palette.HAIR)
+	Pixel.rect(img, 14, top + 12, 3, 12, Palette.HAIR)
+	Pixel.rect(img, 47, top + 12, 3, 12, hair_dark)
+	# Lichtseite oben links, zwei Straehnen.
+	Pixel.rect(img, 16, top, 16, 3, Palette.HAIR_LIGHT)
+	Pixel.rect(img, 18, top + 3, 9, 2, Palette.HAIR_LIGHT)
+	Pixel.rect(img, 21, top + 1, 2, 5, Palette.HAIR_LIGHT.lightened(0.12))
+	# Schattenseite rechts — als Verlauf, nicht als Block.
+	Pixel.rect(img, 42, top + 1, 8, 9, hair_dark)
+	Pixel.rect(img, 46, top + 3, 4, 6, hair_deep)

@@ -21,6 +21,21 @@ const SHADES := 3
 ## hinweg weich verläuft.
 const SHADE_STEP := 0.018
 
+## Beim WASSER bedeuten die Stufen etwas anderes — und dürfen deshalb viel
+## weiter auseinanderliegen.
+##
+## Bei Gras und Sand ist die Stufe eine zufällige Helligkeitsschwankung, und
+## jeder sichtbare Unterschied wäre ein Schachbrett. Beim Wasser ist sie die
+## TIEFE: Stufe 0 liegt am Ufer, Stufe 2 in der Mitte. Das ist keine
+## Schwankung, sondern eine Form — sie folgt der Küstenlinie und darf gesehen
+## werden. Ohne sie ist eine Wasserfläche eine gleichmäßig blaue Platte, egal
+## wie fein die Kachel gezeichnet ist.
+const SHADE_STEP_WATER := 0.085
+
+## Wie weit die Stufen eines Bodentyps auseinanderliegen.
+static func shade_step(tile: int) -> float:
+	return SHADE_STEP_WATER if tile == MapData.Tile.WATER else SHADE_STEP
+
 ## Lage und Hoehe der Tiefenbaender im Wasser: y, Hoehe.
 ##
 ## Fest statt gewuerfelt, siehe `_water_tile`. Ungleiche Abstaende, damit die
@@ -52,10 +67,11 @@ func _build_bases_raw(rng: RandomNumberGenerator) -> void:
 	base.resize(MapData.Tile.COUNT)
 	for t in MapData.Tile.COUNT:
 		var list: Array[Image] = []
+		var step := shade_step(t)
 		for shade in SHADES:
 			for v in VARIANTS:
 				var img := _make_tile(t, rng)
-				_shift(img, (shade - 1) * -SHADE_STEP)
+				_shift(img, (shade - 1) * -step)
 				list.append(img)
 		base[t] = list
 

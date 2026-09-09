@@ -1212,6 +1212,73 @@ mit einem Filter darueber.
 
 **Stand:** 330 Pruefungen, alle gruen.
 
+## Nachtrag: „die Pixel sind zu gross" — und warum die Diagnose danebenlag
+
+Der Befund stimmte, die vermutete Ursache nicht. Die Kacheln waren nie 16 x 16,
+sie sind seit der ersten Fassung 32 x 32. Gross wirken die Pixel wegen des
+ZOOMS: bei Zoom 2 ist ein Weltpixel zwei Bildschirmpunkte, und daran aendert
+eine feinere Zeichnung nichts.
+
+Daraus folgt eine unangenehme Rechnung. Mehr Dichte bei gleicher
+Bildschirmgroesse heisst zwingend: Zoom halbieren. Und weil scharfe Pixel einen
+ganzzahligen Zoom brauchen, kostet das die weiteste Ansicht. Mehr Bildpunkte
+auf derselben Flaeche UND mehr Flaeche im Bild schliessen sich aus — das ist
+kein Kompromiss, den man schliessen kann, sondern eine Wahl.
+
+Fuer die WELT waere die Umstellung ein Umbau jedes Masses im Spiel gewesen:
+Tempo, Sprunghoehe, Kollision, Kachelatlas, Speicher. Fuer die FIGUR geht es
+ohne all das, weil sie nicht auf dem Kachelraster sitzt: doppelt gezeichnet,
+halb dargestellt, gleiche Groesse in der Welt. Bei Zoom 2 faellt ein Kunstpixel
+dann auf genau einen Bildschirmpunkt.
+
+Der Haken steht im Selbsttest: `0,5 * Zoom` muss ganzzahlig sein. Bei Zoom 3
+waeren es anderthalb Bildschirmpunkte je Kunstpixel, und die Kanten der Figur
+wuerden beim Laufen flimmern — sichtbar nur in Bewegung, also genau die Sorte
+Fehler, die man beim Ansehen eines Standbildes nicht findet. Die Zoomstufen
+sind deshalb 2/4/6.
+
+Beim Umbau ist noch etwas aufgefallen, das vorher nicht auffallen KONNTE: die
+Sprunghoehe stand zusammen mit dem Bildversatz in `offset`. Solange Zeichnung
+und Welt dasselbe Mass hatten, war das gleichgueltig. Mit halber Darstellung
+waere die Figur nur noch halb so hoch gesprungen, ohne dass jemand eine Zahl
+geaendert haette. Sie steht jetzt in `position`, wo sie hingehoert.
+
+## Nachtrag: das echte Licht, gemessen statt vermutet
+
+Ein `PointLight2D` wurde vor mehreren Runden entfernt, weil es +3,43 ms
+CPU-Renderzeit kostete. Auf ausdruecklichen Wunsch gibt es es jetzt wieder — als
+Stufe „Sehr hoch", abschaltbar, nicht voreingestellt.
+
+Die Messung dazu ist deutlicher als erwartet:
+
+| Fall | Bildzeit | FPS |
+|---|---|---|
+| Nacht voll (additiver Schein) | 24,72 ms | 40 |
+| Nacht voll mit echtem Licht | 41,52 ms | 24 |
+
+**+16,80 ms** — mehr als alle anderen Lichtmittel zusammen. Genau diese Sorte
+Einbruch war der Grund fuer die Entfernung.
+
+Was die Stufe dafuer bringt, kann ein additives Viereck grundsaetzlich nicht:
+ein echtes Licht multipliziert mit dem Untergrund (unbeleuchtete Stellen
+bleiben wirklich dunkel), und Verdecker werfen Schatten. Gesetzte Fackeln haben
+seither einen Verdecker; er kostet nichts, solange kein echtes Licht in der
+Szene steht.
+
+Drei Absicherungen halten die Zusage fuer alle anderen Stufen aufrecht:
+
+- kein Qualitaetsprofil vergibt Stufe 4
+- die automatische Anpassung nimmt sie als ALLERERSTES zurueck
+- der Selbsttest prueft, dass das Licht beim Zurueckschalten wirklich
+  WEGGERAEUMT wird und nicht nur auf Energie null steht — ein Licht mit Energie
+  null rechnet trotzdem
+
+Was die Stufe nicht bringt: mehr Schattenwerfer. Die Welt besteht aus
+Bodenkacheln. Gesetzte Fackeln sind bis auf Weiteres das Einzige darin, was
+einen Schatten werfen kann.
+
+**Stand:** 335 Pruefungen, alle gruen.
+
 ## Lizenzlage
 
 Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest

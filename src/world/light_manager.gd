@@ -152,6 +152,15 @@ const GLOW_PEAK := 0.42
 ## Schein. Klein genug, dass er die Figur beleuchtet statt die halbe Wiese.
 const CORE_SHARE := 0.40
 
+## Wie kraeftig das echte Licht brennt und wie weit es reicht.
+##
+## Es multipliziert statt zu addieren und braucht deshalb andere Zahlen als der
+## Schein: Energie ueber 1 hellt auf, darunter dunkelt es ab. Die Reichweite ist
+## grosszuegiger, weil ein multiplizierendes Licht am Rand unauffaellig
+## ausläuft, waehrend ein additives dort noch sichtbar aufhellt.
+const REAL_ENERGY := 1.35
+const REAL_REACH := 2.2
+
 ## Die Farbe von Fackellicht: #FFAF64.
 ##
 ## Warmes Orange, nicht Gelb. Gelb ueber einer blauen Nacht ergibt Gruen — der
@@ -190,6 +199,10 @@ var _night: CanvasLayer
 var _vignette: TextureRect
 var _blue: ColorRect
 var _embers: Embers
+
+## Das echte 2D-Licht — nur auf Stufe „Sehr hoch" vorhanden.
+var _real_light: PointLight2D
+var _real_tex: ImageTexture
 
 ## Wie viele Funken im letzten Bild gezeichnet wurden — nur Messung fuer den
 ## Selbsttest. Eine Wirkung, die man nicht zaehlen kann, kann man auch nicht
@@ -457,6 +470,7 @@ func _apply_mode() -> void:
 	# Stufe 2 bringt den Schein, Stufe 3 zusätzlich die Sichtgrenze.
 	_glow_root.visible = mode >= 2
 	_vignette.visible = mode >= 3
+	_apply_real_light(mode)
 	set_process(mode > 0)
 	_refresh()
 
@@ -541,8 +555,69 @@ func _update_glows(delta: float) -> void:
 		if not s.embers.is_empty():
 			_step_embers(s, delta)
 			any_embers = true
+		if s == _player_light:
+			_step_real_light(s)
 	if any_embers and is_instance_valid(_embers):
 		_embers.queue_redraw()
+
+# --- Das echte Licht ----------------------------------------------------------
+
+## Legt das `PointLight2D` an oder raeumt es weg.
+##
+## Es existiert NUR auf Stufe „Sehr hoch" — und zwar wirklich nicht: ein Licht
+## mit Energie null rechnet trotzdem. Die ganze Stufe ist ein Angebot fuer
+## Rechner, die es tragen; auf allen anderen Stufen bleibt die Zusicherung
+## bestehen, dass in dieser Welt kein einziges `Light2D` steht. Der Selbsttest
+## prueft beides.
+##
+## Warum ueberhaupt, wenn der additive Schein billiger ist und aehnlich
+## aussieht: ein echtes Licht MULTIPLIZIERT mit dem Untergrund, statt Helligkeit
+## daraufzulegen. Unbeleuchtete Stellen bleiben dadurch wirklich dunkel, und
+## Verdecker (`LightOccluder2D`) koennen Schatten werfen — beides kann ein
+## additives Viereck grundsaetzlich nicht.
+func _apply_real_light(mode: int) -> void:
+	var want := mode >= Graphics.LIGHT_REAL
+	if want == is_instance_valid(_real_light):
+		return
+	if not want:
+		_real_light.queue_free()
+		_real_light = null
+		return
+	if _real_tex == null:
+		_real_tex = _real_light_texture()
+	_real_light = PointLight2D.new()
+	_real_light.name = "Fackellicht"
+	_real_light.texture = _real_tex
+	_real_light.color = TORCH_LIGHT
+	_real_light.energy = 0.0
+	_real_light.shadow_enabled = true
+	_real_light.shadow_filter = Light2D.SHADOW_FILTER_PCF5
+	_real_light.shadow_filter_smooth = 3.0
+	# Ueber dem Boden, damit die Kacheln beleuchtet werden.
+	_real_light.range_z_min = -64
+	_real_light.range_z_max = 64
+	add_child(_real_light)
+
+## Der Verlauf des echten Lichts. Groesser gebacken als der Schein: ein
+## `Light2D` skaliert seine Textur, und ein zu kleines Bild zeigt Stufen.
+func _real_light_texture() -> ImageTexture:
+	var n := 256
+	var img := Pixel.make(n, n)
+	var c := n * 0.5
+	for y in n:
+		for x in n:
+			var t := 1.0 - clampf(Vector2(x + 0.5 - c, y + 0.5 - c).length() / c, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1, 1, 1, pow(t, 1.45)))
+	return Pixel.tex(img)
+
+## Setzt Ort, Staerke und Weite des echten Lichts — dieselben Werte wie beim
+## Schein, damit beide Stufen dieselbe Szene zeigen und nur die Technik wechselt.
+func _step_real_light(s: LightSource) -> void:
+	if not is_instance_valid(_real_light):
+		return
+	_real_light.position = s.world_pos()
+	_real_light.energy = clampf(_dark * s.flick, 0.0, 1.4) * REAL_ENERGY
+	_real_light.texture_scale = s.radius * REAL_REACH / 128.0
 
 # --- Glut ---------------------------------------------------------------------
 
