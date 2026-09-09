@@ -27,8 +27,18 @@ const CHUNK_LINE := Color(1.00, 0.85, 0.35, 0.30)
 const CHUNK_TEXT := Color(1.00, 0.90, 0.50, 0.22)
 const PLAYER_FILL := Color(1.00, 0.85, 0.45, 0.10)
 const PLAYER_LINE := Color(1.00, 0.85, 0.45, 0.45)
-const CURSOR_LINE := Color(1.00, 1.00, 1.00, 0.95)
-const CURSOR_GHOST := Color(1.00, 1.00, 1.00, 0.55)   ## Deckkraft des Geistbilds
+## Die Bauvorschau war reinweiss bei 95 %. Auf einem Bildschirmfoto sahen die
+## vier Eckwinkel aus wie vergessene Marker neben der Figur — sie hatten weder
+## eine Farbe, die zum Spiel gehoert, noch etwas, worauf sie sich sichtbar
+## bezogen. Warm statt weiss bindet sie an die uebrige Oberflaeche (dieselbe
+## Akzentfarbe wie die gewaehlte Kachel in der Leiste), und der schwache
+## Schleier im Feld gibt ihnen etwas, das sie einrahmen.
+const CURSOR_LINE := Color(1.00, 0.86, 0.55, 0.85)
+const CURSOR_GHOST := Color(1.00, 1.00, 1.00, 0.62)   ## Deckkraft des Geistbilds
+## Ohne diesen Schleier ist die Vorschau unsichtbar, sobald das gewaehlte
+## Material dem Boden darunter gleicht — Gras auf Gras. Dann standen nur noch
+## die Winkel im Bild und zeigten auf nichts.
+const CURSOR_FILL := Color(1.00, 0.90, 0.62, 0.10)
 const BORDER := Color(1.00, 0.55, 0.25, 0.75)
 
 ## Linienstärken sind in BILDSCHIRMpunkten gemeint, nicht in Weltpixeln: eine
@@ -187,7 +197,8 @@ func _draw_cursor(c: CanvasItem, t: float) -> void:
 	var box := Rect2(cursor_block.x * t, cursor_block.y * t, t, t)
 	if cursor_tex != null:
 		c.draw_texture_rect(cursor_tex, box, false, CURSOR_GHOST)
-	var arm := t * 0.3
+	c.draw_rect(box, CURSOR_FILL, true)
+	var arm := t * 0.28
 	for corner: Array in [[box.position, 1.0, 1.0], [Vector2(box.end.x, box.position.y), -1.0, 1.0],
 			[Vector2(box.position.x, box.end.y), 1.0, -1.0], [box.end, -1.0, -1.0]]:
 		var p: Vector2 = corner[0]
@@ -196,8 +207,8 @@ func _draw_cursor(c: CanvasItem, t: float) -> void:
 		# Erst dunkel und dick, dann hell und dünn: der Winkel bleibt auf jedem
 		# Untergrund lesbar, auch auf hellem Sand.
 		for pass_i in 2:
-			var col: Color = Color(0, 0, 0, 0.6) if pass_i == 0 else CURSOR_LINE
-			var w: float = _w(4.0 if pass_i == 0 else 2.0)
+			var col: Color = Color(0, 0, 0, 0.45) if pass_i == 0 else CURSOR_LINE
+			var w: float = _w(3.0 if pass_i == 0 else 2.0)
 			c.draw_line(p, p + Vector2(arm * dx, 0.0), col, w)
 			c.draw_line(p, p + Vector2(0.0, arm * dy), col, w)
 

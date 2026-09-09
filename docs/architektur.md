@@ -1061,7 +1061,84 @@ im Testlauf herunter, weil die Bildzeit auf dieser Maschine schlecht genug ist.
 Sie ist für den Lauf abgeschaltet; ihre eigene Wirkung prüft `_check_quality()`
 direkt, ohne auf eine langsame Maschine zu warten.
 
-**Stand:** 313 Prüfungen, alle grün.
+**Stand:** 327 Prüfungen, alle grün.
+
+## Nachtrag: was groß ist, muss überall gleich sein
+
+Der Selbsttest prüfte seit langem, ob eine Kachel mit **sich selbst** nahtlos
+ist: letzte Spalte gegen erste Spalte. Das ist nötig, aber es ist nicht die
+Frage, die auf dem Bildschirm gestellt wird — dort liegt neben Variante 3 die
+Variante 7, und ob DIE zusammenpassen, hat nie etwas gemessen.
+
+Genau da saß ein Fehler, den man auf jedem Bild sehen konnte, sobald man wusste,
+wonach man sucht. Die Tiefenbänder im Wasser wurden je Variante neu ausgewürfelt.
+Ein Band läuft über die volle Kachelbreite und hört an der Kante auf; stieß dort
+eine Kachel ohne Band an, sprang die Helligkeit. Über eine ruhige Wasserfläche
+hinweg war das ein Gitter — gemessen 1,94, der schlechteste Wert im Projekt.
+
+`_check_variant_seams()` misst das jetzt: jede Variante gegen jede andere
+derselben Helligkeitsstufe, Farbsprung an der Stoßkante geteilt durch den Sprung
+zweier benachbarter Punkte im Kachelinneren.
+
+| | vorher | jetzt |
+|---|---|---|
+| Gras | 1,59 | 1,43 |
+| Sand | 1,35 | 1,05 |
+| Wasser | 1,94 | 1,11 |
+
+Die Regel, die daraus folgt, steht im Code an drei Stellen: **was groß ist, muss
+in allen Varianten gleich sein, sonst sieht man die Fuge. Was sich unterscheiden
+darf, muss klein oder weich sein.** Die Tiefenbänder stehen deshalb in jeder
+Variante an derselben Stelle, und die neuen Farbtöne von Gras und Sand stecken
+in den Halmen und Körnern statt in den großen Flecken.
+
+Bemerkenswert daran ist die Reihenfolge: die Verfeinerung kam zuerst, sie hat
+die Naht von 1,59 auf 1,72 verschlechtert, und erst die *Messung* hat gezeigt,
+wo die Farbe hingehört. Ohne die Prüfung wäre die reichere Wiese mit einem
+sichtbaren Raster ausgeliefert worden.
+
+## Nachtrag: die Nacht war grün
+
+In der Farbtabelle stand seit der ersten Fassung `Color(0.26, 0.30, 0.50)` mit
+dem Kommentar „tiefe Nacht, blau". Auf dem Bildschirm war sie dunkelgrün, und
+das über mehrere Runden hinweg, ohne dass es jemandem auffiel — auch mir nicht,
+obwohl ich die Nacht in derselben Runde profiliert und umgebaut habe.
+
+Der Grund ist eine Zeile Rechnung. `CanvasModulate` multipliziert. Gras ist
+(78, 138, 68); darin steckt fast kein Blau, das sich verstärken ließe. Das
+Ergebnis ist (20, 41, 34). Eine blaue Tönung kann aus einer grünen Wiese keine
+blaue Nacht machen — sie kann sie nur dunkler machen.
+
+Der Kommentar war also nicht falsch geschrieben, sondern falsch **geglaubt**:
+er beschrieb die Absicht, und niemand hat das Ergebnis dagegen gehalten. Die
+neue Prüfung tut genau das — sie rechnet Gras mal Nachttönung und schaut nach,
+ob dabei etwas Blaues herauskommt.
+
+Blau kommt jetzt dazu statt durchmultipliziert zu werden: eine
+halbdurchsichtige Fläche über der Welt, unter den Scheinen. Ein Viereck, kein
+Shader. Gemessen (llvmpipe, 1280 × 720): ein zusätzlicher Zeichenaufruf,
+**+0,19 ms Bildzeit**. Der Profiler hat dafür eine eigene Zeile bekommen —
+jede Zeile schaltet genau ein Mittel dazu, sonst ist die Differenz nicht der
+Preis dieses einen Mittels.
+
+## Nachtrag: was wie eine Markierung aussieht, ist eine
+
+Auf einem Bildschirmfoto standen drei helle Formen in der Welt, die ein Spieler
+für vergessene Entwicklermarken hielt und deren Entfernung er verlangte. Es
+waren drei verschiedene Sachen: ein blockgenauer Schaumsaum (ein echter Fehler,
+Geschwister des dunklen Rechtecks von EdgeArt), weiße Blüten (fünf Punkte im
+Kreuz mit dem hellsten in der Mitte) und die Bauvorschau (vier Eckwinkel in
+reinem Weiß bei 95 %).
+
+Nur das erste war ein Fehler im engeren Sinn. Die anderen beiden funktionierten
+genau wie vorgesehen — sie sahen nur aus wie etwas anderes. Das ist derselbe
+Fehler, und er ist schwerer zu finden, weil kein Test darauf anspringt: die
+Blüte war eine Blüte, die Vorschau war eine Vorschau, jede Prüfung grün.
+
+Was hilft, ist eine Prüfung, die nicht nach Absicht fragt, sondern nach
+Wirkung. Für den Staub in der Luft steht sie jetzt da: *blasser als der hellste
+Boden, den es in dieser Welt gibt.* Der erste Versuch, ihn zu entschärfen, ist
+daran gescheitert — er war immer noch heller als Sand.
 
 ## Lizenzlage
 

@@ -3,15 +3,28 @@ extends RefCounted
 ## Eine einzige Farbpalette für ALLE Grafiken — das hält den Stil konsistent (§3).
 
 # Gras
+#
+# Vier Toene bilden die Helligkeit ab (dunkel bis Spitze), zwei weitere die
+# FARBE: eine Wiese ist nirgends durchgehend derselbe Gruenton. Trockene
+# Stellen ziehen ins Gelbe, beschattete ins Blaue. Beide bleiben nah am
+# Grundton — sie sollen die Flaeche beleben, nicht flecken.
 const GRASS_DARK := Color8(58, 110, 60)
 const GRASS := Color8(78, 138, 68)
 const GRASS_LIGHT := Color8(104, 165, 82)
 const GRASS_HI := Color8(134, 190, 100)
+const GRASS_DRY := Color8(146, 162, 78)      ## trocken, zieht ins Gelbe
+const GRASS_SHADE := Color8(60, 116, 88)     ## beschattet, zieht ins Blaue
 
 # Sand / Strand
+#
+# Wie beim Gras: drei Helligkeiten und zwei Farbabweichungen. SAND_WARM ist
+# die sonnige, rotstichige Stelle, SAND_DAMP die feuchte, kuehle. Ohne die
+# beiden bleibt eine Sandflaeche ein einziges beigefarbenes Rechteck.
 const SAND_DARK := Color8(196, 174, 116)
 const SAND := Color8(222, 202, 144)
 const SAND_LIGHT := Color8(240, 224, 172)
+const SAND_WARM := Color8(226, 192, 132)     ## sonnig, zieht ins Rote
+const SAND_DAMP := Color8(186, 176, 140)     ## feucht, zieht ins Graugruene
 
 # Wasser
 const WATER_DEEP := Color8(38, 78, 122)

@@ -125,6 +125,7 @@ func _run() -> void:
 
 	# --- Kachelbilder: nahtlos? ---
 	await _check_seams()
+	await _check_variant_seams()
 
 	# --- Kachelsatz und Kachelraster technisch prüfen ---
 	await _check_tileset(world, map, player)
@@ -355,8 +356,33 @@ func _check_three_materials() -> void:
 		"Inventar zeigt genau Gras, Sand, Wasser")
 	var bar_types: Array = BuildBar.DEFAULT_TYPES
 	_check(bar_types.size() == 3, "Bau-Leiste hat drei Felder")
-	var mini_colors: Dictionary = preload("res://src/ui/minimap.gd").COLORS
+	# Der Staub in der Luft darf nicht das Hellste im Bild sein.
+	#
+	# Er war es: fast reines Weiss bei bis zu 62 Prozent, heller als jede
+	# Grasspitze und heller als der Sand. Ein Spieler hat die Punkte deshalb
+	# fuer vergessene Markierungen gehalten und ihre Entfernung verlangt. Sie
+	# sind keine Markierungen — aber sie haben ausgesehen wie welche, und das
+	# ist derselbe Fehler.
+	var mote := Color(AmbientFx.CORE, 1.0)
+	_check(mote.get_luminance() < Palette.SAND_LIGHT.get_luminance(),
+		"Staub ist blasser als heller Sand (%.2f gegen %.2f)"
+		% [mote.get_luminance(), Palette.SAND_LIGHT.get_luminance()])
+	_check(AmbientFx.PEAK <= 0.35,
+		"Und nie kraeftiger als %.2f" % AmbientFx.PEAK)
+
+	var mini_script := preload("res://src/ui/minimap.gd")
+	var mini_colors: Dictionary = mini_script.COLORS
 	_check(mini_colors.size() == 3, "Minimap kennt drei Farben")
+	# Und jede davon hat eine dunklere Kantenfassung. Ohne sie ist die Karte
+	# eine Ansammlung von Farbflaechen: man sieht, DASS dort Wasser ist, aber
+	# nicht, welche Form es hat.
+	var rim_ok := true
+	for key: int in mini_colors:
+		var c: Color = mini_colors[key]
+		if c.darkened(mini_script.RIM_DARKEN).get_luminance() >= c.get_luminance() - 0.04:
+			rim_ok = false
+	_check(rim_ok, "Und zu jeder eine deutlich dunklere Kante (%.2f)"
+		% mini_script.RIM_DARKEN)
 
 	# Keine Quelltextstelle darf noch einen entfernten Bodentyp nennen.
 	var stale := _grep_sources(["Tile.MEADOW", "Tile.FOREST", "Tile.PATH",
@@ -540,6 +566,78 @@ func _check_seams() -> void:
 	_check(worst < 1.6, "Alle Bodenkacheln sind nahtlos (schlechteste: %s %.2f)"
 		% [worst_name, worst])
 	await get_tree().process_frame
+
+## Sieht man das Kachelraster, wenn VERSCHIEDENE Varianten aneinanderstossen?
+##
+## `_check_seams` prueft jede Kachel gegen SICH SELBST — ob ihre rechte Spalte
+## zu ihrer eigenen linken passt. Das ist noetig, aber es ist nicht die Frage,
+## die auf dem Bildschirm gestellt wird: dort liegt neben Variante 3 die
+## Variante 7, und ob DIE zusammenpassen, hat vorher nichts gemessen.
+##
+## Genau da sass der Fehler. Die Tiefenbaender im Wasser wurden je Variante neu
+## ausgewuerfelt; ein Band lief ueber die volle Kachelbreite und hoerte an der
+## Kante auf. Stiess dort eine Kachel ohne Band an, sprang die Helligkeit — und
+## ueber eine ruhige Wasserflaeche hinweg sah man ein Gitter. Auf dem
+## Bildschirm gemessen lag die Naht bei 1,62.
+##
+## Die Regel dahinter gilt fuer jede Kachelgrafik mit Varianten: was gross ist,
+## muss in allen Varianten gleich sein, sonst sieht man die Fuge. Was sich
+## unterscheiden darf, muss klein oder weich sein.
+func _check_variant_seams() -> void:
+	var art := TileArt.build(Config.WORLD_SEED)
+	var worst := 0.0
+	var worst_name := ""
+	print("Nähte zwischen VERSCHIEDENEN Varianten (1,0 = so glatt wie innen):")
+	for t in MapData.Tile.COUNT:
+		var list: Array = art.base[t]
+		var seam := 0.0
+		var pairs := 0
+		# Jede Variante gegen jede andere derselben Helligkeitsstufe — genau
+		# die Paare, die auf der Karte nebeneinander liegen koennen.
+		for a in TileArt.VARIANTS:
+			for b in TileArt.VARIANTS:
+				if a == b:
+					continue
+				var ia: Image = list[TileArt.VARIANTS + a]
+				var ib: Image = list[TileArt.VARIANTS + b]
+				var w := ia.get_width()
+				var h := ia.get_height()
+				var d := 0.0
+				for y in h:
+					d += _diff(ia.get_pixel(w - 1, y), ib.get_pixel(0, y))
+				for x in w:
+					d += _diff(ia.get_pixel(x, h - 1), ib.get_pixel(x, 0))
+				seam += d / float(w + h)
+				pairs += 1
+		seam /= maxf(float(pairs), 1.0)
+		var inner := _inner_diff(list[TileArt.VARIANTS])
+		var ratio := seam / maxf(inner, 0.0001)
+		print("  %-12s %.2f" % [GroundTileSet.NAMES[t], ratio])
+		if ratio > worst:
+			worst = ratio
+			worst_name = GroundTileSet.NAMES[t]
+	# 1,45: darueber lagen Wasser (1,62) und Gras, als die grossflaechige
+	# Struktur noch je Variante gewuerfelt wurde.
+	_check(worst < 1.45,
+		"Auch verschiedene Kachelvarianten passen aneinander (schlechteste: %s %.2f)"
+		% [worst_name, worst])
+	await get_tree().process_frame
+
+## Mittlerer Unterschied zweier benachbarter Bildpunkte IM Kachelinneren.
+func _inner_diff(img: Image) -> float:
+	var w := img.get_width()
+	var h := img.get_height()
+	var inner := 0.0
+	var n := 0
+	for y in h:
+		for x in range(1, w):
+			inner += _diff(img.get_pixel(x - 1, y), img.get_pixel(x, y))
+			n += 1
+	for x in w:
+		for y in range(1, h):
+			inner += _diff(img.get_pixel(x, y - 1), img.get_pixel(x, y))
+			n += 1
+	return inner / maxf(float(n), 1.0)
 
 ## Naht-Unterschied geteilt durch Innen-Unterschied.
 func _seam_ratio(img: Image) -> float:
@@ -1413,6 +1511,37 @@ func _check_light(world: Node2D) -> void:
 	_check(vignette.material == null and vignette.texture != null,
 		"Die Sichtgrenze ist eine gebackene Textur, kein Shader")
 
+	# 3b. Die Blaustunde: ein einfaches Viereck, ebenfalls ohne Shader — und
+	#     GANZ UNTEN auf der Nachtschicht. Laege sie ueber den Scheinen, wuerde
+	#     das warme Fackellicht mit eingefaerbt, und der Kontrast zwischen kalt
+	#     und warm, der eine Nachtszene traegt, waere weg.
+	var blue: ColorRect = night_layer.get_node("Blaustunde")
+	_check(blue.material == null and night_layer.get_child(0) == blue,
+		"Die Blaustunde liegt unter den Scheinen und braucht keinen Shader")
+
+	# 3c. Und sie ist wirklich blau — nicht nur so benannt.
+	#
+	#     Das ist der Punkt, an dem die Nacht vorher scheiterte: die Toenung
+	#     MULTIPLIZIERT, und eine blaue Toenung ueber gruenem Gras ergibt
+	#     dunkles Gruen, kein Blau. In der Tabelle stand trotzdem seit jeher
+	#     „tiefe Nacht, blau". Geprueft wird deshalb das Ergebnis, nicht die
+	#     Absicht: Gras mal Nachttoenung, dann die Blaustunde darueber.
+	var night_tint := LightManager.tint_at(0.0)
+	var grass_lit := Color(Palette.GRASS.r * night_tint.r,
+		Palette.GRASS.g * night_tint.g, Palette.GRASS.b * night_tint.b)
+	var washed := grass_lit.lerp(LightManager.NIGHT_BLUE, LightManager.NIGHT_BLUE_A)
+	_check(grass_lit.b < grass_lit.g, "Ohne Blaustunde bliebe die Nacht gruen (b %.3f < g %.3f)"
+		% [grass_lit.b, grass_lit.g])
+	_check(washed.b > grass_lit.b * 1.3,
+		"Mit ihr wird sie blau (Blauanteil %.3f statt %.3f)" % [washed.b, grass_lit.b])
+
+	# 3d. Zwei Scheine liegen an der Figur uebereinander, und additiv heisst
+	#     addiert. Ihre Summe muss unter der Saettigung bleiben, sonst steht
+	#     nachts ein weisser Fleck an der Stelle der Figur — genau das war beim
+	#     ersten Versuch der Fall.
+	var peak := LightManager.GLOW_PEAK * (1.0 + 0.40)
+	_check(peak < 0.56, "Die beiden Scheine der Figur summieren sich auf %.2f" % peak)
+
 	# 4. Tagesverlauf: die Uhr läuft, der Schein folgt der Figur.
 	var cycle_before := Settings.day_cycle
 	Settings.light = 3
@@ -1632,6 +1761,28 @@ func _check_shore(world: Node2D) -> void:
 	var open_px := _open_pixels(world, 2, origin + Vector2i(-2, 0))
 	_check(open_px > 40,
 		"Am Rand kommt der Sand darunter zum Vorschein (%d Punkte)" % open_px)
+
+	# Und die BEWEGTE Wasserwirkung bleibt drin, wo auch Wasser gezeichnet ist.
+	#
+	# Das ist die Pruefung, die in der letzten Runde gefehlt hat. Damals zog
+	# sich die Wasserzeichnung um eine halbe Kachel zurueck, aber der animierte
+	# Uferschaum blieb an der Kachelkante der KARTE haengen — also einen halben
+	# Block draussen im Sand. Auf dem Bildschirm lief dadurch ein blasses
+	# gestricheltes Rechteck um jeden Teich, gut sichtbar, und kein einziger
+	# Test schlug an.
+	#
+	# Der Schaum ist seither gebacken; was hier lebt, ist das Glitzern, und das
+	# darf nur auf Feldern liegen, die auch als volle Kachel gezeichnet sind.
+	var wfx: WaterFx = world.get_node("WaterFx")
+	_check(wfx._solid_water(origin.x, origin.y),
+		"Mitten im Teich gilt das Feld als volles Wasser")
+	_check(not wfx._solid_water(origin.x - 2, origin.y),
+		"Am Rand nicht — dort liegt die halbe Kachel im Sand")
+	# Und es gibt keinen zweiten Weg, an dem so etwas wieder entstehen koennte:
+	# eine Uferschleife ueber die Kachelkanten ist hier nicht mehr vorhanden.
+	var wfx_src := FileAccess.get_file_as_string("res://src/world/water_fx.gd")
+	_check(not wfx_src.contains("func _foam"),
+		"Kein blockgenauer Schaumsaum mehr in der Wasserwirkung")
 
 	await _shot("22_ufer")
 	for oy in range(-2, 3):
@@ -2100,6 +2251,24 @@ func _check_inventory_ui(world: Node2D) -> void:
 		and cold.shadow_size == 0,
 		"Gewählt heisst kräftigerer Rahmen UND Schein, nicht nur eine Linie")
 	_check(hot.bg_color != cold.bg_color, "Auch die Fläche des gewählten Feldes ist anders")
+
+	# 3b. Die Leiste liegt UEBER der Welt und laesst sie durch. Ein Feld im
+	#     Inventar tut das nicht — dort steht ohnehin ein abgedunkelter
+	#     Hintergrund dahinter, und ein durchscheinendes Feld waere dort nur
+	#     unruhig. Derselbe Bauteil, zwei Auftraege.
+	var bar_slot: ItemSlot = world.build_bar._slots[0]
+	var card_slot: ItemSlot = cards[0]
+	_check(bar_slot.overlay and not card_slot.overlay,
+		"Die Felder der Leiste sind durchscheinend, die des Inventars nicht")
+	_check(bar_slot.frame_style().bg_color.a < card_slot.frame_style().bg_color.a,
+		"Und das schlaegt auf die Deckkraft durch (%.2f gegen %.2f)"
+		% [bar_slot.frame_style().bg_color.a, card_slot.frame_style().bg_color.a])
+
+	# 3c. Zwischen den Feldern liegen Fugen — sonst sind es drei Schaltflaechen
+	#     nebeneinander und keine Leiste.
+	var lines: Control = world.build_bar._frame.get_node("Trennlinien")
+	_check(lines.size.y > 0.0 and lines.gaps.size() == world.build_bar.types.size() - 1,
+		"Zwischen den Feldern der Leiste stehen Trennlinien (%d)" % lines.gaps.size())
 
 	# 4. Überfahren hebt ein Feld sichtbar ab — und lässt es wieder los.
 	var probe := cards[1]

@@ -67,9 +67,15 @@ static func _draw(img: Image, kind: int, at: Vector2i, rng: RandomNumberGenerato
 	match kind:
 		Kind.TUFT: _tuft(img, at, rng, 4)
 		Kind.TUFT_BIG: _tuft(img, at, rng, 7)
-		Kind.FLOWER_RED: _flower(img, at, rng, Palette.FLOWER_RED)
-		Kind.FLOWER_YELLOW: _flower(img, at, rng, Palette.FLOWER_YELLOW)
-		Kind.FLOWER_WHITE: _flower(img, at, rng, Palette.FLOWER_WHITE)
+		# Der zweite Wert ist der Bluetenkern. Ohne ihn ist eine Bluete in
+		# dieser Groesse nur ein Kreuz aus fuenf gleichfarbigen Punkten — und
+		# ein Kreuz liest sich als Markierung, nicht als Blume.
+		Kind.FLOWER_RED: _flower(img, at, rng, Palette.FLOWER_RED,
+			Palette.FLOWER_YELLOW.darkened(0.15))
+		Kind.FLOWER_YELLOW: _flower(img, at, rng, Palette.FLOWER_YELLOW,
+			Palette.FLOWER_RED.darkened(0.10))
+		Kind.FLOWER_WHITE: _flower(img, at, rng, Palette.FLOWER_WHITE.darkened(0.10),
+			Palette.FLOWER_YELLOW)
 		Kind.CLOVER: _clover(img, at, rng)
 		Kind.STONE: _stone(img, at, rng)
 		Kind.PEBBLES: _pebbles(img, at, rng)
@@ -114,17 +120,33 @@ static func _tuft(img: Image, at: Vector2i, rng: RandomNumberGenerator, blades: 
 
 ## Blume: kleines Büschel mit einer Blüte darüber. Die Blüte bekommt einen
 ## helleren Kern, sonst ist sie nur ein Farbfleck.
-static func _flower(img: Image, at: Vector2i, rng: RandomNumberGenerator, col: Color) -> void:
+## Eine Bluete: Stiel, ein zweireihiger Kopf, ein andersfarbiger Kern.
+##
+## Die erste Fassung war ein Kreuz aus fuenf Punkten mit dem HELLSTEN Punkt in
+## der Mitte. Auf dem gruenen Boden war das der staerkste Kontrast im ganzen
+## Bild, sternfoermig, mit einem leuchtenden Kern — auf einem Bildschirmfoto
+## nicht von einer gesetzten Markierung zu unterscheiden.
+##
+## Zwei Aenderungen loesen das, ohne die Bluete kleiner zu machen: der Kopf
+## bekommt eine zweite Reihe (aus dem Kreuz wird eine Form mit Ober- und
+## Unterseite), und der Kern ist nicht mehr die hellste, sondern eine ANDERE
+## Farbe. Eine weisse Bluete mit gelbem Kern liest man sofort als Blume; ein
+## weisser Stern mit weissem Kern nicht.
+static func _flower(img: Image, at: Vector2i, rng: RandomNumberGenerator,
+		col: Color, heart: Color) -> void:
 	_tuft(img, at, rng, 3)
 	var top := at.y - rng.randi_range(4, 6)
 	var x := at.x + rng.randi_range(-1, 1)
 	Pixel.vline(img, x, top + 1, 3, Color(Palette.GRASS_DARK, 0.8))
-	# Blütenblätter als Kreuz, Kern heller
-	Pixel.px(img, x, top - 1, col)
+	# Obere Reihe: die Lichtseite. Licht kommt von oben links wie ueberall.
+	Pixel.px(img, x, top - 1, col.lightened(0.18))
+	Pixel.px(img, x + 1, top - 1, col)
+	# Mittlere Reihe mit dem Kern.
 	Pixel.px(img, x - 1, top, col)
-	Pixel.px(img, x + 1, top, col.darkened(0.15))
-	Pixel.px(img, x, top + 1, col.darkened(0.15))
-	Pixel.px(img, x, top, col.lightened(0.35))
+	Pixel.px(img, x, top, heart)
+	Pixel.px(img, x + 1, top, col.darkened(0.20))
+	# Untere Kante: der Schatten unter dem Kopf.
+	Pixel.px(img, x, top + 1, col.darkened(0.34))
 
 ## Klee: drei runde Blättchen dicht beieinander.
 static func _clover(img: Image, at: Vector2i, rng: RandomNumberGenerator) -> void:

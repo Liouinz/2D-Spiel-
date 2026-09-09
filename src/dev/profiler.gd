@@ -72,6 +72,7 @@ func _run() -> void:
 	var vignette: TextureRect = night.get_node("Sichtgrenze")
 	var glows: Node2D = night.get_node("Schein")
 	var tint: CanvasModulate = light.get_node("Tageslicht")
+	var blue: ColorRect = night.get_node("Blaustunde")
 
 	Settings.light = 0
 	Settings.changed_and_save()
@@ -83,7 +84,15 @@ func _run() -> void:
 	tint.visible = true
 	glows.visible = false
 	vignette.visible = false
+	blue.visible = false
 	await _measure(world, "nur Toenung (Nacht)")
+
+	# Die Blaustunde ist eine eigene Zeile, weil sie eine eigene Sorte Kosten
+	# ist: ein einzelnes Viereck ueber den ganzen Bildschirm. Es erzeugt keine
+	# zusaetzlichen Objekte, sondern Fuellrate — und genau daran erkennt man
+	# im GPU-Wert, ob sie sich lohnt.
+	blue.visible = true
+	await _measure(world, "+ Blaustunde")
 
 	glows.visible = true
 	await _measure(world, "+ Figurenlicht")
@@ -92,8 +101,10 @@ func _run() -> void:
 	await _measure(world, "+ Vignette (Nacht voll)")
 
 	glows.visible = false
+	blue.visible = false
 	vignette.visible = true
 	await _measure(world, "nur Toenung + Vignette")
+	blue.visible = true
 
 	glows.visible = true
 	light.set_time(0.5)                    # Mittag: die Nachtschicht faellt weg
@@ -160,7 +171,8 @@ func _report() -> void:
 	for r: Dictionary in _rows:
 		by[r["name"]] = r
 	_delta(by, "nur Toenung (Nacht)", "Beleuchtung aus", "Toenung allein")
-	_delta(by, "+ Figurenlicht", "nur Toenung (Nacht)", "Figurenlicht allein")
+	_delta(by, "+ Blaustunde", "nur Toenung (Nacht)", "Blaustunde allein")
+	_delta(by, "+ Figurenlicht", "+ Blaustunde", "Figurenlicht allein")
 	_delta(by, "nur Toenung + Vignette", "nur Toenung (Nacht)", "Vignette allein")
 	_delta(by, "+ Vignette (Nacht voll)", "Beleuchtung aus", "Nacht insgesamt")
 

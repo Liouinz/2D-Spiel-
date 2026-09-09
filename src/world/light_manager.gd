@@ -78,8 +78,26 @@ const START_TIME := 0.34
 ## vorher, jetzt 0,26 / 0,30 / 0,50). Das ging erst, seit der Schein um die
 ## Figur nichts mehr kostet: eine dunkle Nacht ohne bezahlbares Licht wäre eine
 ## Zwangspause gewesen, mit Licht ist sie Atmosphäre.
+## Der Ton, in den die Nacht faellt — und warum es ihn ueberhaupt braucht.
+##
+## `CanvasModulate` MULTIPLIZIERT. Eine blaue Toenung ueber einer gruenen Wiese
+## kann daraus nie eine blaue Nacht machen: im Gras steckt fast kein Blau, das
+## sich verstaerken liesse. Gras (78, 138, 68) mal (0.26, 0.30, 0.50) ergibt
+## (20, 41, 34) — dunkles Gruen. Genau so sah die Nacht auch aus, obwohl in der
+## Tabelle unten seit jeher „tiefe Nacht, blau" steht.
+##
+## Blau muss also DAZUKOMMEN, nicht durchmultipliziert werden. Das ist eine
+## einzelne halbdurchsichtige Flaeche ueber der Welt, unter den Scheinen: ein
+## Viereck, kein Shader. Sie liegt bewusst UNTER den additiven Scheinen — so
+## faellt das warme Fackellicht in eine kalte Umgebung, und der Kontrast, den
+## eine Nachtszene braucht, entsteht von selbst.
+const NIGHT_BLUE := Color(0.15, 0.25, 0.52)
+## Deckkraft bei voller Dunkelheit. Darueber kippt die Welt ins Comichafte,
+## darunter bleibt sie das dunkle Gruen von vorher.
+const NIGHT_BLUE_A := 0.28
+
 const RAMP := [
-	[0.00, Color(0.26, 0.30, 0.50)],   ## tiefe Nacht, blau
+	[0.00, Color(0.24, 0.28, 0.46)],   ## tiefe Nacht
 	[0.17, Color(0.40, 0.42, 0.60)],   ## erste Dämmerung
 	[0.23, Color(0.92, 0.74, 0.66)],   ## Morgenrot
 	[0.30, Color(1.00, 0.97, 0.93)],   ## Vormittag
@@ -87,7 +105,7 @@ const RAMP := [
 	[0.70, Color(1.00, 0.96, 0.88)],   ## Nachmittag
 	[0.79, Color(0.98, 0.72, 0.56)],   ## Abendrot
 	[0.86, Color(0.52, 0.46, 0.64)],   ## Dämmerung
-	[1.00, Color(0.26, 0.30, 0.50)],   ## wieder Nacht
+	[1.00, Color(0.24, 0.28, 0.46)],   ## wieder Nacht
 ]
 
 ## Wie weit über dem Standpunkt der Schein der Figur sitzt. Die Figur wird an
@@ -122,7 +140,17 @@ const MIN_VISIBLE := 0.02
 ## heller Fleck, in dem man Gesicht und Kleidung nicht mehr erkannte. Ein
 ## Viertel bis knapp die Hälfte reicht: über einer dunklen Nacht liest sich das
 ## als warmes Licht, nicht als Überbelichtung.
-const GLOW_PEAK := 0.42
+##
+## Dieselbe Falle ein zweites Mal: mit dem hellen Kern (siehe `CORE_SHARE`)
+## liegen an der Figur ZWEI Scheine uebereinander, und additiv heisst addiert.
+## 0,50 plus 0,50 ergab wieder den weissen Fleck. Was zaehlt, ist die SUMME in
+## der Mitte — sie muss unter etwa 0,55 bleiben, sonst laufen alle drei Kanaele
+## in die Saettigung und aus dem warmen Licht wird Weiss.
+const GLOW_PEAK := 0.38
+
+## Wie weit der helle Kern des Fackelscheins reicht, als Anteil am aeusseren
+## Schein. Klein genug, dass er die Figur beleuchtet statt die halbe Wiese.
+const CORE_SHARE := 0.40
 
 var player: Node2D
 var camera: Camera2D
@@ -130,9 +158,11 @@ var camera: Camera2D
 var _modulate: CanvasModulate
 var _night: CanvasLayer
 var _vignette: TextureRect
+var _blue: ColorRect
 var _glow_root: Node2D
 var _glow_tex: ImageTexture
 var _sources: Array[LightSource] = []
+var _player_core: LightSource
 var _player_light: LightSource
 var _time: float = START_TIME
 var _mode: int = -1
@@ -180,6 +210,16 @@ func _ready() -> void:
 	_night.layer = 1
 	add_child(_night)
 
+	# Die Blaustunde. Erstes Kind, also GANZ UNTEN auf der Nachtschicht:
+	# darueber liegen Sichtgrenze und Scheine, und ein Fackelschein soll die
+	# Kaelte durchbrechen, nicht von ihr ueberdeckt werden.
+	_blue = ColorRect.new()
+	_blue.name = "Blaustunde"
+	_blue.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_blue.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_blue.color = Color(NIGHT_BLUE, 0.0)
+	_night.add_child(_blue)
+
 	_vignette = TextureRect.new()
 	_vignette.name = "Sichtgrenze"
 	_vignette.texture = _vignette_texture()
@@ -200,9 +240,24 @@ func _ready() -> void:
 
 	# Leichtes Flackern: eine Fackel in der Hand steht nicht still. 0,45 ist
 	# spürbar, ohne dass die halbe Szene mitzuckt.
-	_player_light = add_source(PLAYER_RADIUS, Color(1.0, 0.86, 0.60), 1.0, 0.45)
+	_player_light = add_source(PLAYER_RADIUS, Color(1.0, 0.72, 0.38), 1.0, 0.45)
 	_player_light.node = player
 	_player_light.lift = LIGHT_LIFT
+
+	# Ein zweiter, kleiner Schein direkt an der Figur.
+	#
+	# Ein einzelner weicher Verlauf ueber 76 Pixel ist ein gleichmaessiger
+	# Hauch — er hellt auf, aber er beleuchtet niemanden. Eine Flamme hat einen
+	# Kern: dicht am Feuer ist es hell, und das faellt schnell ab. Zwei
+	# uebereinandergelegte Verlaeufe unterschiedlicher Weite ergeben genau
+	# diese Kurve, und der zweite kostet ein weiteres Viereck.
+	#
+	# Er flackert mit eigener Phase. Zwei gleich schwingende Scheine waeren ein
+	# Blinker; zwei ungleiche sind ein Feuer.
+	_player_core = add_source(PLAYER_RADIUS * CORE_SHARE, Color(1.0, 0.84, 0.56),
+		0.40, 0.55)
+	_player_core.node = player
+	_player_core.lift = LIGHT_LIFT
 
 	Graphics.applied.connect(_apply_mode)
 	_apply_mode()
@@ -336,6 +391,7 @@ func _refresh(delta: float = 0.0) -> void:
 	if not lit:
 		return
 
+	_blue.color = Color(NIGHT_BLUE, _dark * NIGHT_BLUE_A)
 	if _mode >= 3:
 		_vignette.modulate = Color(0.05, 0.06, 0.12, _dark * 0.52)
 	_update_glows(delta)

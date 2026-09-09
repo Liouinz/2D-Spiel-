@@ -17,7 +17,12 @@ extends CanvasLayer
 ## Leiste selbst zeigt nur noch, was sie ist.
 
 const SLOT := ItemSlot.SLOT_SIZE      ## 72 x 72
-const GAP := 6                        ## Abstand zwischen den Feldern
+## Abstand zwischen den Feldern.
+##
+## Von 6 auf 10 erhoeht, damit die Trennlinie (siehe `Dividers`) ueberhaupt
+## Platz hat: bei sechs Punkten Luecke standen die Rahmen zweier Felder fast
+## aneinander, und dazwischen war kein Raum fuer eine Fuge.
+const GAP := 10
 const PAD := 7                        ## Rand der Leiste um die Felder
 const MARGIN := UiTheme.SPACE_M       ## Abstand zum unteren Bildrand
 
@@ -80,12 +85,29 @@ func setup(art: TileArt) -> void:
 	_root.add_child(_frame)
 
 	for i in types.size():
-		var slot := ItemSlot.new().setup(ItemSlot.Kind.SLOT, types[i], icons[types[i]], i + 1)
+		var slot := ItemSlot.new()
+		slot.overlay = true
+		slot.setup(ItemSlot.Kind.SLOT, types[i], icons[types[i]], i + 1)
 		slot.position = Vector2(PAD + i * (SLOT.x + GAP), PAD)
 		slot.pressed.connect(func() -> void: slot_clicked.emit(i))
 		_frame.add_child(slot)
 		_slots.append(slot)
 		_world_tex[i] = Pixel.tex(art.base[types[i]][TileArt.VARIANTS])
+
+	var lines := Dividers.new()
+	lines.name = "Trennlinien"
+	lines.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Groesse ausdruecklich setzen statt ueber Anker: der Rahmen bekommt seine
+	# Masse erst, wenn Godot die Oberflaeche einmal durchgerechnet hat — und
+	# ein Kind mit Hoehe 0 zeichnet nichts.
+	lines.position = Vector2.ZERO
+	lines.size = Vector2(w, h)
+	for i in range(1, types.size()):
+		lines.gaps.append(PAD + i * (SLOT.x + GAP) - GAP * 0.5)
+	# Unter die Felder: eine Linie, die ueber ein gewaehltes Feld liefe, waere
+	# ein Strich durch das Bild statt eine Fuge daneben.
+	_frame.add_child(lines)
+	_frame.move_child(lines, 0)
 
 	# Nur für kurze Rückmeldungen wie „Karte gespeichert“ — sonst unsichtbar.
 	_message = Label.new()
@@ -108,8 +130,52 @@ func setup(art: TileArt) -> void:
 
 ## Die Fassung der Leiste. Öffentlich, weil das Inventar dieselbe verwendet —
 ## so sieht die Leiste dort genauso aus wie im Spiel.
+## Der Rahmen der Leiste.
+##
+## Vorher war er fast undurchsichtig. Eine Leiste am unteren Bildrand ist aber
+## kein Fenster, sondern eine Anzeige, die ueber der Welt liegt — man soll
+## sehen, dass darunter Boden ist. Der Auftrag nennt es „durchscheinender
+## Hintergrund"; technisch heisst das: dieselbe Form wie bisher, aber die
+## Fuellung laesst die Welt durch.
+##
+## Nicht zu weit: unter der Leiste steht mal Gras, mal Sand, mal Wasser, und
+## die Namen der Materialien muessen auf jedem davon lesbar bleiben. 0,58 ist
+## die Grenze, ab der ein heller Sandstrand die Schrift zu stoeren beginnt.
 static func bar_frame() -> StyleBoxFlat:
-	return UiTheme.inset_style()
+	var s := UiTheme.inset_style(0.58)
+	# Eine Lichtkante an der Oberkante: sie trennt die Leiste von der Welt,
+	# ohne einen zweiten Rahmen zu brauchen.
+	s.border_width_top = 3
+	s.border_color = Color(Palette.UI_BORDER_HI, 0.55)
+	return s
+
+## Die Trennlinien zwischen den Feldern.
+##
+## Drei Felder mit Luft dazwischen lesen sich als drei einzelne Schaltflaechen,
+## die zufaellig nebeneinander liegen. Eine Linie in jeder Luecke macht daraus
+## EINE Leiste mit drei Faechern — derselbe Unterschied wie zwischen drei
+## Zetteln und einer Tabelle.
+class Dividers:
+	extends Control
+
+	## Drei Abschnitte je Linie: schwach, kraeftig, schwach. Eine Linie mit
+	## gleicher Deckkraft ueber die volle Hoehe stiesse oben und unten gegen die
+	## Rundung des Rahmens und saehe abgeschnitten aus.
+	const PARTS: Array[Array] = [
+		[0.08, 0.16, 0.18],    ## Anteil oben, Hoehe, Deckkraft
+		[0.24, 0.52, 0.55],
+		[0.76, 0.16, 0.18],
+	]
+
+	var gaps: Array[float] = []
+
+	func _draw() -> void:
+		for x: float in gaps:
+			for part: Array in PARTS:
+				var y: float = size.y * float(part[0])
+				var h: float = size.y * float(part[1])
+				draw_rect(Rect2(x, y, 1.0, h),
+					Color(Palette.UI_BORDER_HI, float(part[2])), true)
 
 ## Hebt das gewählte Feld hervor.
 func select(i: int) -> void:
