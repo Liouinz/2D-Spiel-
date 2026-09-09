@@ -158,8 +158,8 @@ func _page_video() -> Control:
 	return _with_note(rows,
 		"Die Beleuchtung ist abgestuft, weil ihre Teile unterschiedlich kosten: die"
 		+ "\nTönung ist gemessen gratis, erst „Mittel“ und „Hoch“ kosten Füllrate."
-		+ "\n„Sehr hoch“ schaltet echtes 2D-Licht mit Schattenwurf ein — gemessen"
-		+ "\nkostet das mehr als alles andere zusammen. Nur für starke Rechner.")
+		+ "\nWer Bildrate braucht, verliert mit „Einfach“ nicht die Nacht, sondern"
+		+ "\nnur die beiden Flächen darüber.")
 
 ## Effekte: was sich bewegt und was auf dem Boden liegt. Eigene Seite, damit
 ## die Grafikseite nicht zu einer Liste aus neun Zeilen wird, durch die man

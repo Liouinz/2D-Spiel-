@@ -1502,43 +1502,21 @@ func _check_light(world: Node2D) -> void:
 	#    Leistungsprüfung: ein Light2D zwingt den Canvas-Renderer in den
 	#    beleuchteten Pfad, und weil das Licht der Figur nachgeführt wird,
 	#    fällt diese Arbeit jedes Bild neu an.
+	#    Und zwar auf JEDER Stufe: die Stufe „Sehr hoch", die frueher als
+	#    einzige eines anlegte, ist entfallen — sie kostete gemessen +30,22 ms.
 	var lights := _find_all_of_class(world, "Light2D")
-	_check(lights.is_empty(), "Bis Stufe „Hoch“ kein einziges 2D-Licht in der Welt (%d gefunden)"
+	_check(lights.is_empty(), "Kein einziges 2D-Licht in der Welt (%d gefunden)"
 		% lights.size())
-
-	# 2b. Auf Stufe „Sehr hoch" gibt es genau eines — und danach wieder keines.
-	#
-	#     Diese Stufe ist ein ausdrueckliches Angebot: sie kostet, was ein
-	#     `Light2D` eben kostet, und sie bringt dafuer echten Schattenwurf. Was
-	#     hier geprueft wird, ist die Zusage an alle ANDEREN Stufen: das Licht
-	#     wird wirklich weggeraeumt und nicht nur auf Energie null gestellt —
-	#     ein Licht mit Energie null rechnet trotzdem.
+	var top := Graphics.LIGHT.size() - 1
 	var light_before := Settings.light
-	Settings.light = Graphics.LIGHT_REAL
-	Settings.changed_and_save()
-	await _frames(3)
-	var many := _find_all_of_class(world, "Light2D")
-	_check(many.size() == 1, "Auf „Sehr hoch“ steht genau ein echtes Licht (%d)" % many.size())
-	var occ := _find_all_of_class(world, "LightOccluder2D")
-	_check(many.size() == 1 and (many[0] as Light2D).shadow_enabled,
-		"Und es wirft Schatten (%d Verdecker in der Welt)" % occ.size())
-
-	#     Und es steht dort, wo auch der gezeichnete Schein steht: auf
-	#     Brusthoehe der Figur. Zwei Wege zu einem Punkt — laufen sie
-	#     auseinander, wechselt beim Umschalten der Lichtstufe sichtbar die
-	#     Stelle, an der es hell ist.
-	if many.size() == 1:
-		var lamp := many[0] as Node2D
-		var lamp_want: Vector2 = world.player.global_position \
-			- Vector2(0.0, LightManager.LIGHT_LIFT)
-		_check(lamp.global_position.distance_to(lamp_want) < 1.0,
-			"Das echte Licht steht am selben Punkt wie der Schein (%.2f px)"
-			% lamp.global_position.distance_to(lamp_want))
-	Settings.light = 3
-	Settings.changed_and_save()
-	await _frames(3)
-	_check(_find_all_of_class(world, "Light2D").is_empty(),
-		"Zurueck auf „Hoch“ ist es wieder weg")
+	for level in range(1, top + 1):
+		Settings.light = level
+		Settings.changed_and_save()
+		await _frames(3)
+		if not _find_all_of_class(world, "Light2D").is_empty():
+			lights.append(null)
+	_check(lights.is_empty(), "Auch auf der hoechsten Stufe („%s“) nicht"
+		% Graphics.LIGHT[top])
 	Settings.light = light_before
 	Settings.changed_and_save()
 	await _frames(3)
@@ -1889,18 +1867,12 @@ func _check_torch_and_zoom(world: Node2D) -> void:
 		% [lights_before, light.source_count()])
 	_check(map.torches.has(cell), "Sie steht in der Karte, nicht nur im Bild")
 
-	# Und sie bringt einen Verdecker mit. Der kostet nichts, solange kein
-	# echtes Licht in der Szene steht — aber auf Stufe „Sehr hoch“ ist eine
-	# gesetzte Fackel das einzige in dieser Welt, was ueberhaupt einen Schatten
-	# werfen KANN. Alles andere ist Boden.
-	var occluders := _find_all_of_class(world, "LightOccluder2D")
-	_check(occluders.size() >= 1,
-		"Sie kann Schatten werfen (%d Verdecker)" % occluders.size())
-
 	# 2. Und sie ist KEIN echtes Licht — sonst wäre die zehnte Fackel nicht
 	#    mehr bezahlbar. Das ist die eigentliche Prüfung an dieser Stelle.
 	_check(_find_all_of_class(world, "Light2D").is_empty(),
 		"Auch mit Fackel gibt es kein echtes 2D-Licht")
+	_check(_find_all_of_class(world, "LightOccluder2D").is_empty(),
+		"Und keinen Verdecker, den niemand mehr benutzt")
 
 	# 3. Nochmal drücken nimmt sie wieder weg.
 	var off := torches.toggle(cell)

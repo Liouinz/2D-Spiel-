@@ -14,30 +14,21 @@ extends Node2D
 ## nicht bezahlbar gewesen. Ein additives Sprite kostet ein Viereck — und
 ## ausserhalb des Bildes gar nichts, siehe `LightManager._update_glows`.
 
-## Radius des Scheins in Weltpixeln. GRÖSSER als die Handfackel der Figur (92):
+## Radius des Scheins in Weltpixeln. GRÖSSER als der Sichtkreis der Figur (78):
 ## eine gesetzte Fackel steht fest und leuchtet einen Platz aus, die Figur trägt
 ## nur ein Licht mit sich.
 const RADIUS := 120.0
 
 ## Bilder der Flamme. Eine Fackel, die stillsteht, ist kein Feuer.
 ##
-## Dieselbe Zahl wie bei der Handfackel und dieselbe Zeichnung
+## Dieselbe Zeichnung wie im Bild der Figur
 ## (`ActorArt.draw_flame`) — zwei Feuer im selben Bild, die verschieden
 ## flackern, sehen aus wie zwei verschiedene Materialien.
 const FLAMES := ActorArt.FLAME_FRAMES
 
-## Etwas langsamer als die Handfackel (11): eine Fackel im Halter steht still,
-## eine in der Hand wird bewegt und flackert dadurch staerker.
+## Langsam genug, dass man die einzelnen Bilder nicht zaehlt, schnell genug,
+## dass es lebt.
 const FLAME_FPS := 9.0
-
-## Wo der Stiel im Feld steht — daraus wird der Verdecker.
-##
-## Aus der Zeichnung abgelesen: das Bild ist 20 Kunstpixel breit und wird halb
-## dargestellt, sitzt also 11 Weltpixel vom Feldrand entfernt; der Stiel liegt
-## darin bei Kunstpixel 8 bis 14, also 4 bis 7 Weltpixel weiter.
-const STICK_LEFT := 15.0
-const STICK_RIGHT := 18.0
-const STICK_TOP := 10.0
 
 ## Warmes Feuer, deutlich röter als der Schein der Figur.
 const COLOR := Color(1.0, 0.76, 0.42)
@@ -48,7 +39,6 @@ var light: LightManager
 var _tex: Array[Texture2D] = []
 var _time: float = 0.0
 var _sprites: Dictionary = {}      ## Vector2i -> Sprite2D
-var _occluders: Dictionary = {}    ## Vector2i -> LightOccluder2D
 var _lights: Dictionary = {}       ## Vector2i -> LightManager.LightSource
 var _shown: int = -1               ## welches Flammenbild gerade steht
 
@@ -93,25 +83,6 @@ func _add(cell: Vector2i) -> void:
 	add_child(s)
 	_sprites[cell] = s
 
-	# Ein Verdecker um den Stiel.
-	#
-	# Er kostet nichts, solange kein echtes Licht in der Szene steht — und
-	# genau eines gibt es hoechstens, naemlich das der Handfackel auf Stufe
-	# „Sehr hoch". Dann wirft eine gesetzte Fackel einen Schatten, der sich
-	# dreht, waehrend man um sie herumlaeuft. Das ist in dieser Welt die
-	# einzige Sache, die ueberhaupt einen Schatten werfen KANN: alles andere
-	# ist Boden.
-	var occ := LightOccluder2D.new()
-	occ.name = "Verdecker"
-	var poly := OccluderPolygon2D.new()
-	poly.polygon = PackedVector2Array([
-		Vector2(STICK_LEFT, STICK_TOP), Vector2(STICK_RIGHT, STICK_TOP),
-		Vector2(STICK_RIGHT, Config.TILE), Vector2(STICK_LEFT, Config.TILE)])
-	occ.occluder = poly
-	occ.position = Vector2(cell) * Config.TILE
-	add_child(occ)
-	_occluders[cell] = occ
-
 	if is_instance_valid(light):
 		var src := light.add_source(RADIUS, COLOR, 0.9, 1.0)
 		# Der Schein sitzt an der Flamme, nicht am Fuss des Stiels.
@@ -125,9 +96,6 @@ func _remove(cell: Vector2i) -> void:
 	if _sprites.has(cell):
 		(_sprites[cell] as Sprite2D).queue_free()
 		_sprites.erase(cell)
-	if _occluders.has(cell):
-		(_occluders[cell] as LightOccluder2D).queue_free()
-		_occluders.erase(cell)
 	if _lights.has(cell):
 		if is_instance_valid(light):
 			light.remove_source(_lights[cell])
@@ -166,7 +134,7 @@ func _view() -> Rect2:
 ## Eine gesetzte Fackel: Stiel, Wicklung, Flamme.
 ##
 ## 20 x 44 Kunstpixel, dargestellt mit Faktor 0,5 — also 10 x 22 Weltpixel, wie
-## vorher. Dieselbe doppelte Dichte wie die Figur und die Handfackel: zwei
+## vorher. Dieselbe doppelte Dichte wie die Figur: zwei
 ## Gegenstaende im selben Bild mit unterschiedlich grossen Pixeln fallen sofort
 ## auf, und die Fackel steht direkt neben der Figur.
 ##
@@ -189,7 +157,7 @@ static func _torch_image(f: int = 0) -> Image:
 	# Erdanhaftung am Fuss: sie steckt in der Erde, sie liegt nicht darauf.
 	Pixel.rect(img, 7, 42, 8, 2, Palette.WOOD_DARK.darkened(0.45))
 
-	# Wicklung: derselbe Lederton wie an der Handfackel, drei Schnurgaenge.
+	# Wicklung: Leder um den Kopf, drei Schnurgaenge.
 	Pixel.rect(img, 6, 12, 10, 10, leather)
 	Pixel.rect(img, 6, 12, 10, 2, leather_hi)
 	Pixel.rect(img, 6, 13, 2, 8, leather.lightened(0.18))
@@ -199,6 +167,7 @@ static func _torch_image(f: int = 0) -> Image:
 
 	Pixel.outline(img, Palette.OUTLINE)
 
-	# Flamme zuletzt und ohne Umriss — etwas groesser als die der Handfackel.
+	# Flamme zuletzt und ohne Umriss — ein schwarzer Rand um Feuer sieht aus
+	# wie ein Aufkleber.
 	ActorArt.draw_flame(img, 10.0, 12.0, 4.6, 19.0, f)
 	return img

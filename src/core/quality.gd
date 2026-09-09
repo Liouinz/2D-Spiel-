@@ -68,12 +68,8 @@ const PROFILES := {
 ## gelesen. Wer Leistung braucht, soll zuerst das verlieren, was am meisten
 ## kostet, und nicht das, was am ehesten auffällt.
 const GIVE_UP := [
-	# Zuerst das echte 2D-Licht. Es ist mit weitem Abstand der teuerste Posten
-	# im ganzen Spiel: gemessen +16,80 ms Bildzeit gegenueber dem additiven
-	# Schein, also mehr als alles andere zusammen. Wer die Stufe eingestellt
-	# hat, bekommt sie zurueck, sobald wieder Luft ist — aber wenn es klemmt,
-	# geht sie als erste.
-	["light", 3],            # echtes Licht weg
+	# Zuerst die Sichtgrenze. Sie ist der teuerste verbliebene Posten: gemessen
+	# +5,51 ms Bildzeit fuer eine bildschirmfuellende Flaeche.
 	["light", 2],            # Sichtgrenze weg
 	["particles", 0],        # Staub weg
 	["light", 1],            # Schein weg
