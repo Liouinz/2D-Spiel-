@@ -36,22 +36,6 @@ var _wake_timer: float = 0.0
 var _land_time: float = 0.0
 const LAND_TIME := 0.14
 
-## Die Handfackel bei Nacht.
-var light: LightManager        ## von World gesetzt; wird nur gelesen
-var _torch: Sprite2D
-var _torch_time: float = 0.0
-## Wo die Hand im gerade gezeichneten Figurenbild steht — Armschwung und
-## Auf-und-ab. Die Fackel folgt beidem.
-var _hand_arm: int = 0
-var _hand_bob: int = 0
-
-## 11 statt 9. Der Auftrag nennt 10 bis 12 fuer organisches Flackern; darunter
-## sieht man die einzelnen Bilder, darueber verschwimmt die Form.
-const TORCH_FPS := 11.0
-
-## Ab welcher Dunkelheit sie hervorgeholt wird. Nicht bei jedem Wölkchen —
-## erst, wenn es wirklich dämmert.
-const TORCH_FROM := 0.22
 var map: MapData               ## um zu wissen, worauf die Figur steht
 
 ## Schwimmt die Figur gerade?
@@ -98,16 +82,6 @@ func _ready() -> void:
 	_sprite.scale = Vector2.ONE * ActorArt.DRAW_SCALE
 	add_child(_sprite)
 
-	# Die Fackel liegt ÜBER der Figur, aber unter nichts anderem: sie wird in
-	# der Hand getragen, nicht davor hergeschoben.
-	_torch = Sprite2D.new()
-	_torch.name = "Handfackel"
-	_torch.centered = true
-	_torch.visible = false
-	_torch.z_index = 1
-	_torch.scale = Vector2.ONE * ActorArt.DRAW_SCALE
-	add_child(_torch)
-
 	_update_sprite(0.0)
 
 func _physics_process(delta: float) -> void:
@@ -140,7 +114,6 @@ func _physics_process(delta: float) -> void:
 		_anim_time = 0.0
 	_was_moving = moving
 	_update_sprite(velocity.length())
-	_update_torch(delta)
 
 ## Welche Sprungstellung gerade gilt.
 ##
@@ -153,78 +126,6 @@ func _jump_phase() -> int:
 	if t < 0.16:
 		return ActorArt.JUMP_CROUCH
 	return ActorArt.JUMP_RISE if t < 0.55 else ActorArt.JUMP_FALL
-
-## Die Fackel in der Hand — nur, wenn es dunkel genug ist.
-##
-## Sie hängt an derselben Dunkelheit wie die Beleuchtung selbst, nicht an einer
-## eigenen Uhrzeit: sonst hielte die Figur bei abgeschalteter Beleuchtung mitten
-## am Tag eine brennende Fackel in der Hand.
-func _update_torch(delta: float) -> void:
-	var dark: float = light.darkness() if is_instance_valid(light) and light.active() else 0.0
-	var show := dark > TORCH_FROM and not _swimming
-	if _torch.visible != show:
-		_torch.visible = show
-	if not show:
-		# Ohne Fackel gibt es keine Flamme, an der das Licht haengen koennte —
-		# es faellt auf die Brust zurueck. Sichtbar ist das nie (ohne Fackel
-		# ist es entweder hell oder die Figur schwimmt), aber ein Anker, der
-		# auf einer geloeschten Flamme stehen bleibt, ist eine Falle.
-		if is_instance_valid(light):
-			light.set_player_anchor(Vector2(0.0, -LightManager.LIGHT_LIFT))
-		return
-	_torch_time += delta * TORCH_FPS
-	var flames: Array = _frames["torch"]
-	_torch.texture = flames[int(_torch_time) % flames.size()]
-	_torch.flip_h = _flip
-	# Im Sprung wandert sie mit der Figur nach oben.
-	var up := Vector2(0.0, lift())
-	_torch.position = ActorArt.torch_offset(_dir, _hand_arm, _hand_bob, _flip) - up
-
-	# Das Licht sitzt an der FLAMME, nicht an der Brust.
-	#
-	# Vorher hing es an einem festen Punkt 18 Punkte ueber den Fuessen — also
-	# in der Mitte der Figur. Der Lichtkegel ging damit vom Bauch aus, waehrend
-	# das Feuer daneben in der Hand brannte. Jetzt folgt die Quelle derselben
-	# Rechnung wie das Bild: wandert die Hand, wandert das Licht.
-	if is_instance_valid(light):
-		light.set_player_anchor(
-			ActorArt.torch_flame_offset(_dir, _hand_arm, _hand_bob, _flip) - up)
-
-## Wie weit der Schatten hoechstens von der Fackel weggeschoben wird.
-const SHADOW_THROW := 5.0
-
-## Der Bodenschatten weicht dem Fackellicht aus.
-##
-## Am Tag kommt das Licht von oben links, und der Schatten liegt fest unten
-## rechts — so ist er gezeichnet. Nachts ist die staerkste Lichtquelle im Bild
-## aber die Fackel in der Hand, und die steht seitlich neben der Figur. Ein
-## Schatten, der dann immer noch nach unten rechts faellt, waehrend das Feuer
-## rechts brennt, widerspricht dem, was man sieht.
-##
-## Ein echter Schattenwurf braeuchte ein `Light2D` mit Verdeckern — das gibt es
-## hier aus gemessenen Gruenden nicht. Was aber geht und fast dasselbe erzaehlt:
-## den vorhandenen Schatten von der Flamme WEGSCHIEBEN, umso mehr, je dunkler
-## es ist. Bei Tag steht er, wo er immer stand.
-func _aim_shadow() -> void:
-	var base := Vector2(0, -2)
-	var dark: float = light.darkness() if is_instance_valid(light) and light.active() else 0.0
-	if dark <= TORCH_FROM or not _torch.visible:
-		_shadow.position = base
-		return
-	var flame := ActorArt.torch_flame_offset(_dir, _hand_arm, _hand_bob, _flip)
-	# Nur waagerecht: der Boden wird von oben gesehen, ein senkrechter Versatz
-	# laese den Schatten von der Figur abheben.
-	var away: float = -signf(flame.x) * SHADOW_THROW * dark
-	_shadow.position = base + Vector2(away, 0.0)
-
-## Arm- und Auf-und-ab-Stellung des gerade gezeichneten Bildes.
-##
-## Oeffentlich fuer den Selbsttest: er prueft, dass der Griff der Fackel auf der
-## Hand liegt, und dafuer muss er wissen, in welcher Stellung die Figur gerade
-## steht. Ohne das rechnet er gegen die Ruhestellung und schlaegt an, sobald das
-## Atem-Bild dran ist — was einmal genau so passiert ist.
-func hand_pose() -> Vector2i:
-	return Vector2i(_hand_arm, _hand_bob)
 
 ## Kielwellen hinter der Figur, solange sie sich im Wasser bewegt.
 ##
@@ -303,11 +204,6 @@ func _update_sprite(speed: float) -> void:
 	var set_name := "swim" if _swimming else ("walk" if moving else "idle")
 	var frames: Array = _frames[set_name][_dir]
 	var idx := int(_anim_time) % frames.size()
-	# Dieselben Werte, mit denen dieses Bild gezeichnet wurde — die Fackel
-	# braucht sie, um an der Hand zu bleiben.
-	_hand_arm = ActorArt.WALK_ARM[idx] if set_name == "walk" else 0
-	_hand_bob = (1 if idx % 2 == 1 else 0) if set_name == "walk" else \
-		(idx if set_name == "idle" else 0)
 	# Sprung und Landung haben eigene Stellungen. Ohne sie wäre der Sprung
 	# dasselbe Standbild, nur weiter oben — und genau so sah er auch aus.
 	if _jump_time >= 0.0 or _land_time > 0.0:
@@ -329,7 +225,6 @@ func _update_sprite(speed: float) -> void:
 	# Schatten sind abschaltbar (Grafikeinstellungen). Im Wasser gibt es
 	# ohnehin keinen.
 	_shadow.visible = Graphics.shadows_on()
-	_aim_shadow()
 
 	# Sprung und Fallen: Figur hoch, Schatten bleibt liegen und wird kleiner
 	# und blasser.

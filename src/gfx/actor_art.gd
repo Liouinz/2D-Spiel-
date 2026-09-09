@@ -8,9 +8,9 @@ extends RefCounted
 
 enum Dir { DOWN, UP, SIDE }
 
-## Bein- und Armstellung je Laufbild. Oeffentlich, weil die Handfackel
-## denselben Werten folgen muss: schwingt der Arm und die Fackel nicht, haengt
-## sie beim Laufen sichtbar hinterher.
+## Bein- und Armstellung je Laufbild. Oeffentlich, weil der Selbsttest die
+## Stellung des gerade gezeichneten Bildes nachrechnet: schwingt der Arm und
+## Bein nicht zusammen, sieht man es beim Laufen sofort.
 const WALK_ARM: Array[int] = [0, 1, 0, -1]
 
 ## Kunstpixel je Weltpixel.
@@ -140,7 +140,7 @@ static func _flame_band(t: float, d: float) -> Color:
 	return FLAME_OUT
 
 ## -> {"idle": [dir][2], "walk": [dir][4], "swim": [dir][2], "jump": [dir][3],
-##     "torch": [4], "shadow": Texture}
+##     "shadow": Texture}
 static func build() -> Dictionary:
 	var idle: Array = []
 	var walk: Array = []
@@ -163,11 +163,8 @@ static func build() -> Dictionary:
 		for phase in 3:
 			j_frames.append(Pixel.tex(_jump_frame(dir, phase)))
 		jump.append(j_frames)
-	var torch: Array[Texture2D] = []
-	for f in FLAME_FRAMES:
-		torch.append(Pixel.tex(_torch_frame(f)))
 	return {"idle": idle, "walk": walk, "swim": swim, "jump": jump,
-		"torch": torch, "shadow": Pixel.tex(_shadow())}
+		"shadow": Pixel.tex(_shadow())}
 
 ## Schwimmbild: dasselbe Laufbild, nur eingetaucht.
 ##
@@ -264,150 +261,6 @@ static func _jump_frame(dir: int, phase: int) -> Image:
 			_draw_body(img, dir, 14, 2)
 			_draw_head(img, dir, 14)
 	Pixel.outline(img, Palette.OUTLINE)
-	return img
-
-## Die Handfackel: ein kurzer Stiel mit einer Flamme, die sich bewegt.
-##
-## Vier Bilder, und in jedem ist die Flamme eine Spur anders hoch, anders breit
-## und anders hell. Eine Flamme, die stillsteht, ist kein Feuer — und eine, die
-## in jedem Bild komplett anders aussieht, flackert wie eine kaputte Leuchte.
-## Die Fackel in der Hand.
-##
-## 11 x 20 Bildpunkte. Aufgebaut in der Reihenfolge, in der man sie sieht —
-## das ist hier keine Formsache, sondern der ganze Unterschied zwischen
-## „gehalten" und „danebengelegt":
-##
-##   1. Handruecken   HINTER dem Stiel — die Flaeche, gegen die er gedrueckt wird
-##   2. Stiel         darueber, laeuft oben und unten aus der Faust heraus
-##   3. Finger        VOR dem Stiel, drei Glieder mit Fugen dazwischen
-##   4. Daumen        an der Lichtseite
-##   5. Wicklung      Leder um den Kopf
-##   6. Flamme        vor allem
-##
-## Nach Schritt 3 bleibt eine Spalte des Stiels zwischen Fingern und
-## Handruecken sichtbar (x = 6). Genau daran liest man, dass die Hand DARUM
-## greift und nicht DANEBEN liegt: es ist Haut davor, Holz in der Mitte, Haut
-## dahinter.
-##
-## Die Fackel liegt auf einer eigenen Ebene ueber der Figur (`z_index = 1` in
-## `player.gd`), damit sie sich mit der Hand bewegen kann, ohne dass jedes
-## Laufbild der Figur eine zweite Fassung mit Fackel braeuchte.
-const TORCH_W := 11 * ART
-const TORCH_H := 20 * ART
-
-## Wo in diesem Bild die greifende Hand sitzt. `player.gd` legt diesen Punkt
-## auf die Hand der Figur — deshalb steht er hier und nicht dort: wer die
-## Zeichnung aendert, verschiebt den Griff mit.
-const TORCH_GRIP := Vector2(10.0, 29.0)
-
-## Und wo die Flamme sitzt. Von hier geht das Licht aus, nicht von der Brust.
-const TORCH_FLAME := Vector2(10.0, 8.0)
-
-## Wo die greifende Hand IM FIGURENBILD sitzt (Mitte, Grundstellung).
-##
-## Diese Zahlen stehen genau einmal — hier. Vorher war die Fackelposition eine
-## eigene Tabelle in `player.gd`, von Hand eingestellt, und sie lag zwei Punkte
-## daneben: auf einem Bildschirmfoto sah man die Faust der Fackel NEBEN der
-## Hand der Figur stehen, mit einem Streifen Haut dazwischen. Genau deshalb
-## wirkte die Fackel angeklebt.
-##
-## Sie sind aus `_draw_body` abgelesen: die Hand ist ein 5 x 5 grosses Rechteck
-## bei `y + 10`, mit `y = top + 18` und `top = 4`.
-const HAND_AT := {
-	Dir.DOWN: Vector2(51.0, 70.0),   ## rechte Hand, im Schatten
-	Dir.UP: Vector2(13.0, 70.0),     ## linke Hand, im Licht
-	Dir.SIDE: Vector2(29.0, 70.0),   ## der sichtbare Arm vor dem Koerper
-}
-
-## Wohin das Fackelbild gehoert, damit sein Griff auf der Hand liegt.
-##
-## Ergebnis in Ortskoordinaten der Figur: Nullpunkt zwischen den Fuessen,
-## negatives y nach oben. `arm` und `bob` sind dieselben Werte, mit denen das
-## Figurenbild gezeichnet wurde — dadurch wandert die Fackel mit dem Arm.
-static func torch_offset(dir: int, arm: int, bob: int, flip: bool) -> Vector2:
-	return hand_offset(dir, arm, bob, flip) - _grip_offset(TORCH_GRIP, flip)
-
-## Wo die Flamme steht — dieselbe Rechnung, nur mit dem anderen Ankerpunkt.
-static func torch_flame_offset(dir: int, arm: int, bob: int, flip: bool) -> Vector2:
-	return hand_offset(dir, arm, bob, flip) \
-		+ _grip_offset(TORCH_FLAME, flip) - _grip_offset(TORCH_GRIP, flip)
-
-## Wo die greifende Hand in DIESEM Bild steht, in Ortskoordinaten der Figur.
-##
-## Eigene Funktion, weil zwei Dinge sie brauchen und keines von beiden die
-## Formel noch einmal aufschreiben soll: die Fackel setzt ihren Griff darauf,
-## und der Selbsttest prueft, dass er wirklich dort gelandet ist.
-static func hand_offset(dir: int, arm: int, bob: int, flip: bool) -> Vector2:
-	var hand: Vector2 = HAND_AT[dir]
-	# Beim Blick nach oben greift die LINKE Hand, und die schwingt gegenlaeufig.
-	hand.y += float(bob) * 4.0 + float(arm) * 4.0 * (-1.0 if dir == Dir.UP else 1.0)
-	var local := Vector2(hand.x - W * 0.5, hand.y - H)
-	if flip:
-		local.x = -local.x
-	# In WELTpixel umrechnen: die Zeichnung ist doppelt so fein wie die Welt,
-	# und alles, was diese Funktion verlaesst, sind Ortsangaben in der Welt.
-	return local * DRAW_SCALE
-
-## Versatz eines Bildpunktes im Fackelbild gegenueber dessen Mitte.
-##
-## Das Bild ist mittig gesetzt, deshalb zaehlt der Abstand zur Mitte und nicht
-## zur Ecke. Beim Spiegeln kippt er mit: der Griff sitzt eine halbe Spalte
-## links der Mitte, gespiegelt eine halbe rechts.
-static func _grip_offset(point: Vector2, flip: bool) -> Vector2:
-	var dx := point.x - float(TORCH_W) * 0.5
-	return Vector2(-dx if flip else dx, point.y - float(TORCH_H) * 0.5) * DRAW_SCALE
-
-static func _torch_frame(f: int) -> Image:
-	var img := Pixel.make(TORCH_W, TORCH_H)
-	var leather := Color8(74, 52, 38)
-	var leather_hi := Color8(112, 82, 56)
-	var cord := Color8(52, 36, 26)
-
-	# 1. Handruecken HINTER dem Stiel. Deutlich dunkler als die Finger — er
-	#    liegt im Schatten der eigenen Hand.
-	Pixel.rect(img, 10, 24, 6, 12, Palette.SKIN_SHADE.darkened(0.30))
-	Pixel.rect(img, 10, 24, 6, 2, Palette.SKIN_SHADE.darkened(0.16))
-
-	# 2. Stiel. Sechs Spalten: Licht, Mitte, Schatten — Licht von oben links.
-	Pixel.rect(img, 8, 16, 2, 24, Palette.WOOD_LIGHT)
-	Pixel.rect(img, 10, 16, 2, 24, Palette.WOOD)
-	Pixel.rect(img, 12, 16, 2, 24, Palette.WOOD_DARK)
-	# Maserung: bei doppelter Dichte echte Linien statt einzelner Kerben.
-	Pixel.rect(img, 10, 20, 1, 5, Palette.WOOD_DARK)
-	Pixel.rect(img, 9, 30, 1, 4, Palette.WOOD)
-	Pixel.rect(img, 12, 36, 1, 3, Palette.WOOD_DARK.darkened(0.2))
-	# Abgeschraegtes Ende.
-	Pixel.rect(img, 8, 39, 6, 1, Palette.WOOD_DARK.darkened(0.35))
-
-	# 3. Finger VOR dem Stiel — drei Glieder mit dunkler Fuge dazwischen.
-	#    Sie decken die Spalten 8 bis 11; Spalte 12/13 bleibt sichtbar.
-	for k in 3:
-		var fy := 24 + k * 4
-		Pixel.rect(img, 6, fy, 6, 4, Palette.SKIN)
-		Pixel.rect(img, 6, fy, 6, 1, Palette.SKIN.lightened(0.12))
-		Pixel.rect(img, 6, fy + 3, 6, 1, Palette.SKIN_SHADE.darkened(0.22))
-		# Knoechel: ein heller Punkt je Glied.
-		Pixel.px(img, 7, fy + 1, Palette.SKIN.lightened(0.22))
-
-	# 4. Daumen an der Lichtseite, mit Nagelandeutung.
-	Pixel.rect(img, 4, 26, 2, 7, Palette.SKIN.lightened(0.14))
-	Pixel.rect(img, 4, 26, 2, 2, Palette.SKIN.lightened(0.28))
-	Pixel.px(img, 5, 32, Palette.SKIN_SHADE)
-
-	# 5. Wicklung: Leder um den Kopf, mit drei sichtbaren Schnurgaengen.
-	Pixel.rect(img, 6, 14, 10, 8, leather)
-	Pixel.rect(img, 6, 14, 10, 2, leather_hi)
-	Pixel.rect(img, 6, 15, 2, 6, leather.lightened(0.18))
-	for i in 3:
-		Pixel.rect(img, 6, 16 + i * 2, 10, 1, cord)
-	Pixel.rect(img, 15, 15, 1, 6, cord.darkened(0.2))
-
-	# Umriss NUR um Holz und Haut. Die Flamme bekommt keinen — ein schwarzer
-	# Rand um Feuer laesst es wie einen Aufkleber aussehen.
-	Pixel.outline(img, Palette.OUTLINE)
-
-	# 6. Flamme, zuletzt und ohne Umriss.
-	draw_flame(img, TORCH_FLAME.x, 14.0, 4.2, 18.0, f)
 	return img
 
 ## Bodenschatten: drei Ellipsen ineinander, von aussen nach innen dunkler.
@@ -537,6 +390,11 @@ static func _draw_body(img: Image, dir: int, top: int, arm: int) -> void:
 	var belt := Palette.BOOTS.darkened(0.12)
 	var stitch := Palette.TUNIC_DARK.darkened(0.25)
 	if dir == Dir.SIDE:
+		# Der Rucksack ZUERST — er liegt hinter dem Rumpf, und die Figur schaut
+		# nach rechts (die Nase steht bei x 47 vor). Er sass vorher bei x 38
+		# bis 51, also VOR der Brust: von der Seite ein brauner Klotz auf dem
+		# Bauch. Hinten heisst hier kleines x.
+		_pack_side(img, y)
 		Pixel.rect(img, 20, y, 26, 30, Palette.TUNIC)
 		Pixel.rect(img, 18, y + 2, 2, 6, Palette.TUNIC)
 		Pixel.rect(img, 20, y, 8, 30, lit)
@@ -549,11 +407,11 @@ static func _draw_body(img: Image, dir: int, top: int, arm: int) -> void:
 		Pixel.rect(img, 20, y + 24, 26, 6, belt)
 		Pixel.rect(img, 20, y + 24, 26, 1, belt.lightened(0.22))
 		Pixel.rect(img, 20, y + 22, 26, 2, Color(Palette.TUNIC_DARK, 0.45))
-		# Umhaengetasche mit Riemen und Verschluss
-		Pixel.rect(img, 38, y + 12, 14, 14, Palette.WOOD_DARK)
-		Pixel.rect(img, 38, y + 12, 14, 4, Palette.WOOD)
-		Pixel.rect(img, 40, y + 18, 6, 2, Palette.WOOD_LIGHT)
-		Pixel.rect(img, 43, y + 10, 3, 4, Palette.WOOD.darkened(0.2))
+		# Schultergurt ueber der Brust — das Einzige, was von einem
+		# Rucksack seitlich nach VORNE sichtbar ist.
+		Pixel.rect(img, 26, y + 1, 3, 16, Palette.WOOD_DARK)
+		Pixel.rect(img, 26, y + 1, 1, 16, Palette.WOOD)
+		Pixel.rect(img, 26, y + 10, 3, 2, Palette.WOOD.darkened(0.25))
 		# sichtbarer Arm mit Aermelbund
 		Pixel.rect(img, 24, y + 4 + arm, 10, 18, Palette.TUNIC_DARK)
 		Pixel.rect(img, 24, y + 20 + arm, 10, 2, Palette.TUNIC_DARK.darkened(0.25))
@@ -576,6 +434,18 @@ static func _draw_body(img: Image, dir: int, top: int, arm: int) -> void:
 	for gx in range(18, 46, 4):
 		Pixel.px(img, gx, y + 27, belt.darkened(0.25))
 	if dir == Dir.DOWN:
+		# Von vorne ist von einem Rucksack fast nichts zu sehen — nur die
+		# beiden Gurte, die ueber die Schultern nach vorne kommen, und ein
+		# Streifen der Tasche, der seitlich hervorschaut. Ein Rucksack, den man
+		# von vorne als Block sieht, sitzt nicht auf dem Ruecken.
+		Pixel.rect(img, 22, y, 3, 22, Palette.WOOD_DARK)
+		Pixel.rect(img, 22, y, 1, 22, Palette.WOOD)
+		Pixel.rect(img, 39, y, 3, 22, Palette.WOOD_DARK.darkened(0.15))
+		Pixel.rect(img, 22, y + 12, 3, 2, Palette.WOOD.darkened(0.25))
+		Pixel.rect(img, 39, y + 12, 3, 2, Palette.WOOD.darkened(0.30))
+		# Die Kante der Tasche links und rechts neben dem Rumpf.
+		Pixel.rect(img, 14, y + 6, 2, 14, Palette.WOOD_DARK.darkened(0.10))
+		Pixel.rect(img, 48, y + 6, 2, 14, Palette.WOOD_DARK.darkened(0.30))
 		# Kragen mit Umschlag
 		Pixel.rect(img, 26, y, 12, 4, Palette.TUNIC_DARK)
 		Pixel.rect(img, 26, y, 12, 1, Palette.TUNIC.lightened(0.22))
@@ -594,13 +464,8 @@ static func _draw_body(img: Image, dir: int, top: int, arm: int) -> void:
 		Pixel.rect(img, 28, y + 24, 8, 1, Palette.UI_ACCENT.lightened(0.3))
 		Pixel.px(img, 33, y + 27, Palette.UI_ACCENT.lightened(0.4))
 	else:
-		# Rueckenansicht: Riemen, Tasche, Rueckennaht
-		Pixel.rect(img, 24, y, 4, 12, Palette.WOOD_DARK)
-		Pixel.rect(img, 36, y, 4, 12, Palette.WOOD_DARK)
-		Pixel.rect(img, 22, y + 10, 20, 16, Palette.WOOD_DARK)
-		Pixel.rect(img, 22, y + 10, 20, 4, Palette.WOOD)
-		Pixel.rect(img, 28, y + 18, 8, 2, Palette.WOOD_LIGHT)
 		_seam(img, 31, y + 2, 20, true, stitch)
+		_pack_back(img, y)
 	# Arme: Aermel, Bund, Hand
 	Pixel.rect(img, 8, y + 4 - arm, 10, 18, lit.darkened(0.06))
 	Pixel.rect(img, 8, y + 20 - arm, 10, 2, Palette.TUNIC_DARK.darkened(0.20))
@@ -610,6 +475,65 @@ static func _draw_body(img: Image, dir: int, top: int, arm: int) -> void:
 	Pixel.rect(img, 46, y + 20 + arm, 10, 2, Palette.TUNIC_DARK.darkened(0.30))
 	Pixel.rect(img, 46, y + 22 + arm, 10, 8, Palette.SKIN_SHADE)
 	_fingers(img, 46, y + 24 + arm, true)
+
+## Der Rucksack von hinten.
+##
+## Er soll wie ein getragener Rucksack aussehen, nicht wie ein zweiter Koerper:
+## deshalb 22 von 32 Bildpunkten Rumpfbreite, mittig, und mit den Teilen, an
+## denen man einen Rucksack erkennt — Haupttasche, Klappe darueber, zwei
+## Schultergurte, die ueber die Schultern nach vorne laufen, zwei Schnallen und
+## Naehte.
+static func _pack_back(img: Image, y: int) -> void:
+	var leather := Palette.WOOD_DARK
+	var leather_hi := Palette.WOOD
+	var cord := Palette.WOOD_DARK.darkened(0.35)
+
+	# Schultergurte: sie beginnen OBEN am Rumpf und laufen ueber die Schulter.
+	for gx: int in [22, 39]:
+		Pixel.rect(img, gx, y - 2, 3, 14, leather)
+		Pixel.rect(img, gx, y - 2, 1, 14, leather_hi)
+		Pixel.rect(img, gx, y + 6, 3, 2, cord)
+
+	# Haupttasche.
+	Pixel.rect(img, 21, y + 8, 22, 16, leather)
+	Pixel.rect(img, 21, y + 8, 2, 16, leather_hi.darkened(0.10))
+	Pixel.rect(img, 41, y + 8, 2, 16, cord)
+	Pixel.rect(img, 21, y + 22, 22, 2, cord)
+
+	# Klappe darueber, mit Ueberstand — daran erkennt man den Deckel.
+	Pixel.rect(img, 20, y + 6, 24, 7, leather_hi)
+	Pixel.rect(img, 20, y + 6, 24, 1, leather_hi.lightened(0.18))
+	Pixel.rect(img, 20, y + 12, 24, 1, cord)
+
+	# Zwei kleine Verschluesse an der Klappe.
+	for bx: int in [26, 36]:
+		Pixel.rect(img, bx, y + 11, 3, 4, cord)
+		Pixel.px(img, bx + 1, y + 12, Palette.UI_ACCENT.darkened(0.15))
+
+	# Naehte: dezent, nur an der Kante der Tasche.
+	_seam(img, 23, y + 15, 8, false, cord)
+	_seam(img, 33, y + 15, 8, false, cord)
+
+## Der Rucksack von der Seite.
+##
+## Er wird VOR dem Rumpf gezeichnet und danach von ihm ueberdeckt — dadurch
+## sitzt er hinten und liegt am Koerper an, statt daneben zu schweben. Sichtbar
+## bleibt nur, was ueber die Rueckenlinie hinausragt.
+static func _pack_side(img: Image, y: int) -> void:
+	var leather := Palette.WOOD_DARK
+	var leather_hi := Palette.WOOD
+	var cord := Palette.WOOD_DARK.darkened(0.35)
+	# Koerpernah: die rechte Kante liegt IM Rumpf (der beginnt bei x 20).
+	Pixel.rect(img, 10, y + 6, 14, 20, leather)
+	Pixel.rect(img, 10, y + 6, 2, 20, leather_hi.darkened(0.15))
+	Pixel.rect(img, 10, y + 24, 14, 2, cord)
+	# Klappe mit Ueberstand nach hinten.
+	Pixel.rect(img, 9, y + 4, 15, 7, leather_hi)
+	Pixel.rect(img, 9, y + 4, 15, 1, leather_hi.lightened(0.18))
+	Pixel.rect(img, 9, y + 10, 15, 1, cord)
+	# Verschluss.
+	Pixel.rect(img, 12, y + 9, 3, 4, cord)
+	Pixel.px(img, 13, y + 10, Palette.UI_ACCENT.darkened(0.15))
 
 ## Finger an einer Hand: drei Fugen, damit sie nicht als Klotz liest.
 static func _fingers(img: Image, x: int, y: int, shaded: bool) -> void:

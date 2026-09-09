@@ -115,10 +115,17 @@ const LIGHT_LIFT := 18.0
 
 ## Radius des Scheins um die Figur, in Weltpixeln.
 ##
-## KLEINER als eine gesetzte Welt-Fackel (96): die Figur trägt eine Handfackel,
-## keine Laterne auf einem Mast. Vorher war es umgekehrt, und eine gesetzte
-## Fackel leuchtete weniger weit als die Figur, die daneben stand.
-const PLAYER_RADIUS := 92.0
+## KLEINER als eine gesetzte Welt-Fackel (96). Eine gesetzte Fackel ist ein
+## echtes Feuer auf einem Mast; der Schein um die Figur ist nur so viel Sicht,
+## dass man die naechsten Schritte erkennt. Waere er groesser, waere jede
+## gesetzte Fackel überflüssig.
+const PLAYER_RADIUS := 78.0
+
+## Und wie kräftig. Deutlich unter 1: additiv aufgetragen ist voller Anschlag
+## ein weisser Fleck, und dann sieht man die Figur nicht mehr, die er zeigen
+## soll. 0,62 hellt gerade so weit auf, dass Gras noch grün und Sand noch sandig
+## bleibt.
+const SIGHT_STRENGTH := 0.62
 
 ## Kantenlänge der gebackenen Scheintextur. 128 reicht: sie wird ohnehin weich
 ## skaliert, und ein Verlauf hat keine Details, die eine höhere Auflösung
@@ -148,7 +155,7 @@ const MIN_VISIBLE := 0.02
 ## in die Saettigung und aus dem warmen Licht wird Weiss.
 const GLOW_PEAK := 0.42
 
-## Wie weit der helle Kern des Fackelscheins reicht, als Anteil am aeusseren
+## Wie weit der helle Kern des Scheins reicht, als Anteil am aeusseren
 ## Schein. Klein genug, dass er die Figur beleuchtet statt die halbe Wiese.
 const CORE_SHARE := 0.40
 
@@ -168,6 +175,24 @@ const REAL_REACH := 2.2
 ## Ton. Je weniger Blau im Licht steckt, desto waermer bleibt der Kegel.
 const TORCH_LIGHT := Color8(255, 175, 100)
 
+## Und die Farbe des Scheins um die Figur.
+##
+## NICHT das Orange der Fackel: die Figur trägt keine. Ein warmer Kegel ohne
+## Feuer darin ist eine Behauptung — man sucht das Licht im Bild und findet
+## nichts. Ein fast neutraler, leicht sandfarbener Ton liest sich dagegen als
+## das, was er ist: Restlicht, in dem man die nächsten Schritte noch erkennt.
+##
+## Und er ist nicht blau. Ein blauer Schein über einer blauen Nacht hellt nur
+## das Blau auf — der Boden darunter bleibt eine Fläche ohne eigene Farbe. Ein
+## Ton mit etwas mehr Rot und Grün holt Gras und Sand zurück, ohne dass es nach
+## Feuer aussieht.
+##
+## Und er ist gedämpft, nicht weiss. Ein fast weisser Schein legte sich als
+## milchiger Nebel über die ganze Umgebung: Boden, Figur und Nacht liefen zu
+## einer einzigen blassen Fläche zusammen. Sichtbar machen heisst hier, den
+## Untergrund noch erkennen zu lassen — nicht, ihn zu überstrahlen.
+const NIGHT_SIGHT := Color8(206, 196, 172)
+
 # --- Flackern ------------------------------------------------------------------
 #
 # Wie stark, wie oft, wie schnell. Getrennte Zahlen, weil sie Verschiedenes
@@ -180,7 +205,7 @@ const FLICKER_MAX := 0.19        ## laengster
 const FLICKER_SPEED := 15.0      ## wie schnell auf das Ziel zugelaufen wird
 
 ## Wie stark der Radius mitatmet — halb so stark wie die Helligkeit. Voll
-## mitzupulsieren sieht aus, als wuerde die Fackel gezoomt.
+## mitzupulsieren sieht aus, als wuerde die Flamme gezoomt.
 const FLICKER_RADIUS := 0.5
 
 # --- Glut ----------------------------------------------------------------------
@@ -242,8 +267,8 @@ class LightSource:
 	var phase: float = 0.0
 
 	## Versatz gegenueber `node`. Ersetzt `lift` fuer Quellen, die einem Knoten
-	## folgen: die Handfackel sitzt nicht ueber der Figur, sondern seitlich
-	## davon an der Flamme, und dieser Punkt wandert mit dem Arm.
+	## folgen: der Schein der Figur sitzt nicht an ihren Fuessen, sondern auf
+	## Brusthoehe darueber.
 	var offset := Vector2.ZERO
 
 	## Flackern als ZUFALLSGANG statt als Schwingung.
@@ -327,16 +352,17 @@ func _ready() -> void:
 
 	# Die Glut liegt in der WELT, nicht auf der Bildschirmebene: sie steigt von
 	# einem Ort auf und muss mit der Kamera wandern. z_index 2 haelt sie ueber
-	# Figur (0) und Handfackel (1).
+	# der Figur (0).
 	_embers = Embers.new()
 	_embers.name = "Glut"
 	_embers.owner_light = self
 	_embers.z_index = 2
 	add_child(_embers)
 
-	# Leichtes Flackern: eine Fackel in der Hand steht nicht still. 0,45 ist
-	# spürbar, ohne dass die halbe Szene mitzuckt.
-	_player_light = add_source(PLAYER_RADIUS, TORCH_LIGHT, 1.0, 0.45)
+	# Ohne Flackern (0,0). Die Figur trägt keine Fackel mehr; was hier leuchtet,
+	# ist kein Feuer, sondern der Rest an Sicht, den man nachts noch hat. Etwas,
+	# das zuckt, behauptet eine Flamme, die es nicht gibt.
+	_player_light = add_source(PLAYER_RADIUS, NIGHT_SIGHT, SIGHT_STRENGTH, 0.0)
 	_player_light.node = player
 	_player_light.offset = Vector2(0.0, -LIGHT_LIFT)
 
@@ -347,16 +373,10 @@ func _ready() -> void:
 	# Kern: dicht am Feuer ist es hell, und das faellt schnell ab. Zwei
 	# uebereinandergelegte Verlaeufe unterschiedlicher Weite ergeben genau
 	# diese Kurve, und der zweite kostet ein weiteres Viereck.
-	#
-	# Er flackert mit eigener Phase. Zwei gleich schwingende Scheine waeren ein
-	# Blinker; zwei ungleiche sind ein Feuer.
-	_player_core = add_source(PLAYER_RADIUS * CORE_SHARE, Color(1.0, 0.84, 0.56),
-		0.32, 0.55)
+	_player_core = add_source(PLAYER_RADIUS * CORE_SHARE,
+		NIGHT_SIGHT.lightened(0.10), SIGHT_STRENGTH * 0.32, 0.0)
 	_player_core.node = player
 	_player_core.offset = Vector2(0.0, -LIGHT_LIFT)
-	# Die Glut haengt am Kern, nicht am weiten Schein: beide sitzen am selben
-	# Punkt, aber zweimal Funken waeren doppelt so viele.
-	add_embers(_player_core)
 
 	Graphics.applied.connect(_apply_mode)
 	_apply_mode()
@@ -397,18 +417,6 @@ func remove_source(s: LightSource) -> void:
 ## Wie viele Lichtquellen es gerade gibt — für die Entwicklerinfo.
 func source_count() -> int:
 	return _sources.size()
-
-## Setzt beide Scheine der Figur auf einen Punkt relativ zu ihr.
-##
-## Die Figur weiss, wo ihre Hand gerade ist und wo darin die Flamme sitzt; der
-## Lichtverwalter weiss es nicht und soll es auch nicht ausrechnen muessen.
-## Deshalb schiebt die Figur den Punkt herein, statt dass hier eine zweite
-## Fassung derselben Rechnung stuende.
-func set_player_anchor(at: Vector2) -> void:
-	if _player_light != null:
-		_player_light.offset = at
-	if _player_core != null:
-		_player_core.offset = at
 
 ## Der Schein der Figur — für Anzeige und Selbsttest.
 func player_glow() -> Sprite2D:
@@ -501,6 +509,16 @@ func _refresh(delta: float = 0.0) -> void:
 	# passt sich der Rest von selbst an.
 	_dark = clampf((0.86 - tint.get_luminance()) * 2.0, 0.0, 1.0)
 
+	# Das echte Licht wird IMMER nachgefuehrt, auch am hellen Tag.
+	#
+	# Es haengt nicht an der Nachtschicht, sondern in der Welt, und die
+	# Schleife weiter unten laeuft am Tag gar nicht. Bliebe es also stehen, wo
+	# es angelegt wurde, leuchtete es beim ersten Dunkelwerden irgendwo hinter
+	# dem Horizont — genau so ist es aufgefallen, 46 758 Pixel daneben. Ein
+	# gesetzter Ort je Bild kostet nichts; ein falscher Ort kostet die Nacht.
+	if is_instance_valid(_real_light) and _player_light != null:
+		_step_real_light(_player_light)
+
 	# Am Tag ist die ganze Nachtschicht unsichtbar und kostet nichts.
 	var lit := _dark > MIN_VISIBLE and _mode >= 2
 	if _night.visible != lit:
@@ -555,8 +573,6 @@ func _update_glows(delta: float) -> void:
 		if not s.embers.is_empty():
 			_step_embers(s, delta)
 			any_embers = true
-		if s == _player_light:
-			_step_real_light(s)
 	if any_embers and is_instance_valid(_embers):
 		_embers.queue_redraw()
 
@@ -580,13 +596,14 @@ func _apply_real_light(mode: int) -> void:
 	if want == is_instance_valid(_real_light):
 		return
 	if not want:
+		_real_light.get_parent().remove_child(_real_light)
 		_real_light.queue_free()
 		_real_light = null
 		return
 	if _real_tex == null:
 		_real_tex = _real_light_texture()
 	_real_light = PointLight2D.new()
-	_real_light.name = "Fackellicht"
+	_real_light.name = "Nachtlicht"
 	_real_light.texture = _real_tex
 	_real_light.color = TORCH_LIGHT
 	_real_light.energy = 0.0
