@@ -28,6 +28,10 @@ func _start_music() -> void:
 	if not _music.has(_music_track):
 		# Erst beim ersten Bedarf erzeugen — der Spielstart bleibt schnell.
 		if _music_track != "menu" and _music_track != "world":
+			# Unbekannter Titel: STOPPEN, nicht stillschweigend weiterlaufen
+			# lassen. Vorher lief der alte Titel weiter, waehrend der Zustand
+			# schon den neuen nannte — und kam da auch nicht mehr heraus.
+			_music_player.stop()
 			return
 		_music[_music_track] = _make_music(_music_track)
 	if _music_player.stream != _music[_music_track] or not _music_player.playing:

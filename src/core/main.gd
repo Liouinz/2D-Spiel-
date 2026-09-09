@@ -147,10 +147,6 @@ func close_inventory() -> bool:
 
 # --- Zustandswechsel ---------------------------------------------------------
 
-## Der Weltaufbau dauert einige hundert Millisekunden. Ohne Zwischenschritt
-## friert das Fenster dabei ein und wirkt abgestürzt. Deshalb erst den Hinweis
-## einblenden, zwei Bilder abwarten (eines setzt die Sichtbarkeit, das zweite
-## zeichnet sie wirklich) und dann bauen.
 ## „Neue Welt" fragt nach, wenn dabei eine gebaute Karte verloren ginge.
 func ask_new_world() -> void:
 	if MapData.has_save():
@@ -158,6 +154,10 @@ func ask_new_world() -> void:
 	else:
 		start_game(true)
 
+## Der Weltaufbau dauert einige hundert Millisekunden. Ohne Zwischenschritt
+## friert das Fenster dabei ein und wirkt abgestürzt. Deshalb erst den Hinweis
+## einblenden, zwei Bilder abwarten (eines setzt die Sichtbarkeit, das zweite
+## zeichnet sie wirklich) und dann bauen.
 func start_game(fresh: bool = false) -> void:
 	if _busy:
 		return

@@ -144,8 +144,13 @@ func _fit() -> void:
 		if want.x <= room.x and want.y <= room.y:
 			return
 	# Auch die kleinste Stufe passt nicht: dann lieber schmal und vollständig
-	# als breit und abgeschnitten — die Spalten rutschen untereinander.
-	_panel.size = _panel.get_combined_minimum_size()
+	# als breit und abgeschnitten — die Spalten rutschen untereinander. Die
+	# eigene Groesse muss MIT gesetzt werden; sonst blieb sie auf dem Wert der
+	# letzten Schleifenrunde stehen, und die Pruefung „Tafel passt zum Inhalt"
+	# verglich zwei Zahlen, die nichts miteinander zu tun hatten.
+	var last := _panel.get_combined_minimum_size()
+	_panel.size = last
+	size = last
 
 # --- Linke Spalte: was die Welt ist -------------------------------------------
 
@@ -206,10 +211,10 @@ func _cost_lines() -> Array[String]:
 	out.append(_row("FPS", "%d   (ø %.0f)" % [Perf.fps(), Perf.fps_avg()]))
 	out.append(_row("1 % low", "%.0f" % Perf.low1()))
 	out.append(_row("Bildzeit", "%.2f ms" % Perf.frame_ms()))
-	out.append(_row("CPU Render", _ms(Perf.cpu_ms())))
-	out.append(_row("GPU Render", _ms(Perf.gpu_ms())))
-	out.append(_row("Zeichenaufrufe", _count(Perf.draw_calls())))
-	out.append(_row("Objekte im Bild", _count(Perf.render_objects())))
+	out.append(_row("CPU Render", Fmt.ms(Perf.cpu_ms())))
+	out.append(_row("GPU Render", Fmt.ms(Perf.gpu_ms())))
+	out.append(_row("Zeichenaufrufe", Fmt.count(Perf.draw_calls())))
+	out.append(_row("Objekte im Bild", Fmt.count(Perf.render_objects())))
 
 	out.append("")
 	out.append("— IM BILD —")
@@ -220,12 +225,12 @@ func _cost_lines() -> Array[String]:
 
 	out.append("")
 	out.append("— SPEICHER —")
-	out.append(_row("Spiel", _mib(Perf.game_memory())))
-	out.append(_row("Grafik", _mib(Perf.video_memory())))
-	out.append(_row("davon Texturen", _mib(Perf.texture_memory())))
+	out.append(_row("Spiel", Fmt.mib(Perf.game_memory())))
+	out.append(_row("Grafik", Fmt.mib(Perf.video_memory())))
+	out.append(_row("davon Texturen", Fmt.mib(Perf.texture_memory())))
 	var mem := Perf.system_memory()
-	out.append(_row("System frei", _gib(int(mem.get("available", -1)))))
-	out.append(_row("System gesamt", _gib(int(mem.get("physical", -1)))))
+	out.append(_row("System frei", Fmt.gib(int(mem.get("available", -1)))))
+	out.append(_row("System gesamt", Fmt.gib(int(mem.get("physical", -1)))))
 
 	out.append("")
 	out.append("— ANZEIGE —")
@@ -259,13 +264,10 @@ func _zoom() -> float:
 		and is_instance_valid(world.camera) else 1.0
 
 func _entities() -> int:
-	if not is_instance_valid(world):
-		return 0
-	var sorted := world.get_node_or_null("Sorted")
-	return sorted.get_child_count() if sorted != null else 0
+	return world.entity_count() if is_instance_valid(world) else 0
 
 func _motes() -> int:
-	return world.ambient._motes.size() if is_instance_valid(world) \
+	return world.ambient.mote_count() if is_instance_valid(world) \
 		and is_instance_valid(world.ambient) else 0
 
 func _marks() -> int:
@@ -297,17 +299,3 @@ func content_size() -> Vector2:
 static func _row(label: String, value: String) -> String:
 	return "%-17s %s" % [label, value]
 
-## Millisekunden — oder „—", wenn die Engine hier nichts misst. Auch eine
-## glatte 0,00 gilt als „nicht gemessen": manche Treiber füllen den Zähler
-## nicht, und eine Null sähe aus wie ein echter Messwert.
-static func _ms(v: float) -> String:
-	return "—" if v <= 0.0 else "%.2f ms" % v
-
-static func _count(v: int) -> String:
-	return "—" if v <= 0 else "%d" % v
-
-static func _mib(bytes: int) -> String:
-	return "—" if bytes <= 0 else "%.0f MiB" % (float(bytes) / 1048576.0)
-
-static func _gib(bytes: int) -> String:
-	return "—" if bytes <= 0 else "%.1f GiB" % (float(bytes) / 1073741824.0)

@@ -92,7 +92,7 @@ func setup(art: TileArt) -> void:
 		slot.pressed.connect(func() -> void: slot_clicked.emit(i))
 		_frame.add_child(slot)
 		_slots.append(slot)
-		_world_tex[i] = Pixel.tex(art.base[types[i]][TileArt.VARIANTS])
+		_world_tex[i] = Pixel.tex(art.base[types[i]][TileArt.MID])
 
 	var lines := Dividers.new()
 	lines.name = "Trennlinien"
@@ -195,7 +195,7 @@ func equip(slot: int, tile: int) -> void:
 		return
 	types[slot] = tile
 	_slots[slot].set_tile(tile, icons[tile])
-	_world_tex[slot] = Pixel.tex(_art.base[tile][TileArt.VARIANTS])
+	_world_tex[slot] = Pixel.tex(_art.base[tile][TileArt.MID])
 	loadout_changed.emit()
 
 ## Belegung als Liste von Bodentypen (für das Sichern).

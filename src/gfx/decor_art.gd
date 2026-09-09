@@ -17,7 +17,9 @@ extends RefCounted
 ## Schatten unten rechts.
 
 const T := Config.TILE
-const COLS := 8
+## Spalten im Blatt — dieselbe Breite wie im Kachelatlas, damit nicht zwei
+## unabhaengige Achten im Projekt stehen.
+const COLS := TerrainAtlas.COLS
 
 ## Wie viele Lagen es je Art gibt.
 const PLACEMENTS := 4

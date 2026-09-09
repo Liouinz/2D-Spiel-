@@ -15,6 +15,14 @@ func _init() -> void:
 
 func _ready() -> void:
 	_tex = MenuArt.cloud_band(BAND_W, BAND_H)
+	# Nur rechnen, wenn man sie auch sieht. Das Hauptmenue bleibt waehrend des
+	# Spiels im Baum und wird nur unsichtbar geschaltet — ohne das zoegen die
+	# Wolken die ganze Spielzeit ueber weiter.
+	visibility_changed.connect(_follow_visibility)
+	_follow_visibility()
+
+func _follow_visibility() -> void:
+	set_process(is_visible_in_tree())
 
 func _process(delta: float) -> void:
 	_offset = fmod(_offset + SPEED * delta, float(BAND_W))

@@ -72,10 +72,10 @@ func refresh() -> void:
 		"FPS   %d   (ø %.0f)" % [Perf.fps(), Perf.fps_avg()],
 		"1 %% low   %.0f" % Perf.low1(),
 		"Bildzeit   %.2f ms" % Perf.frame_ms(),
-		"CPU Render   %s" % _ms(Perf.cpu_ms()),
-		"GPU Render   %s" % _ms(Perf.gpu_ms()),
-		"Zeichenaufrufe   %s" % _num(Perf.draw_calls()),
-		"Speicher   %s" % _mib(Perf.game_memory()),
+		"CPU Render   %s" % Fmt.ms(Perf.cpu_ms()),
+		"GPU Render   %s" % Fmt.ms(Perf.gpu_ms()),
+		"Zeichenaufrufe   %s" % Fmt.count(Perf.draw_calls()),
+		"Speicher   %s" % Fmt.mib(Perf.game_memory()),
 	])
 	_fit()
 
@@ -96,15 +96,3 @@ func panel_size() -> Vector2:
 func content_size() -> Vector2:
 	return _panel.get_combined_minimum_size()
 
-static func _num(v: int) -> String:
-	return "—" if v <= 0 else "%d" % v
-
-## Millisekunden — oder „—", wenn die Engine hier nichts misst.
-##
-## Auch eine glatte 0,00 gilt als „nicht gemessen": manche Treiber füllen den
-## Zähler nicht, und eine Null sähe aus wie ein echter Messwert.
-static func _ms(v: float) -> String:
-	return "—" if v <= 0.0 else "%.2f ms" % v
-
-static func _mib(bytes: int) -> String:
-	return "—" if bytes <= 0 else "%.0f MiB" % (float(bytes) / 1048576.0)

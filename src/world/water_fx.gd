@@ -12,7 +12,7 @@ extends Node2D
 ## (siehe `GroundTileSet.SHRINK`), liegt diese Kante nicht mehr am Wasser,
 ## sondern einen halben Block draussen im Sand. Auf dem Bildschirm war das ein
 ## blasses, gestricheltes Rechteck rund um jeden Teich — dieselbe Sorte Fehler
-## wie das dunkle Rechteck von EdgeArt, nur in Hellgrau.
+## wie ein dunkles Rechteck, nur in Hellgrau.
 ##
 ## Es waere moeglich gewesen, den Saum auf die gezeichnete Linie zu schieben.
 ## Die verlaeuft aber verrauscht durch die Kachelmitte; ein Saum daneben traefe
@@ -71,6 +71,18 @@ func _add_wave(w: Dictionary) -> void:
 	queue_redraw()
 
 func _process(delta: float) -> void:
+	# Wellen altern IMMER, auch wenn nichts gezeichnet wird.
+	#
+	# Vorher stand der Abbruch weiter oben, und die Figur meldete ihre Wellen
+	# trotzdem weiter: auf der ruhigen Stufe sammelten sich achtzehn tote
+	# Eintraege an, die beim Umschalten schlagartig alle auf einmal erschienen.
+	# Altern kostet eine Zahl je Welle; ein falscher Zustand kostet mehr.
+	if not _splashes.is_empty():
+		for sp: Dictionary in _splashes:
+			sp["age"] += delta
+		_splashes = _splashes.filter(func(sp: Dictionary) -> bool:
+			return sp["age"] < float(sp["life"]))
+
 	# Auf der einfachsten Wasserstufe bleibt die Fläche ruhig: kein Glitzern,
 	# keine Brandung, keine Wellenringe — und damit auch kein Neuzeichnen. Das
 	# ist der grösste Einzelposten, den sich ein schwacher Rechner sparen kann.
@@ -78,10 +90,6 @@ func _process(delta: float) -> void:
 		return
 	_time += delta
 	if not _splashes.is_empty():
-		for sp: Dictionary in _splashes:
-			sp["age"] += delta
-		_splashes = _splashes.filter(func(sp: Dictionary) -> bool:
-			return sp["age"] < float(sp["life"]))
 		queue_redraw()
 	_accum += delta
 	if _accum >= 1.0 / Graphics.water_redraw_hz():
@@ -96,7 +104,7 @@ func _draw() -> void:
 	if is_instance_valid(camera):
 		rect = camera.visible_world_rect().grow(T)
 	else:
-		rect = Rect2(Vector2.ZERO, Config.world_size_px())
+		rect = Config.fallback_view()
 	var x0 := maxi(int(rect.position.x / T), 0)
 	var y0 := maxi(int(rect.position.y / T), 0)
 	var x1 := mini(int(rect.end.x / T) + 1, Config.MAP_W)
@@ -163,8 +171,7 @@ func _draw_splashes() -> void:
 				var along := float(i) * 0.34
 				var p := center + back * (drift + along * spread) \
 					+ side * s * (spread * (0.45 + along))
-				# Flach gedrückt: das Wasser wird von oben gesehen.
-				draw_rect(Rect2(p.x - 1.5, p.y * 1.0, 3.0, 1.0),
+				draw_rect(Rect2(p.x - 1.5, p.y, 3.0, 1.0),
 					Color(Palette.WATER_FOAM, a2), true)
 				prims += 1
 

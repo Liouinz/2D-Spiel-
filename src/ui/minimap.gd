@@ -2,22 +2,22 @@ extends Control
 ## Kleine Übersichtskarte oben rechts.
 ##
 ## Zeigt einen Ausschnitt um die Figur, nicht die ganze Welt: bei 2048 × 2048
-## Blöcken wäre die ganze Karte 2048 Pixel breit. Hier sind es 80 × 80 Blöcke
-## bei zwei Bildpunkten je Block.
+## Blöcken wäre die ganze Karte 2048 Pixel breit. Hier sind es 64 × 64 Blöcke
+## bei drei Bildpunkten je Block.
 ##
 ## Gebaut wird über einen Rohpuffer und `Image.create_from_data` statt über
-## `set_pixel` — 6400 Einzelaufrufe je Aktualisierung wären dafür zu teuer.
+## `set_pixel` — 4096 Einzelaufrufe je Aktualisierung wären dafür zu teuer.
 
-## 64 Blöcke = vier Chunks. Der Bildausschnitt zeigt nur rund 27 × 15 Blöcke,
-## die Minimap also gut das Doppelte in jede Richtung. Mehr wäre lesbar zu
-## klein: bei 80 Blöcken war ein Haus ein Punkt.
+## 64 Blöcke = vier Chunks. Der Bildausschnitt zeigt bei Zoom 2 nur rund
+## 20 × 11 Blöcke, die Minimap also ein Mehrfaches in jede Richtung. Mehr wäre
+## lesbar zu klein: bei 80 Blöcken war ein Haus ein Punkt.
 const BLOCKS := 64           ## Kantenlänge des Ausschnitts in Blöcken
 const SCALE := 3             ## Bildpunkte je Block
 const SIZE := BLOCKS * SCALE
 const REFRESH_HZ := 6.0
 
 ## Eine Farbe je Bodentyp. Kräftiger als die Kacheln selbst, sonst ist auf
-## 80 × 80 Punkten nichts zu unterscheiden.
+## 64 × 64 Feldern nichts zu unterscheiden.
 const COLORS := {
 	MapData.Tile.GRASS: Color8(96, 152, 78),
 	MapData.Tile.SAND: Color8(226, 206, 148),

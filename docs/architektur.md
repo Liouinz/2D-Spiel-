@@ -26,9 +26,10 @@ Vorgefunden:
 **Engine bleibt Godot 4.3.** Sie ist für ein 2D-Top-Down-Spiel gut geeignet, und ein
 Wechsel wäre reine Verschwendung.
 
-**Der alte Prototyp wird archiviert, nicht überschrieben.** Er liegt vollständig unter
-`prototype_godsim/` mit einer `.gdignore`-Datei, damit die Engine ihn nicht mitlädt und
-keine Klassennamen kollidieren. Die Git-Historie bleibt ohnehin erhalten.
+**Der alte Prototyp lag lange archiviert daneben** — vollständig unter
+`prototype_godsim/`, mit einer `.gdignore`-Datei, damit die Engine ihn nicht mitlädt.
+Beim Aufräumen ist er entfernt worden: 1554 Zeilen, die niemand mehr las und die Engine
+nie lud. Die Git-Historie bleibt erhalten, und genau dafür ist sie da.
 
 **Grafik wird weiterhin prozedural erzeugt.** Statt zusammengesuchter Fremd-Assets erzeugt
 `src/gfx/` alle Texturen aus einer einzigen Palette (`src/core/palette.gd`). Das garantiert
@@ -1257,41 +1258,40 @@ und Welt dasselbe Mass hatten, war das gleichgueltig. Mit halber Darstellung
 waere die Figur nur noch halb so hoch gesprungen, ohne dass jemand eine Zahl
 geaendert haette. Sie steht jetzt in `position`, wo sie hingehoert.
 
-## Nachtrag: das echte Licht, gemessen statt vermutet
+## Nachtrag: das echte Licht — zweimal eingebaut, zweimal entfernt
 
 Ein `PointLight2D` wurde vor mehreren Runden entfernt, weil es +3,43 ms
-CPU-Renderzeit kostete. Auf ausdruecklichen Wunsch gibt es es jetzt wieder — als
-Stufe „Sehr hoch", abschaltbar, nicht voreingestellt.
+CPU-Renderzeit kostete. Auf ausdruecklichen Wunsch kam es als Stufe „Sehr hoch"
+zurueck: abschaltbar, nicht voreingestellt, von keinem Qualitaetsprofil
+vergeben.
 
-Die Messung dazu ist deutlicher als erwartet:
+Die Messung war deutlicher als erwartet:
 
 | Fall | Bildzeit | FPS |
 |---|---|---|
-| Nacht voll (additiver Schein) | 24,72 ms | 40 |
-| Nacht voll mit echtem Licht | 41,52 ms | 24 |
+| Nacht voll (additiver Schein) | 30,30 ms | 33 |
+| Nacht voll mit echtem Licht | 60,51 ms | 17 |
 
-**+16,80 ms** — mehr als alle anderen Lichtmittel zusammen. Genau diese Sorte
-Einbruch war der Grund fuer die Entfernung.
+**+30,22 ms** — mehr als alle anderen Lichtmittel zusammen, und die halbe
+Bildrate.
 
-Was die Stufe dafuer bringt, kann ein additives Viereck grundsaetzlich nicht:
-ein echtes Licht multipliziert mit dem Untergrund (unbeleuchtete Stellen
-bleiben wirklich dunkel), und Verdecker werfen Schatten. Gesetzte Fackeln haben
-seither einen Verdecker; er kostet nichts, solange kein echtes Licht in der
-Szene steht.
+Was es dafuer brachte, kann ein additives Viereck grundsaetzlich nicht: ein
+echtes Licht multipliziert mit dem Untergrund (unbeleuchtete Stellen bleiben
+wirklich dunkel), und Verdecker werfen Schatten. Solange die Figur eine Fackel
+trug, war das den Preis wert — ein Feuer neben ihr, das den Boden ausleuchtet.
 
-Drei Absicherungen halten die Zusage fuer alle anderen Stufen aufrecht:
+Dann ist die Fackel entfallen, und damit die Begruendung. Dasselbe teure Licht
+beleuchtete jetzt denselben ruhigen Sichtkreis, den das billige System auch
+zeichnet. Also ist es wieder weg, samt der `LightOccluder2D` der gesetzten
+Fackeln, die ausschliesslich fuer diese Stufe existierten.
 
-- kein Qualitaetsprofil vergibt Stufe 4
-- die automatische Anpassung nimmt sie als ALLERERSTES zurueck
-- der Selbsttest prueft, dass das Licht beim Zurueckschalten wirklich
-  WEGGERAEUMT wird und nicht nur auf Energie null steht — ein Licht mit Energie
-  null rechnet trotzdem
+Das ist der eigentliche Lehrsatz aus zwei Runden: **eine Stufe traegt sich nur,
+solange das, wofuer sie da war, noch da ist.** Das Licht war nie falsch — es war
+zuletzt nur ohne Gegenstand. Wer sie damals eingefuehrt hat, konnte das nicht
+wissen; wer sie stehen laesst, nachdem die Fackel weg ist, schon.
 
-Was die Stufe nicht bringt: mehr Schattenwerfer. Die Welt besteht aus
-Bodenkacheln. Gesetzte Fackeln sind bis auf Weiteres das Einzige darin, was
-einen Schatten werfen kann.
-
-**Stand:** 335 Pruefungen, alle gruen.
+Damit gilt wieder ohne Ausnahme: in dieser Welt steht kein einziges `Light2D`.
+Der Selbsttest prueft das ueber ALLE Lichtstufen, nicht mehr nur bis „Hoch".
 
 ## Lizenzlage
 

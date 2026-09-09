@@ -79,7 +79,7 @@ const ACCENT_LINE: Color = Palette.UI_BORDER_HI
 
 # --- Bausteine ---------------------------------------------------------------
 
-## Eine Fläche mit Rahmen. Der einzige Weg, im Spiel eine Fläche zu erzeugen —
+## Eine Fläche mit Rahmen. Der Weg, im Spiel eine Fläche zu erzeugen —
 ## damit sehen Tafeln, Felder und Zeilen überall gleich aus.
 static func box(bg: Color, border: Color, width: int = BORDER,
 		radius: int = RADIUS, shadow: int = 0) -> StyleBoxFlat:

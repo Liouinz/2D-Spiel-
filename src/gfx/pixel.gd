@@ -16,6 +16,18 @@ const FMT := Image.FORMAT_RGBA8
 ## NICHT umlaufen, sonst klebte ein Baumwipfel unten am Bild.
 static var wrap: int = 0
 
+## Zeichnet umlaufend und raeumt danach IMMER auf.
+##
+## `wrap` ist prozessweiter Zustand, und solange er steht, entfaellt die
+## Bereichspruefung vollstaendig. Wer ihn von Hand setzt und vergisst, laesst
+## jeden folgenden Bilderzeuger umlaufend zeichnen. Diese Klammer macht das
+## Vergessen unmoeglich.
+static func wrapped(size: int, draw: Callable) -> void:
+	var before := wrap
+	wrap = size
+	draw.call()
+	wrap = before
+
 static func make(w: int, h: int) -> Image:
 	var img := Image.create(w, h, false, FMT)
 	img.fill(Color(0, 0, 0, 0))

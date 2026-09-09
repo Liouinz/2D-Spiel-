@@ -70,14 +70,6 @@ const DAY_LENGTH := 480.0
 ## Wo der Tag beginnt, wenn die Welt geladen wird — heller Vormittag.
 const START_TIME := 0.34
 
-## Farbe und Helligkeit über den Tag. Der erste Wert ist die Uhrzeit von 0
-## (Mitternacht) bis 1, der zweite die Tönung, mit der die Welt multipliziert
-## wird. Weiss heisst: unverändert.
-##
-## Die Nacht ist deutlich dunkler als in der ersten Fassung (0,40 / 0,46 / 0,68
-## vorher, jetzt 0,26 / 0,30 / 0,50). Das ging erst, seit der Schein um die
-## Figur nichts mehr kostet: eine dunkle Nacht ohne bezahlbares Licht wäre eine
-## Zwangspause gewesen, mit Licht ist sie Atmosphäre.
 ## Der Ton, in den die Nacht faellt — und warum es ihn ueberhaupt braucht.
 ##
 ## `CanvasModulate` MULTIPLIZIERT. Eine blaue Toenung ueber einer gruenen Wiese
@@ -89,13 +81,22 @@ const START_TIME := 0.34
 ## Blau muss also DAZUKOMMEN, nicht durchmultipliziert werden. Das ist eine
 ## einzelne halbdurchsichtige Flaeche ueber der Welt, unter den Scheinen: ein
 ## Viereck, kein Shader. Sie liegt bewusst UNTER den additiven Scheinen — so
-## faellt das warme Fackellicht in eine kalte Umgebung, und der Kontrast, den
-## eine Nachtszene braucht, entsteht von selbst.
+## faellt der warme Schein einer gesetzten Fackel in eine kalte Umgebung, und
+## der Kontrast, den eine Nachtszene braucht, entsteht von selbst.
 const NIGHT_BLUE := Color(0.15, 0.25, 0.52)
+
 ## Deckkraft bei voller Dunkelheit. Darueber kippt die Welt ins Comichafte,
 ## darunter bleibt sie das dunkle Gruen von vorher.
 const NIGHT_BLUE_A := 0.28
 
+## Farbe und Helligkeit über den Tag. Der erste Wert ist die Uhrzeit von 0
+## (Mitternacht) bis 1, der zweite die Tönung, mit der die Welt multipliziert
+## wird. Weiss heisst: unverändert.
+##
+## Die Nacht ist deutlich dunkler als in der ersten Fassung (0,40 / 0,46 / 0,68
+## vorher, jetzt 0,26 / 0,30 / 0,50). Das ging erst, seit der Schein um die
+## Figur nichts mehr kostet: eine dunkle Nacht ohne bezahlbares Licht wäre eine
+## Zwangspause gewesen, mit Licht ist sie Atmosphäre.
 const RAMP := [
 	[0.00, Color(0.24, 0.28, 0.46)],   ## tiefe Nacht
 	[0.17, Color(0.40, 0.42, 0.60)],   ## erste Dämmerung

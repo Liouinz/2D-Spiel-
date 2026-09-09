@@ -37,7 +37,7 @@ static var MAP_H: int = BUILD_CHUNKS.y * CHUNK
 ## Statisch statt konstant: die Sichtweite ist eine Einstellung. `Graphics`
 ## setzt den Wert aus `Settings.render_range`, der ChunkStreamer liest ihn bei
 ## jeder Neuberechnung. Radius 2 (5 x 5 Chunks) ist die Voreinstellung — der
-## Bildausschnitt ist bei Zoom 1,5 nur rund 27 x 15 Blöcke groß, das lässt
+## Bildausschnitt ist bei Zoom 2 nur rund 20 x 11 Blöcke groß, das lässt
 ## ringsum mindestens einen ganzen Chunk Puffer.
 static var LOAD_RADIUS: int = 2
 
@@ -88,6 +88,15 @@ static func hash2(x: int, y: int) -> int:
 	var h := (x * 73856093) ^ (y * 19349663)
 	h = (h ^ (h >> 13)) * 1274126177
 	return absi(h ^ (h >> 16))
+
+## Sichtbarer Bereich, wenn die Kamera fuer ein Bild nicht da ist.
+##
+## Absichtlich KLEIN. Wer hier auf die ganze Welt zurueckfaellt, laesst
+## 4,2 Millionen Felder zeichnen — bei 2048 x 2048 Bloecken friert das Bild
+## dabei ein. Ein Bildschirm voll reicht: der Rueckfall gilt hoechstens ein
+## Bild lang, danach steht die Kamera wieder.
+static func fallback_view() -> Rect2:
+	return Rect2(Vector2.ZERO, Vector2(TILE * 40, TILE * 24))
 
 static func world_size_px() -> Vector2i:
 	return Vector2i(MAP_W * TILE, MAP_H * TILE)

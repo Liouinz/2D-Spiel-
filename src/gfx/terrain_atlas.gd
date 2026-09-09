@@ -4,7 +4,9 @@ extends RefCounted
 ## Terrain-Autotiling im Eck-Modus.
 ##
 ## Godot waehlt im Modus TERRAIN_MODE_MATCH_CORNERS eine Kachel anhand der vier
-## Ecken aus. Es gibt also 15 verwendbare Eckmasken (1..15) — Maske 0 bleibt leer.
+## Ecken aus. Es gibt 16 Eckmasken (0..15), und alle 16 werden gebraucht:
+## Maske 0 ist die einzeln stehende Kachel, Maske 15 die ringsum umgebene mit
+## einer Oeffnung.
 ## Die Form einer Teilkachel entsteht durch bilineare Interpolation der vier
 ## Eckwerte. Die Schwelle wird dabei mit RAUSCHEN verschoben, nicht gedithert.
 ##
@@ -86,13 +88,17 @@ static func build(variants: Array, rng: RandomNumberGenerator,
 	var img := Pixel.make(COLS * T, rows * T)
 	var slots: Array[Vector2i] = []
 
-	# Teilkacheln: Masken 0..14 aus der mittleren Helligkeitsstufe.
+	# Teilkacheln: Masken 0..15 aus der mittleren Helligkeitsstufe.
 	# Maske 0 ist die einzeln stehende Kachel — ohne sie würde eine Kachel ohne
 	# gleichartige Nachbarn schlicht verschwinden.
-	var mid := TileArt.VARIANTS  # Beginn der mittleren Stufe im flachen Array
+	var mid := TileArt.MID
 	for mask in PARTIAL:
 		for v in EDGE_VARIANTS:
-			var src: Image = variants[mid + (mask * 5 + v * 3) % TileArt.VARIANTS]
+			# Nachgerechnet: `(mask * 5 + v * 3) % 10` erreichte ueber alle 16
+			# Masken und 3 Varianten nur {0,1,3,5,6,8} — vier der zehn
+			# gezeichneten Varianten kamen an Kanten NIE vor. Mit einem
+			# Schritt, der zu 10 teilerfremd ist, laufen alle durch.
+			var src: Image = variants[mid + (mask * EDGE_VARIANTS + v) % TileArt.VARIANTS]
 			var tile: Image
 			if mask == 15:
 				# Umgeben, aber nicht dazugehörend: gefüllt mit Öffnung.

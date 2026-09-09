@@ -27,6 +27,15 @@ var fresh: bool = false
 
 var _sorted: Node2D
 
+## Wie viele Dinge in der sortierten Schicht liegen — Figur, Fackeln, alles,
+## was voreinander stehen kann. Fuer die Entwicklerinfo.
+##
+## Oeffentlich, damit die Anzeige den Knoten nicht ueber seinen NAMEN suchen
+## muss: `get_node_or_null("Sorted")` war die einzige Zeichenkettensuche der
+## ganzen Oberflaeche und haette beim Umbenennen still 0 gemeldet.
+func entity_count() -> int:
+	return _sorted.get_child_count() if is_instance_valid(_sorted) else 0
+
 func _ready() -> void:
 	# Die Welt MUSS pausierbar sein.
 	#
