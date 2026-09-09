@@ -1140,6 +1140,78 @@ Wirkung. Für den Staub in der Luft steht sie jetzt da: *blasser als der hellste
 Boden, den es in dieser Welt gibt.* Der erste Versuch, ihn zu entschärfen, ist
 daran gescheitert — er war immer noch heller als Sand.
 
+## Nachtrag: eine Zahl, die an zwei Stellen stand
+
+Die Handfackel sass zwei Bildpunkte neben der Hand der Figur. Auf einem
+Bildschirmfoto sah man die Faust NEBEN der Hand stehen, mit einem Streifen Haut
+dazwischen — und deshalb wirkte die Fackel angeklebt, obwohl sie eine Faust
+hatte und die Zeichenreihenfolge stimmte.
+
+Die Ursache ist die uebliche: dieselbe Zahl an zwei Stellen. Die Hand wird in
+`ActorArt._draw_body` gezeichnet (ein 5 x 5 grosses Rechteck bei `y + 10`), und
+wo die Fackel hingehoert, stand als eigene Tabelle `TORCH_AT` in `player.gd` —
+von Hand eingestellt, einmal richtig gewesen, und beim naechsten Umbau der Figur
+nicht mitgewandert.
+
+Jetzt steht die Handposition genau einmal (`HAND_AT`), und alles andere leitet
+sich daraus ab: wohin das Fackelbild gehoert, wo die Flamme steht, wo das Licht
+sitzt. Der Selbsttest misst den Abstand zwischen Griff und Hand und bekommt
+0,00 px.
+
+Bemerkenswerter als der Fehler ist, wie er sich gehalten hat. Die Fackel war
+ueber zwei Runden hinweg Thema, sie hat eine Faust bekommen und wurde zweimal
+begutachtet — aber geprueft wurde immer, ob sie DA ist, nie, ob sie am
+richtigen Fleck ist. Die neue Pruefung rechnet den Punkt ueber einen zweiten
+Weg zurueck (aus dem gesetzten Sprite statt aus der Quelle) und vergleicht.
+Erst ein zweiter Weg macht aus einer Zusicherung eine Messung.
+
+Dasselbe beim Licht: es hing an einem festen Punkt in der Mitte der Figur,
+waehrend das Feuer daneben brannte. Der Lichtkegel ging vom Bauch aus. Auch das
+hat niemand bemerkt, weil ein weicher Verlauf ueber 76 Bildpunkten seinen
+Mittelpunkt nicht verraet.
+
+## Nachtrag: Flackern ohne Takt
+
+Das Flackern war zwei Sinus mit ungleicher Frequenz. Das ist die uebliche
+Antwort auf „mach es unregelmaessig", und sie ist besser als ein Sinus — aber
+sie bleibt periodisch, und lange genug angesehen findet das Auge den Takt.
+
+Jetzt ist es ein Zufallsgang: alle 0,05 bis 0,19 Sekunden ein neues Ziel, dann
+schnell darauf zu. Weder die Hoehe der Spruenge noch ihr Abstand wiederholt
+sich. Drei getrennte Zahlen steuern das, weil sie Verschiedenes tun — die
+Auslenkung, die Unregelmaessigkeit und die Haerte des Sprungs. Zu hart, und es
+blinkt; zu weich, und es atmet.
+
+Dieselbe Ueberlegung bei den acht Flammenbildern: die Tabellen fuer Hoehe,
+Breite und Neigung sind bewusst ungeordnet. Eine Folge, die auf- und wieder
+absteigt, liest sich als Pulsieren.
+
+## Nachtrag: was aus dem Auftrag nicht ging
+
+Der Auftrag nannte vier Mittel namentlich. Drei davon setzen ein echtes
+`Light2D` voraus, und genau das gibt es hier gemessen nicht mehr:
+
+**`PointLight2D`.** Gemessen kostete eines +3,43 ms CPU-Renderzeit — es zwingt
+den Canvas-Renderer in den beleuchteten Pfad und laesst jedes Element im
+Umkreis ein zweites Mal einreihen, jedes Bild neu, weil es der Figur folgt. Der
+Selbsttest haelt seither fest, dass kein einziges in der Welt existiert. Was
+der Auftrag davon WILL — Licht an der Flammenspitze, warmes Orange, radialer
+Verlauf, weicher Abfall, flackernde Energie, mitatmender Radius — ist alles da,
+nur als additives Sprite statt als Lichtknoten.
+
+**`LightOccluder2D` fuer Schatten.** Braucht ein `Light2D`. Und selbst mit
+einem gaebe es hier nichts zu verschatten: die Welt besteht aus Bodenkacheln.
+Es stehen keine Baeume und keine Objekte darin, hinter denen ein Schatten
+liegen koennte — das ist derselbe Punkt, der auch bei „Parallaxe" gilt.
+
+**Normal Maps.** Brauchen ebenfalls den Lichtknoten. Sie widersprechen
+ausserdem einer frueheren Vorgabe aus demselben Projekt: konsistente Pixel-Art,
+keine Photorealistik, keine 3D-Beleuchtung. Eine 32-Pixel-Kachel mit
+Normalenkarte sieht nicht nach Pixel-Art aus, sondern nach einer Pixel-Kachel
+mit einem Filter darueber.
+
+**Stand:** 330 Pruefungen, alle gruen.
+
 ## Lizenzlage
 
 Das Projekt enthält keine fremden Asset-Dateien. Eine Prüfung im Selbsttest

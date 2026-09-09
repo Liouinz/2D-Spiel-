@@ -626,16 +626,104 @@ brennende Fackel.
 weg. Sie leuchtet warm, flackert leicht und wird mit der Karte gespeichert.
 
 Gesetzte Fackeln flackern genauso, und ihr Schein reicht weiter als die
-Handfackel (96 gegen 76 Pixel): eine gesetzte Fackel steht fest und leuchtet
+Handfackel (120 gegen 92 Pixel): eine gesetzte Fackel steht fest und leuchtet
 einen Platz aus, die Figur trägt nur ein Licht mit sich. Bewegt wird dabei nur,
 was gerade im Bild liegt.
 
-Die Handfackel hat inzwischen eine **Faust** um den Stiel. Vorher war sie ein
-Stiel mit einer Flamme, gesetzt neben die Figur — und genau so sah sie aus: als
-schwebte sie dort. Was gefehlt hat, ist die Hand. Sechs Bildpunkte mit zwei
-Fingerfugen machen aus zwei Dingen nebeneinander ein Ding, das gehalten wird.
-Sie gehört ins Fackelbild und nicht in die Figur: sie muss mitwandern, wenn der
-Arm schwingt, und sie darf nur da sein, wenn wirklich eine Fackel getragen wird.
+### Sie wird wirklich gehalten
+
+Die Fackel ist in der Reihenfolge aufgebaut, in der man sie sieht — und das ist
+hier keine Formsache, sondern der ganze Unterschied zwischen „gehalten" und
+„danebengelegt":
+
+| | |
+|---|---|
+| 1. Handrücken | **hinter** dem Stiel — die Fläche, gegen die er gedrückt wird |
+| 2. Stiel | darüber, läuft oben und unten aus der Faust heraus |
+| 3. Finger | **vor** dem Stiel, drei Glieder mit Fugen dazwischen |
+| 4. Daumen | an der Lichtseite |
+| 5. Wicklung | Leder um den Kopf, mit Schnur |
+| 6. Flamme | vor allem, und ohne schwarzen Umriss |
+
+Nach Schritt 3 bleibt **eine Spalte des Stiels sichtbar** zwischen Fingern und
+Handrücken. Genau daran liest man, dass die Hand darum greift: Haut davor, Holz
+in der Mitte, Haut dahinter.
+
+Und sie sitzt an der richtigen Stelle. Vorher stand die Fackelposition als
+eigene Tabelle in `player.gd`, von Hand eingestellt — **zwei Bildpunkte neben
+der Hand der Figur**, mit einem Streifen Haut dazwischen. Auf einem
+Bildschirmfoto sah man die Faust *neben* der Hand. Jetzt steht die Handposition
+genau einmal (`ActorArt.HAND_AT`, abgelesen aus der Figurenzeichnung), und die
+Fackel setzt ihren Griff darauf. Der Selbsttest misst den Abstand: **0,00 px.**
+
+Die Fackel folgt außerdem dem **Armschwung**. Beim Laufen hebt und senkt sich
+die Hand um zwei Bildpunkte je Bild; die Fackel bekommt dieselben Werte, mit
+denen das Figurenbild gezeichnet wurde. Ohne das hinge sie sichtbar hinterher.
+
+### Die Flamme flackert unregelmäßig
+
+**Acht Bilder** statt vier. Bei vier liest man den Takt — dieselbe Folge
+mehrmals je Sekunde, und das Auge findet den Rhythmus. Feuer hat keinen.
+
+Die Werte für Höhe, Breite und Neigung der Spitze sind deshalb bewusst
+**ungeordnet**: eine Folge, die auf- und wieder absteigt, liest sich als
+Pulsieren, als atmete die Flamme. Echtes Feuer zuckt mal zweimal kurz
+hintereinander hoch und bleibt dann drei Bilder fast gleich. In zwei der acht
+Bilder löst sich ein **Funke** über der Spitze.
+
+Die Form ist kein Stapel Ellipsen mehr, sondern ein Tropfen mit leckender
+Spitze: unten am Docht schmal, über der Wicklung am breitesten, nach oben
+auslaufend — und die Spitze biegt sich, während der Fuß stehen bleibt. Vier
+Farbbänder von außen nach innen: rot, orange, gelb, weiß-gelber Kern.
+
+Handfackel **11 fps**, gesetzte Fackel **9 fps** — eine im Halter steht still,
+eine in der Hand wird bewegt.
+
+![Nacht](docs/bilder/nacht.png)
+
+### Das Licht sitzt an der Flamme
+
+Vorher hing es an einem festen Punkt 18 Bildpunkte über den Füßen — also in der
+Mitte der Figur. Der Lichtkegel ging vom Bauch aus, während das Feuer daneben
+in der Hand brannte.
+
+Jetzt folgt die Quelle **derselben Rechnung wie das Bild**: wandert die Hand,
+wandert das Licht. Der Selbsttest rechnet den Punkt über einen zweiten Weg
+zurück — aus dem gesetzten Fackel-Sprite statt aus der Lichtquelle — und
+vergleicht: **0,0 px Abstand.** Genau das ging vorher auseinander, ohne dass es
+jemand gemerkt hätte.
+
+Weil die Quelle seither *neben* der Figur sitzt statt in ihr, ist der Abfall
+flacher geworden (`pow(t, 1.45)` statt `1.7`) und der Radius von 76 auf 92
+Bildpunkten gewachsen. Sonst läge der halbe Körper im Auslauf. Farbe **#FFAF64**
+— warmes Orange, nicht Gelb: Gelb über einer blauen Nacht ergibt Grün.
+
+### Flackern ist ein Zufallsgang, keine Schwingung
+
+Vorher waren es zwei Sinus mit ungleicher Frequenz. Das ist besser als einer,
+aber es bleibt periodisch. Jetzt springt die Helligkeit alle **0,05 bis 0,19
+Sekunden** auf einen neuen Wert (±16 %) und läuft schnell darauf zu — weder die
+Höhe der Sprünge noch ihr Abstand wiederholt sich. Der Radius atmet halb so
+stark mit; voll mitzupulsieren sähe aus, als würde die Fackel gezoomt.
+
+### Glut
+
+Über jeder Flamme steigen vier Funken auf, taumeln seitlich und verlöschen nach
+gut einer Sekunde. Ein Funke ist **ein Bildpunkt** — zwei wären ein Klotz, und
+an einem Feuer sieht man ohnehin nur den Lichtpunkt.
+
+Ein einziger Knoten zeichnet die Funken **aller** Feuer. Das ist die Stelle, an
+der die Information schon liegt: der Lichtverwalter kennt jede Quelle, ihre
+Weltposition und — wichtiger — ob sie gerade im Bild ist. Ein eigener
+Partikelknoten je Fackel müsste all das noch einmal wissen, und hundert
+gesetzte Fackeln wären hundert Knoten.
+
+Ob sie da sind, sieht man auf einem Bildschirmfoto bei einem Bildpunkt nicht
+sicher — also wird gezählt, was gezeichnet wurde. „Partikel vorhanden" wäre
+sonst eine Behauptung.
+
+Gemessen kostet das Figurenlicht mitsamt Glut **+0,49 ms Bildzeit** und zwei
+Zeichenaufrufe (llvmpipe, 1280 × 720).
 
 Dass es Fackeln überhaupt geben kann, hängt an der Messung oben: ein einziges
 echtes 2D-Licht kostete +3,43 ms CPU-Renderzeit. Zehn Fackeln wären damit nicht
@@ -890,7 +978,7 @@ godot --headless --path . --import      # nur beim allerersten Mal nötig
 godot --headless --path . -- --selftest
 ```
 
-Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **327 Prüfungen**.
+Der Exit-Code ist 0, wenn alles in Ordnung ist — aktuell **330 Prüfungen**.
 
 Der Lauf startet dabei auf den **Auslieferungswerten**, nicht auf dem, was der
 letzte Lauf hinterlassen hat. Vorher erbte er die `settings.cfg` — und ein
