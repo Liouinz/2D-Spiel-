@@ -245,7 +245,7 @@ func _process(delta: float) -> void:
 	if _counter_timer > 0.0:
 		return
 	_counter_timer = 0.2
-	var view := cam.visible_world_rect()
+	var view := View.world_rect(cam)
 	var tiles_x := int(ceil(view.size.x / Terrain.TILE)) + 1
 	var tiles_y := int(ceil(view.size.y / Terrain.TILE)) + 1
 	var chunk := Vector2i(int(floor(cam.position.x / (Terrain.TILE * 16))), int(floor(cam.position.y / (Terrain.TILE * 16))))

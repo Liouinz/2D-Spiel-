@@ -8,11 +8,9 @@ extends RefCounted
 
 # --- Terrain ----------------------------------------------------------------
 const SEABED_DEEP := Color(0.16, 0.21, 0.30)
-const SEABED_SHORE := Color(0.72, 0.64, 0.45)
 const SAND := Color(0.85, 0.76, 0.53)
 const SAND_DARK := Color(0.72, 0.62, 0.41)
 const GRASS := Color(0.36, 0.60, 0.27)
-const GRASS_DARK := Color(0.27, 0.47, 0.21)
 const GRASS_LIGHT := Color(0.47, 0.70, 0.33)
 const ROCK := Color(0.47, 0.48, 0.51)
 const ROCK_DARK := Color(0.34, 0.35, 0.39)
@@ -44,9 +42,6 @@ const TORCH_STICK := Color(0.42, 0.28, 0.16)
 const TORCH_HEAD := Color(0.28, 0.20, 0.12)
 
 # --- Licht ------------------------------------------------------------------
-const LIGHT_DAY := Color(1.0, 1.0, 1.0)
-const LIGHT_DUSK := Color(1.0, 0.80, 0.62)
-const LIGHT_NIGHT := Color(0.17, 0.22, 0.38)
 const LIGHT_FIRE := Color(1.0, 0.72, 0.36)
 const LIGHT_TORCH := Color(1.0, 0.76, 0.42)
 const LIGHT_LAVA := Color(1.0, 0.48, 0.16)
@@ -74,7 +69,6 @@ const UI_BORDER_LIGHT := Color(0.60, 0.48, 0.30)
 const UI_ACCENT := Color(0.93, 0.78, 0.44)
 const UI_TEXT := Color(0.88, 0.85, 0.78)
 const UI_TEXT_DIM := Color(0.62, 0.58, 0.50)
-const UI_GOOD := Color(0.55, 0.82, 0.45)
 const UI_WARN := Color(0.95, 0.72, 0.30)
 const UI_BAD := Color(0.90, 0.42, 0.36)
 

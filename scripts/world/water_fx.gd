@@ -16,7 +16,6 @@ extends Node2D
 
 const RIPPLE_TTL := 1.5
 const RIPPLE_MAX_RADIUS := 22.0
-const FISH_RESPAWN := 6.0
 
 const SHADER_CODE := """
 shader_type canvas_item;
@@ -71,16 +70,15 @@ func _ready() -> void:
 	terrain.water_layer.material = _material
 	terrain.deep_layer.material = _material
 	sim.water_disturbed.connect(add_ripple)
-	if quality != null:
-		quality.changed.connect(_apply_quality)
+	quality.changed.connect(_apply_quality)
 	_apply_quality()
 
 
 func _apply_quality() -> void:
-	var animate: bool = quality.get_value("water_animation", true) if quality != null else true
+	var animate: bool = quality.get_value("water_animation")
 	_material.set_shader_parameter("strength", 1.0 if animate else 0.0)
 	_material.set_shader_parameter("speed", 1.0)
-	var wanted: int = quality.get_value("fish_count", 8) if quality != null else 8
+	var wanted: int = quality.get_value("fish_count")
 	while _fish.size() > wanted:
 		_fish.pop_back()
 
@@ -95,9 +93,9 @@ func fish_count() -> int:
 
 ## Wellenring an einer Weltposition. Wird von der Simulation ausgelöst.
 func add_ripple(world_pos: Vector2, strength: float = 1.0) -> void:
-	if quality != null and not quality.get_value("water_ripples", true):
+	if not quality.get_value("water_ripples"):
 		return
-	var budget: int = quality.get_value("water_ripple_budget", 28) if quality != null else 28
+	var budget: int = quality.get_value("water_ripple_budget")
 	if _ripples.size() >= budget:
 		return
 	if not Terrain.is_water(terrain.get_type(terrain.local_to_map(world_pos))):
@@ -132,8 +130,8 @@ func _process(delta: float) -> void:
 ## nicht simuliert, sondern beim nächsten Nachrücken neu gesetzt — die Kosten
 ## hängen damit am Bildschirm, nicht an der Kartengrösse.
 func _update_fish(delta: float) -> void:
-	var wanted: int = quality.get_value("fish_count", 8) if quality != null else 8
-	var view := _view_rect()
+	var wanted: int = quality.get_value("fish_count")
+	var view := View.world_rect(self)
 	_fish_timer -= delta
 	if _fish.size() < wanted and _fish_timer <= 0.0:
 		_fish_timer = 0.35
@@ -171,15 +169,6 @@ func _random_water_spot(view: Rect2) -> Vector2:
 		if terrain.get_type(cell) == Terrain.T_WATER_DEEP:
 			return terrain.cell_center(cell)
 	return Vector2.INF
-
-
-func _view_rect() -> Rect2:
-	var viewport := get_viewport()
-	if viewport == null:
-		return Rect2(Vector2.ZERO, Vector2(1280, 720))
-	var transform := viewport.get_canvas_transform()
-	var scale := transform.get_scale()
-	return Rect2(-transform.origin / scale, viewport.get_visible_rect().size / scale)
 
 
 # --- Zeichnen ---------------------------------------------------------------
