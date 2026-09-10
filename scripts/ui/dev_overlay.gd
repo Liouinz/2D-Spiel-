@@ -118,8 +118,8 @@ func _world_lines() -> Array[String]:
 		"Lightmap       %s Zellen" % profiler.counter("lightmap_cells", 0),
 		"Neuberechnung  %s ms (%s×/s, Ziel %.0f Hz)" % [
 			profiler.counter("lightmap_ms", "0"), profiler.counter("lightmap_updates", "0"),
-			float(quality.get_value("light_hz", 0.0))],
-		"Auflösung      %d Zelle(n)/Tile" % int(quality.get_value("light_cells_per_tile", 1)),
+			float(quality.get_value("light_hz"))],
+		"Auflösung      %d Zelle(n)/Tile" % int(quality.get_value("light_cells_per_tile")),
 		"",
 		"── PROFIL ──────────────────",
 		"Grafikprofil   %s" % quality.profile_name(),

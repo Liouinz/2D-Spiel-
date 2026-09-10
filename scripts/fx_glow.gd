@@ -66,7 +66,7 @@ func add_blessing(world_pos: Vector2) -> void:
 
 
 func _process(delta: float) -> void:
-	_view = _view_rect()
+	_view = View.world_rect(self)
 	_advance(_flashes, delta)
 	_advance(_impacts, delta)
 	_advance(_sparkles, delta)
@@ -87,19 +87,10 @@ func _advance(list: Array, delta: float) -> void:
 			list.remove_at(i)
 
 
-func _view_rect() -> Rect2:
-	var viewport := get_viewport()
-	if viewport == null:
-		return Rect2(Vector2.ZERO, Vector2(1280, 720))
-	var transform := viewport.get_canvas_transform()
-	var scale := transform.get_scale()
-	return Rect2(-transform.origin / scale, viewport.get_visible_rect().size / scale)
-
-
 ## Funken werden nur im Blickfeld gewürfelt — dadurch ist die Trefferquote
 ## nahe 100 %, statt über eine 192×112-Karte zu streuen.
 func _spawn_ambient_sparkles() -> void:
-	var budget: int = quality.get_value("sparkle_budget", 90) if quality != null else 90
+	var budget: int = quality.get_value("sparkle_budget")
 	if budget <= 0 or _sparkles.size() >= budget:
 		return
 	for i in 6:

@@ -55,6 +55,62 @@ const ACTIONS: Array[Dictionary] = [
 	{"id": "toggle_hud", "label": "HUD ausblenden", "cat": CAT_UI, "keys": [KEY_F1]},
 ]
 
+## Godot liefert englische Tastennamen ("Up", "Equal"). Für das Menü werden
+## die gebräuchlichen deutschen Bezeichnungen verwendet; alles andere fällt
+## auf den Engine-Namen zurück.
+const _KEY_NAMES := {
+	KEY_UP: "Pfeil hoch",
+	KEY_DOWN: "Pfeil runter",
+	KEY_LEFT: "Pfeil links",
+	KEY_RIGHT: "Pfeil rechts",
+	KEY_SHIFT: "Umschalt",
+	KEY_CTRL: "Strg",
+	KEY_ALT: "Alt",
+	KEY_META: "Meta",
+	KEY_SPACE: "Leertaste",
+	KEY_ESCAPE: "Esc",
+	KEY_ENTER: "Enter",
+	KEY_KP_ENTER: "Num Enter",
+	KEY_TAB: "Tab",
+	KEY_BACKSPACE: "Rücktaste",
+	KEY_DELETE: "Entf",
+	KEY_INSERT: "Einfg",
+	KEY_HOME: "Pos 1",
+	KEY_END: "Ende",
+	KEY_PAGEUP: "Bild hoch",
+	KEY_PAGEDOWN: "Bild runter",
+	KEY_CAPSLOCK: "Feststell",
+	KEY_EQUAL: "+",
+	KEY_MINUS: "−",
+	KEY_PERIOD: ".",
+	KEY_COMMA: ",",
+	KEY_SLASH: "/",
+	KEY_BACKSLASH: "\\",
+	KEY_SEMICOLON: ";",
+	KEY_APOSTROPHE: "'",
+	KEY_BRACKETLEFT: "[",
+	KEY_BRACKETRIGHT: "]",
+	KEY_QUOTELEFT: "^",
+	KEY_KP_ADD: "Num +",
+	KEY_KP_SUBTRACT: "Num −",
+	KEY_KP_MULTIPLY: "Num ×",
+	KEY_KP_DIVIDE: "Num ÷",
+	KEY_KP_PERIOD: "Num .",
+}
+
+const _BUTTON_NAMES := {
+	MOUSE_BUTTON_LEFT: "Maus links",
+	MOUSE_BUTTON_RIGHT: "Maus rechts",
+	MOUSE_BUTTON_MIDDLE: "Maus Mitte",
+	MOUSE_BUTTON_WHEEL_UP: "Mausrad hoch",
+	MOUSE_BUTTON_WHEEL_DOWN: "Mausrad runter",
+	MOUSE_BUTTON_WHEEL_LEFT: "Mausrad links",
+	MOUSE_BUTTON_WHEEL_RIGHT: "Mausrad rechts",
+	MOUSE_BUTTON_XBUTTON1: "Maus 4",
+	MOUSE_BUTTON_XBUTTON2: "Maus 5",
+}
+
+
 static var _installed := false
 
 
@@ -68,13 +124,6 @@ static func install() -> void:
 	_installed = true
 	reset_all(false)
 	load_from_disk()
-
-
-static func ids() -> Array[String]:
-	var out: Array[String] = []
-	for entry in ACTIONS:
-		out.append(entry.id)
-	return out
 
 
 static func categories() -> Array[String]:
@@ -236,62 +285,6 @@ static func same_event(a: InputEvent, b: InputEvent) -> bool:
 	if a is InputEventJoypadButton and b is InputEventJoypadButton:
 		return (a as InputEventJoypadButton).button_index == (b as InputEventJoypadButton).button_index
 	return false
-
-
-## Godot liefert englische Tastennamen ("Up", "Equal"). Für das Menü werden
-## die gebräuchlichen deutschen Bezeichnungen verwendet; alles andere fällt
-## auf den Engine-Namen zurück.
-const _KEY_NAMES := {
-	KEY_UP: "Pfeil hoch",
-	KEY_DOWN: "Pfeil runter",
-	KEY_LEFT: "Pfeil links",
-	KEY_RIGHT: "Pfeil rechts",
-	KEY_SHIFT: "Umschalt",
-	KEY_CTRL: "Strg",
-	KEY_ALT: "Alt",
-	KEY_META: "Meta",
-	KEY_SPACE: "Leertaste",
-	KEY_ESCAPE: "Esc",
-	KEY_ENTER: "Enter",
-	KEY_KP_ENTER: "Num Enter",
-	KEY_TAB: "Tab",
-	KEY_BACKSPACE: "Rücktaste",
-	KEY_DELETE: "Entf",
-	KEY_INSERT: "Einfg",
-	KEY_HOME: "Pos 1",
-	KEY_END: "Ende",
-	KEY_PAGEUP: "Bild hoch",
-	KEY_PAGEDOWN: "Bild runter",
-	KEY_CAPSLOCK: "Feststell",
-	KEY_EQUAL: "+",
-	KEY_MINUS: "−",
-	KEY_PERIOD: ".",
-	KEY_COMMA: ",",
-	KEY_SLASH: "/",
-	KEY_BACKSLASH: "\\",
-	KEY_SEMICOLON: ";",
-	KEY_APOSTROPHE: "'",
-	KEY_BRACKETLEFT: "[",
-	KEY_BRACKETRIGHT: "]",
-	KEY_QUOTELEFT: "^",
-	KEY_KP_ADD: "Num +",
-	KEY_KP_SUBTRACT: "Num −",
-	KEY_KP_MULTIPLY: "Num ×",
-	KEY_KP_DIVIDE: "Num ÷",
-	KEY_KP_PERIOD: "Num .",
-}
-
-const _BUTTON_NAMES := {
-	MOUSE_BUTTON_LEFT: "Maus links",
-	MOUSE_BUTTON_RIGHT: "Maus rechts",
-	MOUSE_BUTTON_MIDDLE: "Maus Mitte",
-	MOUSE_BUTTON_WHEEL_UP: "Mausrad hoch",
-	MOUSE_BUTTON_WHEEL_DOWN: "Mausrad runter",
-	MOUSE_BUTTON_WHEEL_LEFT: "Mausrad links",
-	MOUSE_BUTTON_WHEEL_RIGHT: "Mausrad rechts",
-	MOUSE_BUTTON_XBUTTON1: "Maus 4",
-	MOUSE_BUTTON_XBUTTON2: "Maus 5",
-}
 
 
 ## Lesbarer Name einer Eingabe für das Steuerungs-Menü.

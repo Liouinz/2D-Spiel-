@@ -82,6 +82,16 @@ const WINDOW_SECONDS := 1.5
 const DOWN_WINDOWS := 2
 const UP_WINDOWS := 5
 
+const _WEAK_GPU_MARKERS := [
+	"llvmpipe", "softpipe", "swiftshader", "software", "microsoft basic",
+	"intel(r) hd graphics", "intel(r) uhd graphics", "gma", "mesa offscreen",
+]
+const _STRONG_GPU_MARKERS := [
+	"rtx", "gtx 1", "gtx 2", "geforce rtx", "radeon rx", "radeon pro",
+	"arc a", "arc b", "quadro", "apple m",
+]
+
+
 var profile: int = Profile.MEDIUM
 var dynamic_enabled := true
 var dynamic_step := 0
@@ -111,6 +121,7 @@ func _ready() -> void:
 			ProjectSettings.get_setting("display/window/size/viewport_height", 720)
 		)
 	hardware = _detect_hardware()
+	_rebuild()
 
 
 ## Nur einmal beim Start: Profil aus der Hardware ableiten.
@@ -121,11 +132,6 @@ func auto_select() -> void:
 
 func set_override(key: String, value: Variant) -> void:
 	user_overrides[key] = value
-	_rebuild()
-
-
-func clear_override(key: String) -> void:
-	user_overrides.erase(key)
 	_rebuild()
 
 
@@ -150,8 +156,11 @@ func profile_name() -> String:
 	return PROFILE_NAMES[profile]
 
 
-func get_value(key: String, fallback: Variant = null) -> Variant:
-	return settings.get(key, fallback)
+## Ein Wert des aktiven Profils. Bewusst ohne Ersatzwert: Jeder Schlüssel ist
+## in *jedem* Profil definiert (siehe Abnahmeprüfung), ein Tippfehler soll
+## deshalb sofort auffallen statt still einen falschen Standard zu liefern.
+func get_value(key: String) -> Variant:
+	return settings[key]
 
 
 func render_scale() -> float:
@@ -269,16 +278,6 @@ func _adapter_type_name(type: int) -> String:
 		RenderingDevice.DEVICE_TYPE_CPU:
 			return "Software (CPU)"
 	return "unbekannt"
-
-
-const _WEAK_GPU_MARKERS := [
-	"llvmpipe", "softpipe", "swiftshader", "software", "microsoft basic",
-	"intel(r) hd graphics", "intel(r) uhd graphics", "gma", "mesa offscreen",
-]
-const _STRONG_GPU_MARKERS := [
-	"rtx", "gtx 1", "gtx 2", "geforce rtx", "radeon rx", "radeon pro",
-	"arc a", "arc b", "quadro", "apple m",
-]
 
 
 func _hardware_score() -> int:

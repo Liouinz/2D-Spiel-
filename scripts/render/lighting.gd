@@ -59,13 +59,12 @@ func _init(sim_ref: Simulation, quality_ref: Quality) -> void:
 
 
 func _ready() -> void:
-	if quality != null:
-		quality.changed.connect(_on_quality_changed)
+	quality.changed.connect(_on_quality_changed)
 	_on_quality_changed()
 
 
 func _on_quality_changed() -> void:
-	var per_tile: int = quality.get_value("light_cells_per_tile", 1) if quality != null else 1
+	var per_tile: int = quality.get_value("light_cells_per_tile")
 	_cell_size = float(Terrain.TILE) / maxf(1.0, float(per_tile))
 	_rebuild_texture = true
 
@@ -105,7 +104,7 @@ func _process(delta: float) -> void:
 			_found_sources = 0
 		return
 	visible = true
-	var hz: float = quality.get_value("light_hz", 15.0) if quality != null else 15.0
+	var hz: float = quality.get_value("light_hz")
 	_timer -= delta
 	_update_window_stats(delta)
 	# Neu gerechnet wird nur, wenn der Takt es verlangt, ein Blitz aktiv ist —
@@ -135,14 +134,14 @@ func _update_window_stats(delta: float) -> void:
 func _covers_view() -> bool:
 	if _tex == null or _cells == Vector2i.ZERO:
 		return false
-	return Rect2(_origin_px, Vector2(_cells) * _cell_size).encloses(_visible_world_rect())
+	return Rect2(_origin_px, Vector2(_cells) * _cell_size).encloses(View.world_rect(self))
 
 
 ## Legt Fenster (Ursprung + Zellenzahl) für die nächste Berechnung fest:
 ## sichtbarer Bereich plus Rand, am Zellenraster ausgerichtet.
 func _fit_window() -> void:
-	var view := _visible_world_rect()
-	var margin: int = quality.get_value("light_margin", 5) if quality != null else 5
+	var view := View.world_rect(self)
+	var margin: int = quality.get_value("light_margin")
 	var pad := float(margin) * Terrain.TILE
 	var start := Vector2(
 		floorf((view.position.x - pad) / _cell_size),
@@ -161,16 +160,6 @@ func _fit_window() -> void:
 		_img = Image.create(_cells.x, _cells.y, false, Image.FORMAT_RGB8)
 		_tex = ImageTexture.create_from_image(_img)
 		_rebuild_texture = false
-
-
-func _visible_world_rect() -> Rect2:
-	var viewport := get_viewport()
-	if viewport == null:
-		return Rect2(Vector2.ZERO, Vector2(1280, 720))
-	var transform := viewport.get_canvas_transform()
-	var size := viewport.get_visible_rect().size
-	var top_left := -transform.origin / transform.get_scale()
-	return Rect2(top_left, size / transform.get_scale())
 
 
 # --- Berechnung -------------------------------------------------------------
@@ -199,7 +188,7 @@ func _render_lightmap(night: float) -> void:
 		_splat(src)
 	# Regen dämpft das Licht darunter. Additiv geht das nicht, deshalb ein
 	# eigener, multiplikativer Durchgang über die Regengebiete im Fenster.
-	if quality == null or bool(quality.get_value("rain_shading", true)):
+	if quality == null or bool(quality.get_value("rain_shading")):
 		var rect := Rect2(_origin_px, Vector2(_cells) * _cell_size)
 		for area in sim.rain_areas:
 			var radius: float = area.radius
@@ -280,7 +269,7 @@ func _shade_splat(center: Vector2, radius_px: float, strength: float) -> void:
 ## begrenzt sie auf das Budget des Grafikprofils.
 func _collect_sources(night: float) -> void:
 	_sources.clear()
-	var max_sources: int = quality.get_value("light_max_sources", 48) if quality != null else 48
+	var max_sources: int = quality.get_value("light_max_sources")
 	var rect := Rect2(_origin_px, Vector2(_cells) * _cell_size)
 	var time := Time.get_ticks_msec() * 0.001
 	var strength := clampf(night, 0.0, 1.0)

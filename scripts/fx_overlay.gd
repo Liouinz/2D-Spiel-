@@ -29,8 +29,7 @@ func _init(sim_ref: Simulation, quality_ref: Quality) -> void:
 
 
 func _ready() -> void:
-	if quality != null:
-		quality.changed.connect(_sync_clouds)
+	quality.changed.connect(_sync_clouds)
 	_sync_clouds()
 	sim.rain_ended.connect(func(id: int): _drops.erase(id))
 
@@ -47,7 +46,7 @@ func cloud_count() -> int:
 
 
 func _sync_clouds() -> void:
-	var wanted: int = quality.get_value("cloud_count", 7) if quality != null else 7
+	var wanted: int = quality.get_value("cloud_count")
 	var size := Vector2(Terrain.W, Terrain.H) * Terrain.TILE
 	while _clouds.size() > wanted:
 		_clouds.pop_back()
@@ -67,7 +66,7 @@ func _sync_clouds() -> void:
 
 
 func _process(delta: float) -> void:
-	_view = _view_rect()
+	_view = View.world_rect(self, CULL_MARGIN)
 	var drift := 0.2 + sim.speed
 	var size := Vector2(Terrain.W, Terrain.H) * Terrain.TILE
 	for c in _clouds:
@@ -78,19 +77,10 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-func _view_rect() -> Rect2:
-	var viewport := get_viewport()
-	if viewport == null:
-		return Rect2(Vector2.ZERO, Vector2(1280, 720))
-	var transform := viewport.get_canvas_transform()
-	var scale := transform.get_scale()
-	return Rect2(-transform.origin / scale, viewport.get_visible_rect().size / scale).grow(CULL_MARGIN)
-
-
 ## Ein Tropfenfeld pro Regengebiet — sichtbare Gebiete bekommen das volle
 ## Budget, unsichtbare gar keines.
 func _update_rain(delta: float) -> void:
-	var budget: int = quality.get_value("rain_particles", 48) if quality != null else 48
+	var budget: int = quality.get_value("rain_particles")
 	var live := {}
 	for area in sim.rain_areas:
 		var id: int = area.id

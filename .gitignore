@@ -6,6 +6,3 @@ export_presets.cfg
 # Betriebssystem
 .DS_Store
 Thumbs.db
-
-# Lokale Mess-/Screenshot-Werkzeuge
-bench/

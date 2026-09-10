@@ -67,7 +67,7 @@ func _process(delta: float) -> void:
 	if not visible:
 		return
 	_timer -= delta
-	var interval: float = quality.get_value("minimap_interval", 0.7) if quality != null else 0.7
+	var interval: float = quality.get_value("minimap_interval")
 	if _timer > 0.0:
 		_frame_node.queue_redraw()
 		return
@@ -115,7 +115,7 @@ func _dot(x: int, y: int, color: Color) -> void:
 func _draw_viewport_frame() -> void:
 	if camera == null:
 		return
-	var view := camera.visible_world_rect()
+	var view := View.world_rect(camera)
 	var scale := Vector2(1.0 / Terrain.TILE, 1.0 / Terrain.TILE)
 	var r := Rect2(view.position * scale, view.size * scale)
 	_frame_node.draw_rect(r, VIEW_COLOR, false, 1.0)
