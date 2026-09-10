@@ -19,3 +19,5 @@ var pos := Vector2.ZERO
 var prev_pos := Vector2.ZERO
 var target := Vector2.ZERO
 var bob_phase := 0.0
+## Watet gerade durch Flachwasser (steuert Wellen und Darstellung).
+var wading := false
