@@ -8,6 +8,11 @@ extends Node
 
 signal chronicle(text: String)
 signal meteor_impact(world_pos: Vector2)
+## Etwas hat die Wasseroberfläche berührt — der Wasser-Effektlayer macht daraus
+## auslaufende Wellenringe.
+signal water_disturbed(world_pos: Vector2, strength: float)
+## Ein Regengebiet ist verklungen — der Effektlayer räumt seine Tropfen weg.
+signal rain_ended(id: int)
 
 const TICKS_PER_SECOND := 10.0
 const TICKS_PER_YEAR := 200
@@ -35,6 +40,10 @@ const LAVA_COOL_TICKS := 400
 const RAIN_TICKS := 80
 const RAIN_RADIUS := 90.0
 
+const MAX_TORCHES := 240
+const TORCH_RADIUS := 7.0 * Terrain.TILE
+const WADE_SPEED := 0.55
+
 var terrain: Terrain
 var speed := 1.0
 var tick_count := 0
@@ -45,8 +54,12 @@ var villages: Array[Village] = []
 var settlers: Array[Settler] = []
 var rain_areas: Array = []
 var meteors: Array = []
+## Gesetzte Fackeln: leichte Datenobjekte, keine Nodes — sie sind gleichzeitig
+## Lichtquelle (Lightmap) und Weltobjekt (WorldRender).
+var torches: Array = []
 
 var _lava_cells := {}
+var _next_rain_id := 0
 var _accum := 0.0
 var _prev_speed := 1.0
 var _last_fail_tick := -1000
@@ -100,6 +113,35 @@ func set_speed(value: float) -> void:
 	speed = value
 	if value > 0.0:
 		_prev_speed = value
+
+
+## Tempo eine Stufe hoch/runter — die Stufen sind dieselben wie im Menü.
+const SPEED_STEPS: Array[float] = [0.0, 1.0, 3.0, 10.0]
+
+
+func step_speed(direction: int) -> void:
+	var current := 0
+	for i in SPEED_STEPS.size():
+		if is_equal_approx(SPEED_STEPS[i], speed):
+			current = i
+			break
+	set_speed(SPEED_STEPS[clampi(current + direction, 0, SPEED_STEPS.size() - 1)])
+
+
+## Setzt die Simulation für eine frische Welt zurück (das Terrain erneuert
+## der Aufrufer). Die Kräfte-Ökonomie startet wieder bei null.
+func reset() -> void:
+	villages.clear()
+	settlers.clear()
+	rain_areas.clear()
+	meteors.clear()
+	torches.clear()
+	_lava_cells.clear()
+	tick_count = 0
+	year = 1
+	faith = FAITH_START
+	_accum = 0.0
+	chronicle.emit("Eine neue Welt liegt unberührt vor dir.")
 
 
 func toggle_pause() -> void:
@@ -159,7 +201,8 @@ func cast_lightning(world_pos: Vector2) -> bool:
 func cast_rain(world_pos: Vector2) -> bool:
 	if not _try_spend(COST_RAIN):
 		return false
-	rain_areas.append({"pos": world_pos, "radius": RAIN_RADIUS, "ttl": RAIN_TICKS})
+	_next_rain_id += 1
+	rain_areas.append({"id": _next_rain_id, "pos": world_pos, "radius": RAIN_RADIUS, "ttl": RAIN_TICKS})
 	chronicle.emit("Jahr %d: Warmer Regen fällt auf das Land." % year)
 	return true
 
@@ -185,6 +228,53 @@ func cast_meteor(world_pos: Vector2) -> bool:
 	return true
 
 
+# --- Fackeln ----------------------------------------------------------------
+
+func torch_at(cell: Vector2i) -> int:
+	for i in torches.size():
+		if torches[i].cell == cell:
+			return i
+	return -1
+
+
+func place_torch(cell: Vector2i) -> bool:
+	if not terrain.in_bounds(cell):
+		return false
+	if not Terrain.is_walkable(terrain.get_type(cell)):
+		return false
+	if torch_at(cell) >= 0:
+		return false
+	if torches.size() >= MAX_TORCHES:
+		return false
+	torches.append({
+		"cell": cell,
+		"pos": terrain.cell_center(cell),
+		"radius": TORCH_RADIUS,
+		"energy": 0.95,
+		"phase": randf() * TAU,
+	})
+	return true
+
+
+func remove_torch(cell: Vector2i) -> bool:
+	var index := torch_at(cell)
+	if index < 0:
+		return false
+	torches.remove_at(index)
+	return true
+
+
+## Fackeln, die durch Lava/Wasser ihren Halt verloren haben, verschwinden.
+func _tick_torches() -> void:
+	for i in range(torches.size() - 1, -1, -1):
+		if not Terrain.is_walkable(terrain.get_type(torches[i].cell)):
+			torches.remove_at(i)
+
+
+func lava_cells() -> Array:
+	return _lava_cells.keys()
+
+
 # --- Simulations-Ticks ------------------------------------------------------
 
 func _tick() -> void:
@@ -199,6 +289,8 @@ func _tick() -> void:
 		for v in villages:
 			_tick_village(v)
 	_tick_nature()
+	if tick_count % 20 == 0:
+		_tick_torches()
 	_tick_rain()
 	_tick_meteors()
 	_tick_lava()
@@ -216,16 +308,29 @@ func _tick_settler(index: int) -> void:
 	if s.pos.distance_to(s.target) < 2.0:
 		_on_arrival(s)
 		return
-	var next := s.pos + (s.target - s.pos).normalized() * MOVE_SPEED
+	var direction := (s.target - s.pos).normalized()
+	var next := s.pos + direction * MOVE_SPEED
 	var next_type := terrain.get_type(terrain.local_to_map(next))
 	if next_type == Terrain.T_LAVA:
 		chronicle.emit("Jahr %d: %s verging in glühender Lava." % [year, s.name])
 		settlers.remove_at(index)
 		return
-	if Terrain.is_water(next_type):
+	if next_type == Terrain.T_WATER_DEEP:
+		# Tiefwasser bleibt unpassierbar — es wird ein neues Ziel gesucht.
 		s.target = _find_resource_target(s)
-	else:
-		s.pos = next
+		return
+	if next_type == Terrain.T_WATER_SHALLOW:
+		# Flachwasser wird durchwatet: langsamer, und es zieht eine Spur
+		# aus Wellen hinter der Figur her.
+		s.pos += direction * MOVE_SPEED * WADE_SPEED
+		s.wading = true
+		if (tick_count + s.village_id) % 3 == 0:
+			water_disturbed.emit(s.pos, 0.55)
+		return
+	if s.wading:
+		s.wading = false
+		water_disturbed.emit(s.pos, 0.35)
+	s.pos = next
 
 
 func _on_arrival(s: Settler) -> void:
@@ -358,9 +463,11 @@ func _tick_rain() -> void:
 		area.ttl -= 1
 		if area.ttl <= 0:
 			rain_areas.remove_at(i)
+			rain_ended.emit(area.id)
 			continue
 		for j in 6:
-			var offset := Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * area.radius
+			var radius: float = area.radius
+			var offset := Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * radius
 			if offset.length() > area.radius:
 				continue
 			var cell: Vector2i = terrain.local_to_map(area.pos + offset)
@@ -372,6 +479,8 @@ func _tick_rain() -> void:
 			elif t == Terrain.T_LAVA:
 				terrain.set_type(cell, Terrain.T_ROCK)
 				_lava_cells.erase(cell)
+			elif Terrain.is_water(t) and randf() < 0.5:
+				water_disturbed.emit(area.pos + offset, 0.3)
 
 
 func _tick_meteors() -> void:
