@@ -233,6 +233,14 @@ func _on_meteor_impact(world_pos: Vector2) -> void:
 # --- Messwerte für das Entwickler-Overlay -----------------------------------
 
 func _process(delta: float) -> void:
+	# Sicherheitsnetz gegen "hängenden Pinsel": Wird die Taste über einem
+	# UI-Panel oder ausserhalb des Fensters losgelassen, sieht
+	# `_unhandled_input` das Loslassen nie. Deshalb hier gegen den echten
+	# Tastenzustand abgleichen.
+	if _painting and not Input.is_action_pressed("place_block"):
+		_painting = false
+	if _erasing and not Input.is_action_pressed("remove_block"):
+		_erasing = false
 	_counter_timer -= delta
 	if _counter_timer > 0.0:
 		return

@@ -219,5 +219,91 @@ func _test_world() -> void:
 	terrain.set_type(o + Vector2i(2, 2), Terrain.T_ROCK)
 	check("Tile-Variante ist deterministisch",
 		terrain.get_cell_atlas_coords(o + Vector2i(2, 2)) == coords_before)
+	_test_bugfixes(terrain, sim)
 	sim.free()
 	terrain.free()
+
+
+## Nachweise für die Fehler, die der Ist-Zustands-Audit im README aufgelistet
+## hat. Ohne diese Prüfungen kämen sie beim nächsten Umbau zurück.
+func _test_bugfixes(terrain: Terrain, sim: Simulation) -> void:
+	print("[Behobene Fehler aus dem Audit]")
+	# Ein Fleck festes Land mitten in der Karte, daneben Tiefwasser.
+	var home := Vector2i(30, 30)
+	terrain.begin_batch()
+	for y in range(-4, 5):
+		for x in range(-4, 5):
+			terrain.set_type(home + Vector2i(x, y), Terrain.T_GRASS)
+	for y in range(-4, 5):
+		for x in range(6, 12):
+			terrain.set_type(home + Vector2i(x, y), Terrain.T_WATER_DEEP)
+	terrain.flush()
+
+	check("Dorf gründen gelingt", sim.spawn_tribe(terrain.cell_center(home)))
+	var v: Village = sim.villages[sim.villages.size() - 1]
+
+	# Träger kehrt heim, wird von Tiefwasser blockiert.
+	var carrier: Settler = sim.settlers[0]
+	carrier.state = Settler.State.RETURN
+	carrier.carrying = Settler.Carry.FOOD
+	carrier.pos = terrain.cell_center(home + Vector2i(5, 0))
+	carrier.prev_pos = carrier.pos
+	carrier.target = terrain.cell_center(home + Vector2i(11, 0))
+	var food_before := v.food
+	sim._tick_settler(0)
+	check("Blockierter Träger zielt aufs Dorf, nicht ins Nirgendwo",
+		carrier.target.distance_to(v.center_pos) < 20.0)
+	check("Blockierter Träger bucht seine Last noch nicht ab", v.food == food_before)
+	check("Blockierter Träger trägt noch", carrier.carrying == Settler.Carry.FOOD)
+
+	# Ankommen fernab des Dorfes darf nichts einbuchen.
+	carrier.pos = terrain.cell_center(home + Vector2i(4, 4))
+	carrier.target = carrier.pos
+	var faith_before := sim.faith
+	sim._on_arrival(carrier)
+	check("Fern vom Dorf wird nichts abgebucht", v.food == food_before)
+	check("Fern vom Dorf gibt es keinen Glauben", is_equal_approx(sim.faith, faith_before))
+	check("Fern vom Dorf bleibt der Zustand RETURN", carrier.state == Settler.State.RETURN)
+
+	# Am Dorf angekommen wird ganz normal abgeliefert.
+	carrier.pos = v.center_pos
+	sim._on_arrival(carrier)
+	check("Am Dorf wird abgeliefert", v.food == food_before + 1)
+	check("Am Dorf ist die Last abgegeben", carrier.carrying == Settler.Carry.NONE)
+
+	# Ohne erreichbaren Rohstoff wird heimgelaufen statt auf der Stelle gewürfelt.
+	# Dafür eine wirklich ausweglose Lage bauen: alles im Suchradius um das
+	# Dorf zu Wasser, und eine einzelne Kachel als Insel für den Siedler.
+	terrain.begin_batch()
+	for y in range(-18, 19):
+		for x in range(-18, 19):
+			terrain.set_type(home + Vector2i(x, y), Terrain.T_WATER_DEEP)
+	for y in range(-2, 3):
+		for x in range(-2, 3):
+			terrain.set_type(home + Vector2i(x, y), Terrain.T_GRASS)
+	var island := home + Vector2i(12, 0)
+	terrain.set_type(island, Terrain.T_GRASS)
+	terrain.flush()
+	var stuck: Settler = sim.settlers[1]
+	stuck.state = Settler.State.SEEK
+	stuck.job = Settler.Job.LUMBERJACK   # es gibt hier weit und breit keinen Wald
+	stuck.pos = terrain.cell_center(island)
+	var target := sim._find_resource_target(stuck)
+	check("Auf ausweglosem Fleck kein Ziel auf sich selbst",
+		target.distance_to(stuck.pos) > 1.0)
+	check("Ohne erreichbares Ziel wird heimgelaufen", target.distance_to(v.center_pos) < 20.0)
+
+	# Terraforming hat Folgen: geflutete Hütten verschwinden.
+	terrain.paint_circle(home + Vector2i(2, 2), 1, Terrain.T_GRASS)
+	v.huts.append(home + Vector2i(2, 2))
+	var huts_before := v.huts.size()
+	terrain.paint_circle(home + Vector2i(2, 2), 1, Terrain.T_WATER_DEEP)
+	sim._tick_buildings()
+	check("Geflutete Hütte verschwindet", v.huts.size() == huts_before - 1)
+
+	# Fackeln überleben eine Flutung ebenfalls nicht.
+	terrain.paint_circle(home + Vector2i(-2, -2), 1, Terrain.T_GRASS)
+	check("Fackel auf trockenem Grund", sim.place_torch(home + Vector2i(-2, -2)))
+	terrain.paint_circle(home + Vector2i(-2, -2), 1, Terrain.T_WATER_DEEP)
+	sim._tick_torches()
+	check("Geflutete Fackel verschwindet", sim.torches.is_empty())

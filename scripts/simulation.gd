@@ -40,6 +40,8 @@ const LAVA_COOL_TICKS := 400
 const RAIN_TICKS := 80
 const RAIN_RADIUS := 90.0
 
+## Wie nah ein Träger am Dorfplatz stehen muss, damit die Last zählt.
+const DELIVERY_RADIUS := 26.0
 const MAX_TORCHES := 240
 const TORCH_RADIUS := 7.0 * Terrain.TILE
 const WADE_SPEED := 0.55
@@ -271,6 +273,20 @@ func _tick_torches() -> void:
 			torches.remove_at(i)
 
 
+## Terraforming hat Folgen: Wer ein Dorf flutet oder in Lava taucht, verliert
+## die Hütten darauf. Vorher schwammen sie unbeeindruckt weiter.
+func _tick_buildings() -> void:
+	for v in villages:
+		var lost := 0
+		for i in range(v.huts.size() - 1, -1, -1):
+			if not Terrain.is_walkable(terrain.get_type(v.huts[i])):
+				v.huts.remove_at(i)
+				lost += 1
+		if lost > 0:
+			chronicle.emit("Jahr %d: In %s versank%s %d Hütte%s." % [
+				year, v.name, "" if lost == 1 else "en", lost, "" if lost == 1 else "n"])
+
+
 func lava_cells() -> Array:
 	return _lava_cells.keys()
 
@@ -291,6 +307,7 @@ func _tick() -> void:
 	_tick_nature()
 	if tick_count % 20 == 0:
 		_tick_torches()
+		_tick_buildings()
 	_tick_rain()
 	_tick_meteors()
 	_tick_lava()
@@ -316,8 +333,13 @@ func _tick_settler(index: int) -> void:
 		settlers.remove_at(index)
 		return
 	if next_type == Terrain.T_WATER_DEEP:
-		# Tiefwasser bleibt unpassierbar — es wird ein neues Ziel gesucht.
-		s.target = _find_resource_target(s)
+		# Tiefwasser bleibt unpassierbar. Wer heimkehrt, bekommt *das Dorf*
+		# als neues Ziel — vorher wurde stattdessen ein Rohstoffziel gewürfelt,
+		# und die Last wurde dann irgendwo im Nirgendwo verbucht.
+		if s.state == Settler.State.RETURN:
+			s.target = _home_target(villages[s.village_id])
+		else:
+			s.target = _find_resource_target(s)
 		return
 	if next_type == Terrain.T_WATER_SHALLOW:
 		# Flachwasser wird durchwatet: langsamer, und es zieht eine Spur
@@ -336,6 +358,12 @@ func _tick_settler(index: int) -> void:
 func _on_arrival(s: Settler) -> void:
 	var v := villages[s.village_id]
 	if s.state == Settler.State.RETURN:
+		# Abgeliefert wird nur *am Dorf*. Vorher genügte "irgendwo
+		# angekommen": Wer unterwegs umgeleitet wurde, buchte seine Last
+		# mitten in der Landschaft ein — inklusive Glauben dafür.
+		if s.pos.distance_to(v.center_pos) > DELIVERY_RADIUS:
+			s.target = _home_target(v)
+			return
 		if s.carrying == Settler.Carry.FOOD:
 			v.food += 1
 			faith = minf(faith + FAITH_PER_DELIVERY, FAITH_MAX)
@@ -351,13 +379,13 @@ func _on_arrival(s: Settler) -> void:
 	if s.job == Settler.Job.GATHERER and t == Terrain.T_GRASS:
 		s.carrying = Settler.Carry.FOOD
 		s.state = Settler.State.RETURN
-		s.target = v.center_pos + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0))
+		s.target = _home_target(v)
 	elif s.job == Settler.Job.LUMBERJACK and t == Terrain.T_FOREST:
 		s.carrying = Settler.Carry.WOOD
 		if randf() < 0.3:
 			terrain.set_type(cell, Terrain.T_GRASS)
 		s.state = Settler.State.RETURN
-		s.target = v.center_pos + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0))
+		s.target = _home_target(v)
 	else:
 		s.target = _find_resource_target(s)
 
@@ -369,11 +397,21 @@ func _find_resource_target(s: Settler) -> Vector2:
 		var cell := v.center + Vector2i(randi_range(-16, 16), randi_range(-16, 16))
 		if terrain.in_bounds(cell) and terrain.get_type(cell) == want:
 			return terrain.map_to_local(cell)
+	var own := terrain.local_to_map(s.pos)
 	for attempt in 8:
-		var cell := terrain.local_to_map(s.pos) + Vector2i(randi_range(-6, 6), randi_range(-6, 6))
-		if terrain.in_bounds(cell) and Terrain.is_walkable(terrain.get_type(cell)):
+		var cell := own + Vector2i(randi_range(-6, 6), randi_range(-6, 6))
+		# Die eigene Zelle ist kein Ziel — sonst "geht" der Siedler dorthin,
+		# wo er schon steht, und würfelt im nächsten Tick wieder von vorn.
+		if cell != own and terrain.in_bounds(cell) and Terrain.is_walkable(terrain.get_type(cell)):
 			return terrain.map_to_local(cell)
-	return s.pos
+	# Gar nichts erreichbar: heimlaufen statt auf der Stelle einzufrieren.
+	return _home_target(v)
+
+
+## Ein leicht gestreuter Punkt am Dorfplatz — damit Träger nicht alle exakt
+## auf demselben Pixel stehen.
+func _home_target(v: Village) -> Vector2:
+	return v.center_pos + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0))
 
 
 func _tick_village(v: Village) -> void:

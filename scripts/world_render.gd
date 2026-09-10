@@ -106,8 +106,9 @@ func _draw() -> void:
 		draw_rect(Rect2(p + Vector2(-2, -9), Vector2(4, 3)), Palette.TORCH_HEAD)
 
 	# 4 — Siedler (Rechtecke)
+	var running := sim.speed > 0.0
 	for entry in _visible_settlers:
-		_draw_settler(entry[0], entry[1], time)
+		_draw_settler(entry[0], entry[1], time, running)
 
 	# 5 — Dächer (Polygone)
 	for p in _visible_huts:
@@ -138,8 +139,11 @@ func _view_rect() -> Rect2:
 	return Rect2(-transform.origin / scale, viewport.get_visible_rect().size / scale)
 
 
-func _draw_settler(s: Settler, p: Vector2, time: float) -> void:
-	var moving := s.prev_pos.distance_squared_to(s.pos) > 0.01
+func _draw_settler(s: Settler, p: Vector2, time: float, running: bool) -> void:
+	# `running` prüft die Simulationsgeschwindigkeit: Ohne das wippten die
+	# Siedler auch im pausierten Spiel weiter, weil prev_pos != pos
+	# eingefroren stehen bleibt.
+	var moving := running and s.prev_pos.distance_squared_to(s.pos) > 0.01
 	var bob := 0.0
 	if moving:
 		bob = absf(sin(time * 9.0 + s.bob_phase)) * 1.2
@@ -153,8 +157,11 @@ func _draw_settler(s: Settler, p: Vector2, time: float) -> void:
 		draw_rect(Rect2(p + Vector2(-3, -1), Vector2(6, 1)), foam)
 	else:
 		draw_rect(Rect2(p + Vector2(-2, -4 - bob), Vector2(4, 5)), tunic)
-	draw_rect(Rect2(p + Vector2(-1, -7 - bob), Vector2(3, 3)), Palette.SKIN)
+	# Kopf und Traglast sitzen mittig über dem Rumpf (Rumpf: -2 … +2) und
+	# direkt auf dem Kopf auf — vorher war der Kopf 0,5 px versetzt und die
+	# Last schwebte 1 px darüber.
+	draw_rect(Rect2(p + Vector2(-1.5, -7 - bob), Vector2(3, 3)), Palette.SKIN)
 	if s.carrying == Settler.Carry.FOOD:
-		draw_rect(Rect2(p + Vector2(-1, -10 - bob), Vector2(3, 2)), Palette.CARRY_FOOD)
+		draw_rect(Rect2(p + Vector2(-1.5, -9 - bob), Vector2(3, 2)), Palette.CARRY_FOOD)
 	elif s.carrying == Settler.Carry.WOOD:
-		draw_rect(Rect2(p + Vector2(-2, -10 - bob), Vector2(5, 2)), Palette.CARRY_WOOD)
+		draw_rect(Rect2(p + Vector2(-2.5, -9 - bob), Vector2(5, 2)), Palette.CARRY_WOOD)
