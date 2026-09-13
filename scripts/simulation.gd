@@ -40,6 +40,10 @@ const LAVA_COOL_TICKS := 400
 const RAIN_TICKS := 80
 const RAIN_RADIUS := 90.0
 
+## Tempo eine Stufe hoch/runter — die Stufen sind dieselben wie im Menü.
+const SPEED_STEPS: Array[float] = [0.0, 1.0, 3.0, 10.0]
+
+
 ## Wie nah ein Träger am Dorfplatz stehen muss, damit die Last zählt.
 const DELIVERY_RADIUS := 26.0
 const MAX_TORCHES := 240
@@ -115,10 +119,6 @@ func set_speed(value: float) -> void:
 	speed = value
 	if value > 0.0:
 		_prev_speed = value
-
-
-## Tempo eine Stufe hoch/runter — die Stufen sind dieselben wie im Menü.
-const SPEED_STEPS: Array[float] = [0.0, 1.0, 3.0, 10.0]
 
 
 func step_speed(direction: int) -> void:
@@ -341,7 +341,7 @@ func _tick_settler(index: int) -> void:
 		else:
 			s.target = _find_resource_target(s)
 		return
-	if next_type == Terrain.T_WATER_SHALLOW:
+	if Terrain.is_wadeable(next_type):
 		# Flachwasser wird durchwatet: langsamer, und es zieht eine Spur
 		# aus Wellen hinter der Figur her.
 		s.pos += direction * MOVE_SPEED * WADE_SPEED

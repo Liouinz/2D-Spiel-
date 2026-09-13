@@ -95,8 +95,8 @@ func _test_keybinds() -> void:
 
 
 func _all_actions_bound() -> bool:
-	for id in InputActions.ids():
-		if InputActions.events_for(id).is_empty():
+	for entry in InputActions.ACTIONS:
+		if InputActions.events_for(entry.id).is_empty():
 			return false
 	return true
 
@@ -127,6 +127,18 @@ func _test_quality() -> void:
 	check("Sparstufe 3 senkt die Auflösung", float(q.get_value("render_scale")) < 1.0)
 	q.set_override("water_animation", true)
 	check("Spieler-Einstellung schlägt das Profil", bool(q.get_value("water_animation")))
+	# Ohne diese Zusicherung dürfte `get_value()` keinen Schlüssel ohne
+	# Ersatzwert nachschlagen: Ein Profil, dem ein Regler fehlt, würde sonst
+	# im Spiel abstürzen statt hier aufzufallen.
+	var key_sets: Array = []
+	for profile in Quality.PROFILES:
+		var keys: Array = Quality.PROFILES[profile].keys()
+		keys.sort()
+		key_sets.append(keys)
+	check("Alle Profile kennen dieselben Regler",
+		key_sets[0] == key_sets[1] and key_sets[1] == key_sets[2])
+	check("Profil ist schon nach _ready() benutzbar", not q.settings.is_empty())
+
 	check("Hardware wird erkannt (CPU)", not String(q.hardware.get("cpu", "")).is_empty())
 	# Headless hat keine Grafikkarte — dort wird geprüft, dass die Ausgabe
 	# trotzdem sauber bleibt statt eine Zahl zu erfinden.

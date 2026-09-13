@@ -14,7 +14,6 @@ signal changed
 var _rows := {}
 var _capture_action := ""
 var _capture_index := -1
-var _capture_button: Button
 var _status: Label
 var _dirty := false
 
@@ -135,7 +134,10 @@ func _input(event: InputEvent) -> void:
 		return
 	get_viewport().set_input_as_handled()
 	var stored := _to_binding(event)
-	InputActions.replace_event_at(_capture_action, _capture_index, stored)
+	if _capture_index >= InputActions.events_for(_capture_action).size():
+		InputActions.add_event(_capture_action, stored)
+	else:
+		InputActions.replace_event_at(_capture_action, _capture_index, stored)
 	_capture_action = ""
 	_capture_index = -1
 	_dirty = true

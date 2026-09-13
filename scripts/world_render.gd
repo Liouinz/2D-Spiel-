@@ -57,10 +57,10 @@ func drawn_villages() -> int:
 ## Polygon oder eine Linie liegt, reisst die Serie. Objektweise gezeichnet
 ## kostete eine Hütte drei Aufrufe; so kosten alle Hütten zusammen drei.
 func _draw() -> void:
-	_view = _view_rect().grow(CULL_MARGIN)
+	_view = View.world_rect(self, CULL_MARGIN)
 	var alpha := sim.alpha()
 	var time := Time.get_ticks_msec() * 0.001
-	var shadows: bool = quality.get_value("entity_shadows", true) if quality != null else true
+	var shadows: bool = quality.get_value("entity_shadows")
 
 	_visible_settlers.clear()
 	for s in sim.settlers:
@@ -128,15 +128,6 @@ func _draw() -> void:
 	for c in _visible_fires:
 		draw_line(c + Vector2(-3, 1), c + Vector2(3, -2), Palette.FIRE_LOG, 1.6)
 		draw_line(c + Vector2(-3, -2), c + Vector2(3, 1), Palette.FIRE_LOG, 1.6)
-
-
-func _view_rect() -> Rect2:
-	var viewport := get_viewport()
-	if viewport == null:
-		return Rect2(Vector2.ZERO, Vector2(1280, 720))
-	var transform := viewport.get_canvas_transform()
-	var scale := transform.get_scale()
-	return Rect2(-transform.origin / scale, viewport.get_visible_rect().size / scale)
 
 
 func _draw_settler(s: Settler, p: Vector2, time: float, running: bool) -> void:

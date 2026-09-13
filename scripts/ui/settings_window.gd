@@ -7,6 +7,12 @@ extends Control
 
 signal closed
 
+const _PROFILE_ITEMS := {
+	Quality.Profile.HIGH: 1,
+	Quality.Profile.MEDIUM: 2,
+	Quality.Profile.LOW: 3,
+}
+
 var quality: Quality
 var game_ui: Node
 var keybinds: KeybindPage
@@ -129,7 +135,7 @@ func _build_graphics() -> Control:
 
 
 func _override_check(text: String, key: String, tooltip: String = "") -> CheckBox:
-	var value: bool = bool(quality.get_value(key, true))
+	var value: bool = bool(quality.get_value(key))
 	return UiTheme.checkbox(text, value, func(v: bool): quality.set_override(key, v), tooltip)
 
 
@@ -144,13 +150,6 @@ func _on_profile_selected(index: int) -> void:
 func _on_scale_changed(value: float) -> void:
 	quality.set_override("render_scale", value / 100.0)
 	_scale_label.text = "%d %%" % int(value)
-
-
-const _PROFILE_ITEMS := {
-	Quality.Profile.HIGH: 1,
-	Quality.Profile.MEDIUM: 2,
-	Quality.Profile.LOW: 3,
-}
 
 
 func _sync_graphics() -> void:

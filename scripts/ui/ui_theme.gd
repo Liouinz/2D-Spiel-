@@ -9,7 +9,6 @@ extends RefCounted
 const FONT_SMALL := 11
 const FONT_BASE := 13
 const FONT_TITLE := 17
-const FONT_MONO := 12
 const BORDER := 2
 const GAP := 6
 

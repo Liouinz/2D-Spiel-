@@ -33,7 +33,7 @@ Du bist keine Figur im Spiel — du bist die Welt selbst. Du malst Land, setzt V
 | Entwickler-Overlay | ✅ | gemessene Leistungs-, Welt- und Hardwaredaten (F3) |
 | Adaptive Grafikprofile | ✅ | HOCH/MITTEL/NIEDRIG aus erkannter Hardware + dynamische Absenkung |
 | Shader | ✅ | einer: die Wasseranimation. Alles andere läuft weiter über `_draw()` |
-| Tests | ✅ | **60 Abnahmeprüfungen**, headless ausführbar |
+| Tests | ✅ | **62 Abnahmeprüfungen**, headless ausführbar |
 | **Sound / Musik** | ❌ | **komplett nicht vorhanden** — kein einziger Audio-Knoten |
 | **Speichern / Laden** | ❌ | **nicht vorhanden** (außer der Tastenbelegung) — Schließen = Welt weg |
 | **Grafik-Assets** | ❌ | **keine einzige Bilddatei** — alle Grafik wird im Code gemalt |
@@ -235,7 +235,7 @@ Renderer ist auf **GL Compatibility** eingestellt, läuft also auch auf schwache
 ## 🧪 Prüfen und nachmessen
 
 ```bash
-# 60 Abnahmeprüfungen (Steuerung, Grafikprofile, Autoconnection, Fehlerrückfälle)
+# 62 Abnahmeprüfungen (Steuerung, Grafikprofile, Autoconnection, Fehlerrückfälle)
 godot --headless --path . --script res://tests/verify.gd
 
 # Frametimes mit und ohne einzelne Systeme — die Grundlage von docs/performance.md
@@ -269,6 +269,7 @@ scripts/core/input_actions.gd     Action-Registry, Belegung, Konflikte, Speicher
 scripts/core/quality.gd           Hardware-Erkennung, Profile, dynamische Qualität
 scripts/core/profiler.gd          Gemessene Leistungswerte (nichts geschätzt)
 scripts/core/items.gd             Schnellleisten-Einträge + prozedurale Icons
+scripts/core/view.gd              Sichtbarer Weltausschnitt (Culling, Minimap-Rahmen)
 
 scripts/world/tile_shapes.gd      47er-Blob-Autotiling: Maske → Form
 scripts/world/tile_art.gd         Prozeduraler Tile-Atlas (Kantenlicht, runde Silhouetten)
@@ -284,14 +285,14 @@ scripts/ui/settings_window.gd     Einstellungen (Grafik · Steuerung · Spiel)
 scripts/ui/keybind_page.gd        Vollständige Steuerungsseite
 scripts/ui/menus.gd               Startbildschirm und Pausemenü
 
-tests/verify.gd                   60 Abnahmeprüfungen (headless, CI-tauglich)
+tests/verify.gd                   62 Abnahmeprüfungen (headless, CI-tauglich)
 tests/benchmark.tscn              Reproduzierbares Frametime-Messharness
 
 docs/masterplan.md                Der Zukunfts-Plan (NICHT der Ist-Zustand)
 docs/performance.md               Messaufbau, Engpass, Ergebnisse
 ```
 
-**Gesamt: ~5.000 Zeilen GDScript, 0 Asset-Dateien, 60 Tests.**
+**Gesamt: ~5.900 Zeilen GDScript, 0 Asset-Dateien, 62 Tests.**
 
 ---
 

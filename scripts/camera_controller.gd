@@ -92,9 +92,3 @@ func _process(delta: float) -> void:
 
 func shake(amount: float) -> void:
 	_shake = maxf(_shake, amount)
-
-
-## Sichtbarer Weltausschnitt — für Culling in den Zeichen-Ebenen.
-func visible_world_rect() -> Rect2:
-	var size := get_viewport_rect().size / zoom.x
-	return Rect2(get_screen_center_position() - size * 0.5, size)

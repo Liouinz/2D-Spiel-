@@ -45,6 +45,33 @@ const GROUND_KIND := [
 	TileArt.K_ROCK,
 ]
 
+## Gruppen-Bits je Tile-Typ. Index 7 steht für "ausserhalb der Karte":
+## dort setzt sich Wasser fort, Land nicht — sonst bekäme die Insel einen
+## unmotivierten Rahmen aus Kantenlicht.
+const B_SEABED := 1
+const B_SAND := 2
+const B_GRASS := 4
+const B_ROCK := 8
+const B_WATER := 16
+const B_DEEP := 32
+const B_FOREST := 64
+const B_LAVA := 128
+const OUTSIDE := 7
+
+const GROUP_BITS := [
+	B_SEABED | B_WATER | B_DEEP,   # Tiefwasser
+	B_SAND | B_WATER,              # Flachwasser
+	B_SAND,                        # Sand
+	B_GRASS,                       # Gras
+	B_GRASS | B_FOREST,            # Wald
+	B_ROCK,                        # Fels
+	B_ROCK | B_LAVA,               # Lava
+	B_SEABED | B_WATER | B_DEEP,   # ausserhalb
+]
+
+## Bodenart → Gruppen-Bit, mit dem sich der Boden verbindet.
+const GROUND_BIT := [B_SEABED, B_SAND, B_GRASS, B_ROCK]
+
 var water_layer: TileMapLayer
 var deep_layer: TileMapLayer
 var decor_layer: TileMapLayer
@@ -233,33 +260,6 @@ static func _variant(cell: Vector2i) -> int:
 	return posmod(h, TileArt.VARIANTS)
 
 
-## Gruppen-Bits je Tile-Typ. Index 7 steht für "ausserhalb der Karte":
-## dort setzt sich Wasser fort, Land nicht — sonst bekäme die Insel einen
-## unmotivierten Rahmen aus Kantenlicht.
-const B_SEABED := 1
-const B_SAND := 2
-const B_GRASS := 4
-const B_ROCK := 8
-const B_WATER := 16
-const B_DEEP := 32
-const B_FOREST := 64
-const B_LAVA := 128
-const OUTSIDE := 7
-
-const GROUP_BITS := [
-	B_SEABED | B_WATER | B_DEEP,   # Tiefwasser
-	B_SAND | B_WATER,              # Flachwasser
-	B_SAND,                        # Sand
-	B_GRASS,                       # Gras
-	B_GRASS | B_FOREST,            # Wald
-	B_ROCK,                        # Fels
-	B_ROCK | B_LAVA,               # Lava
-	B_SEABED | B_WATER | B_DEEP,   # ausserhalb
-]
-
-## Bodenart → Gruppen-Bit, mit dem sich der Boden verbindet.
-const GROUND_BIT := [B_SEABED, B_SAND, B_GRASS, B_ROCK]
-
 ## Baut aus acht bereits gelesenen Nachbar-Bitfeldern die Blob-Maske.
 ## Diagonalen zählen nur mit beiden Kardinalnachbarn — genau das verhindert,
 ## dass getrennte Strukturen optisch zusammenwachsen.
@@ -407,11 +407,3 @@ func _classify_all_water() -> void:
 ## Rohdaten für die Minimap — dieselbe Quelle wie die Weltdarstellung.
 func types_buffer() -> PackedByteArray:
 	return _types
-
-
-func count_water_cells() -> int:
-	var count := 0
-	for i in _types.size():
-		if is_water(_types[i]):
-			count += 1
-	return count
